@@ -35,6 +35,12 @@
           <button {{if not .LastBackup}}disabled title="No backup of this account yet"{{end}}
                   title="Downloads the rebuilt archive, or rebuilds it first if there is none">Download</button>
         </form>
+        <form method="post" action="?p=accounts/verify" class="inline">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="account" value="{{.User}}">
+          <button {{if not .LastBackup}}disabled{{end}}
+                  title="Rebuilds the backup in scratch space, checks it and deletes it. The live account is not touched.">Verify</button>
+        </form>
         <a href="?p=restore&amp;account={{.User}}"><button type="button">Restore</button></a>
       </td>
     </tr>

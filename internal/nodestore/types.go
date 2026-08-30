@@ -115,11 +115,14 @@ type Restore struct {
 	BytesRestored uint64     `json:"bytes_restored"`
 	ArchivePath   string     `json:"archive_path,omitempty"`
 	RestoredTo    string     `json:"restored_to,omitempty"`
-	Applied       bool       `json:"applied"`
-	Error         string     `json:"error,omitempty"`
-	QueuedAt      time.Time  `json:"queued_at"`
-	StartedAt     *time.Time `json:"started_at,omitempty"`
-	FinishedAt    *time.Time `json:"finished_at,omitempty"`
+	// Detail records what a rehearsal actually checked, so a passing
+	// drill says more than "success".
+	Detail     string     `json:"detail,omitempty"`
+	Applied    bool       `json:"applied"`
+	Error      string     `json:"error,omitempty"`
+	QueuedAt   time.Time  `json:"queued_at"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
 }
 
 // Secret is a sealed credential. The plaintext never reaches this file.

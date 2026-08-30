@@ -713,6 +713,18 @@ func (s *Server) handleStartRestore(w http.ResponseWriter, r *http.Request) {
 	s.redirect(w, r, "/restore?account="+restore.Account, "ok", message)
 }
 
+// handleVerifyRequest rehearses a restore of an account's newest backup.
+func (s *Server) handleVerifyRequest(w http.ResponseWriter, r *http.Request) {
+	account := r.PostFormValue("account")
+	if _, err := s.engine.QueueDrill(r.Context(), account); err != nil {
+		s.redirect(w, r, "/accounts", "error", err.Error())
+		return
+	}
+	s.redirect(w, r, "/restore", "ok", fmt.Sprintf(
+		"Rehearsing a restore of %s. It rebuilds the account in scratch space, checks the "+
+			"result and throws it away — the live account is not touched.", account))
+}
+
 // handleDownloadRequest rebuilds an account's newest backup into an archive
 // that can then be fetched.
 func (s *Server) handleDownloadRequest(w http.ResponseWriter, r *http.Request) {

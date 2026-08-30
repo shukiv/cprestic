@@ -88,6 +88,19 @@ func (e *Engine) QueueRestore(restore nodestore.Restore) (nodestore.Restore, err
 	if restore.Kind == "" {
 		restore.Kind = protocol.RestoreAccount
 	}
+	if restore.Kind == KindVerify {
+		// A rehearsal keeps nothing and applies nothing, so the checks
+		// that follow do not apply to it.
+		running, err := e.store.RunningJobFor(restore.Account)
+		if err != nil {
+			return nodestore.Restore{}, err
+		}
+		if running {
+			return nodestore.Restore{}, fmt.Errorf(
+				"node: account %s already has work in flight", restore.Account)
+		}
+		return e.store.PutRestore(restore)
+	}
 	if restore.Kind == protocol.RestoreFiles && len(restore.IncludePaths) == 0 {
 		return nodestore.Restore{}, errors.New("node: a files restore needs at least one path")
 	}
@@ -199,6 +212,10 @@ func (e *Engine) failJob(stored nodestore.Job, reason string) error {
 }
 
 func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error {
+	if stored.Kind == KindVerify {
+		return e.runDrill(ctx, stored)
+	}
+
 	target, err := e.targetFor(stored.RepositoryID)
 	if err != nil {
 		return e.failRestore(stored, err.Error())
@@ -242,6 +259,36 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 	e.log.Info("restore finished",
 		"restore_id", stored.ID, "account", stored.Account, "status", stored.Status)
 	return nil
+}
+
+// runDrill rehearses a restore and records what it proved.
+func (e *Engine) runDrill(ctx context.Context, stored nodestore.Restore) error {
+	now := time.Now().UTC()
+	stored.Status = job.StatusRunning
+	stored.StartedAt = &now
+	if _, err := e.store.PutRestore(stored); err != nil {
+		return err
+	}
+
+	checks, err := e.Drill(ctx, stored.RepositoryID, stored.Account)
+	finished := time.Now().UTC()
+	stored.FinishedAt = &finished
+	if err != nil {
+		stored.Status = job.StatusFailed
+		stored.Error = err.Error()
+		if len(checks) > 0 {
+			stored.Detail = "passed before failing: " + strings.Join(checks, "; ")
+		}
+		e.log.Error("restore rehearsal failed",
+			"account", stored.Account, "error", err, "checks", checks)
+	} else {
+		stored.Status = job.StatusSuccess
+		stored.Detail = strings.Join(checks, "; ")
+		e.log.Info("restore rehearsal passed",
+			"account", stored.Account, "checks", checks)
+	}
+	_, storeErr := e.store.PutRestore(stored)
+	return storeErr
 }
 
 func (e *Engine) failRestore(stored nodestore.Restore, reason string) error {
@@ -400,7 +447,16 @@ func (e *Engine) Check(ctx context.Context, repositoryID string, readDataSubsetP
 }
 
 // Drill rehearses a restore into scratch space and throws the result away.
-func (e *Engine) Drill(ctx context.Context, repositoryID, account, workDir string) ([]string, error) {
+//
+// It never applies anything: the live account is not touched, and nothing
+// is kept. What it answers is whether the backup can be turned back into an
+// account at all, which is the only question worth asking of a backup
+// nightly.
+//
+// Scratch space is allocated through the staging manager so the same disk
+// check that guards a backup guards this too. A rehearsal that filled the
+// volume would be worse than no rehearsal.
+func (e *Engine) Drill(ctx context.Context, repositoryID, account string) (checks []string, err error) {
 	repo, err := e.OpenRepository(repositoryID, true)
 	if err != nil {
 		return nil, err
@@ -412,19 +468,76 @@ func (e *Engine) Drill(ctx context.Context, repositoryID, account, workDir strin
 		return nil, err
 	}
 	if len(snapshots) == 0 {
-		return nil, fmt.Errorf("node: no snapshot of %s to rehearse", account)
+		return nil, fmt.Errorf("node: no backup of %s to rehearse", account)
 	}
+	newest := snapshots[len(snapshots)-1]
+
+	// The rehearsal writes about what the backup read.
+	estimate := newest.Summary.TotalBytesProcessed
+	if estimate == 0 {
+		estimate = 1 << 20
+	}
+	dir, err := e.staging.Allocate("drill-"+account, estimate)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if releaseErr := e.staging.Release(dir); releaseErr != nil {
+			e.log.Error("release drill scratch", "path", dir.Path, "error", releaseErr)
+		}
+	}()
 
 	rebuilt, err := reassemble.Run(ctx, e.runner, reassemble.Request{
 		Account:    account,
-		SnapshotID: snapshots[len(snapshots)-1].ID,
-		WorkDir:    workDir,
+		SnapshotID: newest.ID,
+		WorkDir:    dir.Path,
 		Repo:       repo,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return reassemble.Verify(rebuilt)
+}
+
+// QueueDrill asks for a rehearsal of an account's newest backup.
+//
+// It goes through the same queue as everything else, so it cannot run
+// alongside a backup or restore of the same account and shows up in
+// history with what it checked.
+func (e *Engine) QueueDrill(ctx context.Context, account string) (nodestore.Restore, error) {
+	repositories, err := e.store.Repositories()
+	if err != nil {
+		return nodestore.Restore{}, err
+	}
+
+	var (
+		newest     resticrun.Snapshot
+		newestRepo string
+	)
+	for _, repository := range repositories {
+		if repository.InitialisedAt == nil {
+			continue
+		}
+		snapshots, err := e.Snapshots(ctx, repository.ID, account)
+		if err != nil {
+			continue
+		}
+		for _, snapshot := range snapshots {
+			if snapshot.Time.After(newest.Time) {
+				newest, newestRepo = snapshot, repository.ID
+			}
+		}
+	}
+	if newestRepo == "" {
+		return nodestore.Restore{}, fmt.Errorf("node: %s has no backup to rehearse", account)
+	}
+
+	return e.QueueRestore(nodestore.Restore{
+		Account:      account,
+		RepositoryID: newestRepo,
+		SnapshotID:   newest.ID,
+		Kind:         KindVerify,
+	})
 }
 
 // AddDestination stores a destination and the repository that will live in

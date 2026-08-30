@@ -97,6 +97,7 @@
         {{else}}<span class="pill">{{$s}}</span>{{end}}
       </td>
       <td class="mono">
+        {{if .Detail}}<div>{{.Detail}}</div>{{end}}
         {{if .ArchivePath}}
           <a href="?p=download&amp;id={{.ID}}"><button type="button" class="primary">Download</button></a>
           <div class="muted">{{.ArchivePath}}</div>

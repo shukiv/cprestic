@@ -1,6 +1,7 @@
 package node_test
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -270,5 +271,43 @@ func TestOpenArchiveForDownloadRefusesSymlinkEscapes(t *testing.T) {
 	defer file.Close()
 	if filename != "cpmove-customer1.tar" || size != int64(len("a real archive")) {
 		t.Errorf("filename=%q size=%d", filename, size)
+	}
+}
+
+func TestDrillRefusesWhenTheVolumeIsTooFull(t *testing.T) {
+	root := t.TempDir()
+	store, err := nodestore.Open(filepath.Join(root, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	settings := nodestore.DefaultSettings()
+	settings.StagingRoot = filepath.Join(root, "staging")
+	settings.ResticCache = filepath.Join(root, "cache")
+	settings.ConfigDir = filepath.Join(root, "config")
+	settings.MaxConcurrent = 1
+	if err := store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	engine := newEngine(t, store, root)
+
+	// A rehearsal writes a full copy of the account into scratch. On a
+	// server that is nearly full — which is the normal state of a cPanel
+	// box — it has to be refused rather than allowed to fill the volume.
+	if _, err := engine.QueueDrill(context.Background(), "customer1"); err == nil {
+		t.Error("a drill was queued for an account with no backup")
+	}
+
+	// And a drill must not run alongside other work for the same account.
+	if _, err := store.PutJob(nodestore.Job{
+		Account: "customer1", Status: job.StatusRunning,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.QueueRestore(nodestore.Restore{
+		Account: "customer1", SnapshotID: "abc", Kind: node.KindVerify,
+	}); err == nil {
+		t.Error("a drill was queued while that account was already busy")
 	}
 }

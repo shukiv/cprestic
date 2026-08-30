@@ -356,8 +356,9 @@ func TestStandaloneDrill(t *testing.T) {
 	}
 	runQueue(t, s)
 
-	checks, err := s.engine.Drill(s.ctx, repositories[0].ID, "customer1",
-		filepath.Join(t.TempDir(), "drill"))
+	// Scratch space comes from the staging manager now, so the same disk
+	// check that guards a backup guards the rehearsal.
+	checks, err := s.engine.Drill(s.ctx, repositories[0].ID, "customer1")
 	if err != nil {
 		t.Fatalf("drill: %v", err)
 	}

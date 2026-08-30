@@ -408,3 +408,7 @@ func (e *Engine) SaveDestination(dest nodestore.Destination) error {
 	_, err = e.store.PutDestination(dest)
 	return err
 }
+
+// KindVerify is a restore that is rehearsed and thrown away: it proves the
+// backup can be rebuilt without touching the account or keeping anything.
+const KindVerify = "verify"
