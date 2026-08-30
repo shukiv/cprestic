@@ -305,3 +305,79 @@
 .cprest tr.detailrow summary { color:var(--accent); font-size:13px; }
 .cprest details.keybox { margin-top:var(--s3); border-top:1px solid var(--line); padding-top:var(--s3); }
 .cprest details.keybox summary { color:var(--accent); }
+
+/* --- holding our own inside WHM's stylesheet ------------------------- */
+
+/* Scoping stops our rules leaking out. It does not stop WHM's leaking in:
+   its interface styles bare form, table, button and heading elements, and
+   a plugin fragment sits right in the middle of that. Everything we render
+   is therefore reset to a known state first. */
+.cprest form,
+.cprest fieldset {
+  margin:0; padding:0; border:0; background:none; box-shadow:none; border-radius:0;
+}
+.cprest form.inline { display:inline-block; vertical-align:middle; }
+
+/* A hidden input is not a control. Something in WHM's stylesheets gives
+   inputs a box, and the CSRF and account fields were being drawn as wide
+   grey rectangles in the middle of every row. */
+.cprest input[type="hidden"] { display:none !important; }
+
+/* Our visible controls state their own size, so a leaked width or display
+   rule cannot stretch them. */
+.cprest input[type="text"], .cprest input[type="password"],
+.cprest input[type="number"], .cprest select {
+  display:block; width:100%; max-width:100%; height:auto; min-height:34px;
+  box-shadow:none; text-transform:none;
+}
+.cprest .search input {
+  display:inline-block; width:200px; min-height:0; border:0; padding:6px 0; background:none;
+}
+.cprest .btn, .cprest .chip {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:auto; text-transform:none; text-shadow:none; box-shadow:none;
+}
+.cprest table { font-size:inherit; font-family:inherit; background:none; }
+.cprest th, .cprest td { background:none; }
+.cprest h1, .cprest h2, .cprest h3 { font-family:inherit; text-shadow:none; }
+.cprest p { margin:0; }
+.cprest button, .cprest input, .cprest select, .cprest textarea { font-family:inherit; }
+.cprest a { text-decoration:none; }
+
+/* --- type scale ------------------------------------------------------ */
+/* One scale, stated once, so nothing drifts: 20 / 15 / 14 / 13 / 11.5. */
+.cprest { font-size:14.5px; }
+.cprest h1 { font-size:20px; font-weight:650; }
+.cprest .sub { font-size:14px; }
+.cprest h2 { font-size:11.5px; }
+.cprest table { font-size:14px; }
+.cprest th { font-size:11.5px; }
+.cprest .sublabel { font-size:13px; }
+.cprest .statlabel { font-size:11.5px; }
+.cprest .hint, .cprest .help { font-size:13px; }
+.cprest .note { font-size:12.5px; }
+.cprest .pill { font-size:12.5px; }
+.cprest .btn { font-size:13.5px; }
+.cprest .chip { font-size:13.5px; }
+.cprest .cov-figure { font-size:30px; }
+.cprest .cov-figure small { font-size:14.5px; }
+.cprest .stat { font-size:22px; }
+.cprest .acct { font-weight:600; font-size:14.5px; }
+
+/* --- row state marker ------------------------------------------------ */
+/* A full-height border on every row merges into one long bar when many
+   rows share a state, which reads as a rendering fault rather than as
+   information. A short inset marker stays per-row. */
+.cprest tr.state td:first-child { border-left:0; padding-left:var(--s3); position:relative; }
+.cprest tr.state td:first-child::before {
+  content:""; position:absolute; left:0; top:50%; transform:translateY(-50%);
+  width:3px; height:22px; border-radius:0 2px 2px 0; background:transparent;
+}
+.cprest tr.s-ok td:first-child::before   { background:var(--good); }
+.cprest tr.s-warn td:first-child::before { background:var(--warn); }
+.cprest tr.s-bad td:first-child::before  { background:var(--bad); }
+
+/* --- action columns -------------------------------------------------- */
+/* Buttons in a row sit together and stay on one line. */
+.cprest .actions { display:flex; gap:var(--s2); justify-content:flex-end; align-items:center; flex-wrap:nowrap; }
+.cprest td .actions .btn { min-height:30px; padding:5px 11px; }
