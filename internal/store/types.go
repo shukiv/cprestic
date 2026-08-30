@@ -1,0 +1,100 @@
+package store
+
+import "time"
+
+// Server is one cPanel machine running an agent.
+type Server struct {
+	ID              string
+	Hostname        string
+	CertFingerprint string
+	// PkgacctFlags records what the installed pkgacct actually supports,
+	// probed at enrolment because flag names differ between cPanel
+	// versions. See docs/DESIGN.md §4.
+	PkgacctFlags   map[string]string
+	StagingRoot    string
+	MaxConcurrency int
+	Status         string
+}
+
+// Account is one cPanel account on a server.
+type Account struct {
+	ID            string
+	ServerID      string
+	CPanelUser    string
+	PrimaryDomain string
+	SizeEstimate  int64
+	Active        bool
+}
+
+// Destination is a storage endpoint. Config holds non-secret settings as
+// JSON; credentials live in the vault under CredentialsSecretID.
+type Destination struct {
+	ID                  string
+	Name                string
+	Type                string
+	Config              []byte
+	CredentialsSecretID string
+	AppendOnly          bool
+}
+
+// Repository is a restic repository inside a destination.
+type Repository struct {
+	ID                  string
+	DestinationID       string
+	ServerID            string
+	Path                string
+	PasswordSecretID    string
+	ChunkerSourceRepoID string
+	InitialisedAt       *time.Time
+}
+
+// Policy is a schedule plus retention and payload settings.
+type Policy struct {
+	ID             string
+	Name           string
+	ScheduleCron   string
+	PayloadMode    string
+	Retention      Retention
+	Compression    string
+	LimitUploadKiB int
+}
+
+// Retention is the keep policy handed to "restic forget".
+type Retention struct {
+	KeepLast    int `json:"keep_last,omitempty"`
+	KeepDaily   int `json:"keep_daily,omitempty"`
+	KeepWeekly  int `json:"keep_weekly,omitempty"`
+	KeepMonthly int `json:"keep_monthly,omitempty"`
+	KeepYearly  int `json:"keep_yearly,omitempty"`
+}
+
+// ClaimedJob is a job leased to an agent, with everything the controller
+// needs to build the assignment. Secrets are still encrypted here: the
+// store never decrypts, so a store-level log can never leak one.
+type ClaimedJob struct {
+	JobID          string
+	LeaseExpiresAt time.Time
+	Account        Account
+	Policy         Policy
+	Targets        []ClaimedTarget
+}
+
+// ClaimedTarget is one repository the job must write to.
+type ClaimedTarget struct {
+	RepositoryID       string
+	RepositoryPath     string
+	DestinationType    string
+	DestinationConfig  []byte
+	CredentialsSealed  []byte
+	RepoPasswordSealed []byte
+	Attempt            int
+}
+
+// SecretKind mirrors the secret_kind enum.
+type SecretKind string
+
+const (
+	SecretBackendCredentials SecretKind = "backend_credentials"
+	SecretRepositoryPassword SecretKind = "repository_password"
+	SecretSSHKey             SecretKind = "ssh_key"
+)

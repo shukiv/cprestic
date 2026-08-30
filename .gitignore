@@ -1,0 +1,9 @@
+/bin/
+*.test
+coverage.out
+.env
+*.pem
+*.key
+.htpasswd
+/.tmp/
+/pki/

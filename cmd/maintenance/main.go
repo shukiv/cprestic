@@ -1,0 +1,222 @@
+// Command cprest-maintenance performs repository upkeep from trusted
+// infrastructure.
+//
+// It exists because destinations we control run rest-server with
+// --append-only, which rejects deletes: nothing running on a cPanel server
+// can prune, so without this component repositories grow without bound. It
+// holds the only delete-capable credentials in the system and must not run
+// on a cPanel server. See docs/DESIGN.md §8.
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/shuki/cprest/internal/maintenance"
+	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shuki/cprest/internal/store"
+	"github.com/shuki/cprest/internal/vault"
+)
+
+func main() {
+	databaseURL := flag.String("database-url", os.Getenv("CPREST_DATABASE_URL"),
+		"PostgreSQL connection string")
+	masterKeyPath := flag.String("master-key", os.Getenv("CPREST_MASTER_KEY"),
+		"vault master key file")
+	kind := flag.String("kind", "provision",
+		"work to perform: provision, forget, check")
+	repositoryID := flag.String("repository", "",
+		"repository to act on; empty means every eligible repository")
+	readDataSubset := flag.Int("read-data-subset", 5,
+		"percent of pack data to verify during check")
+	prune := flag.Bool("prune", true, "remove unreferenced data after forget")
+	resticBinary := flag.String("restic", "restic", "path to the restic binary")
+	runtimeDir := flag.String("runtime-dir", os.TempDir(),
+		"directory for the transient restic password file")
+	cacheDir := flag.String("restic-cache", "", "restic cache directory")
+	caCert := flag.String("restic-cacert", "",
+		"CA bundle restic should trust, for a destination behind a private CA")
+	logLevel := flag.String("log-level", "info", "debug, info, warn or error")
+	flag.Parse()
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if err := run(ctx, runConfig{
+		databaseURL: *databaseURL, masterKeyPath: *masterKeyPath, kind: *kind,
+		repositoryID: *repositoryID, readDataSubset: *readDataSubset, prune: *prune,
+		resticBinary: *resticBinary, runtimeDir: *runtimeDir, cacheDir: *cacheDir,
+		caCert: *caCert, logLevel: *logLevel,
+	}); err != nil && !errors.Is(err, context.Canceled) {
+		fmt.Fprintf(os.Stderr, "cprest-maintenance: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+type runConfig struct {
+	databaseURL    string
+	masterKeyPath  string
+	kind           string
+	repositoryID   string
+	readDataSubset int
+	prune          bool
+	resticBinary   string
+	runtimeDir     string
+	cacheDir       string
+	caCert         string
+	logLevel       string
+}
+
+func run(ctx context.Context, cfg runConfig) error {
+	switch cfg.kind {
+	case maintenance.KindProvision, maintenance.KindForget, maintenance.KindCheck:
+	default:
+		return fmt.Errorf("unknown -kind %q", cfg.kind)
+	}
+	if cfg.databaseURL == "" {
+		return errors.New("-database-url is required")
+	}
+	if cfg.masterKeyPath == "" {
+		return errors.New("-master-key is required")
+	}
+
+	var level slog.Level
+	if err := level.UnmarshalText([]byte(cfg.logLevel)); err != nil {
+		level = slog.LevelInfo
+	}
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+
+	db, err := store.Open(ctx, cfg.databaseURL)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	key, err := vault.LoadMasterKey(cfg.masterKeyPath)
+	if err != nil {
+		return err
+	}
+	v, err := vault.New(key)
+	if err != nil {
+		return err
+	}
+
+	restic := resticrun.New(resticrun.Config{
+		Binary:     cfg.resticBinary,
+		RuntimeDir: cfg.runtimeDir,
+		CacheDir:   cfg.cacheDir,
+		CACertPath: cfg.caCert,
+	}, nil)
+	runner := maintenance.New(db, v, restic, log)
+
+	switch cfg.kind {
+	case maintenance.KindProvision:
+		return provision(ctx, db, runner, cfg.repositoryID)
+	case maintenance.KindForget:
+		return forget(ctx, db, runner, cfg.repositoryID, cfg.prune)
+	default:
+		return check(ctx, db, runner, cfg.repositoryID, cfg.readDataSubset)
+	}
+}
+
+func provision(ctx context.Context, db *store.Store, runner *maintenance.Runner, repositoryID string) error {
+	if repositoryID != "" {
+		return runner.Provision(ctx, repositoryID)
+	}
+	created, err := runner.ProvisionPending(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("provisioned %d repositories\n", created)
+	return nil
+}
+
+func forget(ctx context.Context, db *store.Store, runner *maintenance.Runner,
+	repositoryID string, prune bool) error {
+
+	policies, err := db.ListPolicies(ctx)
+	if err != nil {
+		return err
+	}
+	if len(policies) == 0 {
+		return errors.New("no policies exist, so no retention is defined")
+	}
+	// Retention lives on the policy; a repository can be a target of
+	// several, so the most generous keep wins. Deleting a snapshot one
+	// policy still wants would be unrecoverable.
+	retention := widestRetention(policies)
+
+	repositories, err := targetRepositories(ctx, db, repositoryID)
+	if err != nil {
+		return err
+	}
+	var failures int
+	for _, id := range repositories {
+		if err := runner.Forget(ctx, id, retention, prune); err != nil {
+			fmt.Fprintf(os.Stderr, "repository %s: %v\n", id, err)
+			failures++
+		}
+	}
+	if failures > 0 {
+		return fmt.Errorf("%d of %d repositories failed", failures, len(repositories))
+	}
+	fmt.Printf("applied retention to %d repositories\n", len(repositories))
+	return nil
+}
+
+func check(ctx context.Context, db *store.Store, runner *maintenance.Runner,
+	repositoryID string, readDataSubset int) error {
+
+	repositories, err := targetRepositories(ctx, db, repositoryID)
+	if err != nil {
+		return err
+	}
+	var failures int
+	for _, id := range repositories {
+		if err := runner.Check(ctx, id, readDataSubset); err != nil {
+			fmt.Fprintf(os.Stderr, "repository %s: %v\n", id, err)
+			failures++
+		}
+	}
+	if failures > 0 {
+		return fmt.Errorf("%d of %d repositories failed the check", failures, len(repositories))
+	}
+	fmt.Printf("checked %d repositories\n", len(repositories))
+	return nil
+}
+
+func targetRepositories(ctx context.Context, db *store.Store, repositoryID string) ([]string, error) {
+	if repositoryID != "" {
+		return []string{repositoryID}, nil
+	}
+	repos, err := db.ListRepositories(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, repo := range repos {
+		// An unprovisioned repository has nothing to prune or verify.
+		if repo.InitialisedAt != nil {
+			ids = append(ids, repo.ID)
+		}
+	}
+	return ids, nil
+}
+
+func widestRetention(policies []store.Policy) store.Retention {
+	var widest store.Retention
+	for _, policy := range policies {
+		widest.KeepLast = max(widest.KeepLast, policy.Retention.KeepLast)
+		widest.KeepDaily = max(widest.KeepDaily, policy.Retention.KeepDaily)
+		widest.KeepWeekly = max(widest.KeepWeekly, policy.Retention.KeepWeekly)
+		widest.KeepMonthly = max(widest.KeepMonthly, policy.Retention.KeepMonthly)
+		widest.KeepYearly = max(widest.KeepYearly, policy.Retention.KeepYearly)
+	}
+	return widest
+}

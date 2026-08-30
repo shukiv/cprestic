@@ -1,0 +1,207 @@
+package destination
+
+import (
+	"context"
+	"crypto/tls"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestLocalPreflight(t *testing.T) {
+	root := t.TempDir()
+	if err := (&Local{Root: root}).Preflight(context.Background()); err != nil {
+		t.Errorf("Preflight on a real directory: %v", err)
+	}
+	if err := (&Local{Root: filepath.Join(root, "missing")}).Preflight(context.Background()); err == nil {
+		t.Error("missing root should be rejected")
+	}
+
+	file := filepath.Join(root, "afile")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&Local{Root: file}).Preflight(context.Background()); err == nil {
+		t.Error("root that is a file should be rejected")
+	}
+	if err := (&Local{Root: "relative"}).Preflight(context.Background()); err == nil {
+		t.Error("relative root should be rejected")
+	}
+}
+
+func TestRESTPreflight(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, _, _ := r.BasicAuth()
+		switch user {
+		case "good":
+			// rest-server answers an unknown path with 404 once
+			// authenticated; that is a healthy endpoint, not a failure.
+			w.WriteHeader(http.StatusNotFound)
+		case "broken":
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer server.Close()
+
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // test server
+	}}
+
+	base := server.URL
+	cases := []struct {
+		name    string
+		dest    *REST
+		wantErr string
+	}{
+		{
+			name: "authenticated endpoint passes",
+			dest: &REST{BaseURL: base, Username: "good", Password: "p", HTTPClient: client},
+		},
+		{
+			name:    "rejected credentials fail",
+			dest:    &REST{BaseURL: base, Username: "bad", Password: "p", HTTPClient: client},
+			wantErr: "authentication rejected",
+		},
+		{
+			name:    "server error fails",
+			dest:    &REST{BaseURL: base, Username: "broken", Password: "p", HTTPClient: client},
+			wantErr: "server error",
+		},
+		{
+			// Basic auth over plaintext would hand the repository
+			// credentials to anyone on the path.
+			name:    "plaintext http is refused",
+			dest:    &REST{BaseURL: "http://backup.example.com", Username: "good", HTTPClient: client},
+			wantErr: "must use https",
+		},
+		{
+			name:    "missing username is refused",
+			dest:    &REST{BaseURL: base, HTTPClient: client},
+			wantErr: "username is required",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.dest.Preflight(context.Background())
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Preflight: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("err = %v, want one containing %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestSFTPPreflightRequiresPinnedHostKey(t *testing.T) {
+	dir := t.TempDir()
+	key := filepath.Join(dir, "id_ed25519")
+	if err := os.WriteFile(key, []byte("key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dest := &SFTP{Host: "127.0.0.1", User: "u", Root: "/b", IdentityFile: key}
+	err := dest.Preflight(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "known-hosts") {
+		t.Fatalf("err = %v, want a known-hosts complaint", err)
+	}
+}
+
+func TestSFTPPreflightRejectsLooseKeyPermissions(t *testing.T) {
+	dir := t.TempDir()
+	key := filepath.Join(dir, "id_ed25519")
+	known := filepath.Join(dir, "known_hosts")
+	if err := os.WriteFile(key, []byte("key"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(known, []byte("host key"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dest := &SFTP{
+		Host: "127.0.0.1", User: "u", Root: "/b",
+		IdentityFile: key, KnownHostsFile: known,
+	}
+	err := dest.Preflight(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "world-accessible") {
+		t.Fatalf("err = %v, want a permissions complaint", err)
+	}
+}
+
+func TestS3PreflightRejectsPlaintextEndpoint(t *testing.T) {
+	dest := &S3{
+		Endpoint: "http://minio.internal:9000", Bucket: "b",
+		AccessKeyID: "AK", SecretAccessKey: "SK",
+	}
+	err := dest.Preflight(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "must use https") {
+		t.Fatalf("err = %v, want an https complaint", err)
+	}
+}
+
+func TestSFTPOptionsPinHostKeyAndIdentity(t *testing.T) {
+	dest := &SFTP{
+		Host: "backup.example.com", User: "cpbackup", Root: "/backup",
+		IdentityFile:   "/etc/cprest/id_ed25519",
+		KnownHostsFile: "/etc/cprest/known_hosts",
+	}
+	options, err := dest.Options()
+	if err != nil {
+		t.Fatalf("Options: %v", err)
+	}
+	args := options["sftp.args"]
+	for _, want := range []string{
+		"-i /etc/cprest/id_ed25519",
+		"UserKnownHostsFile=/etc/cprest/known_hosts",
+		"StrictHostKeyChecking=yes",
+		// An unattended agent must never be able to sit at a prompt.
+		"BatchMode=yes",
+	} {
+		if !strings.Contains(args, want) {
+			t.Errorf("sftp.args = %q, missing %q", args, want)
+		}
+	}
+
+	// Without a pinned host key the agent would trust whatever answers.
+	unpinned := &SFTP{Host: "h", User: "u", Root: "/b", IdentityFile: "/k"}
+	if _, err := unpinned.Options(); err == nil {
+		t.Error("missing known-hosts file should be rejected")
+	}
+}
+
+func TestSFTPRejectsPathsShellSplittingWouldMangle(t *testing.T) {
+	dest := &SFTP{
+		Host: "h", User: "u", Root: "/b",
+		IdentityFile:   "/etc/cprest/my key",
+		KnownHostsFile: "/etc/cprest/known_hosts",
+	}
+	if _, err := dest.Options(); err == nil {
+		t.Error("an identity path containing a space should be rejected")
+	}
+}
+
+func TestOptionsAreEmptyForSimpleBackends(t *testing.T) {
+	backends := map[string]Destination{
+		"local": &Local{Root: "/srv/b"},
+		"rest":  &REST{BaseURL: "https://b", Username: "u"},
+		"s3":    &S3{Bucket: "b", Region: "r"},
+	}
+	for name, dest := range backends {
+		options, err := dest.Options()
+		if err != nil {
+			t.Errorf("%s Options: %v", name, err)
+			continue
+		}
+		if len(options) != 0 {
+			t.Errorf("%s Options = %v, want none", name, options)
+		}
+	}
+}
