@@ -183,3 +183,92 @@ func TestQueueRestoreValidates(t *testing.T) {
 		t.Error("a backup should not start while a restore of that account is queued")
 	}
 }
+
+// TestOpenArchiveForDownloadRefusesSymlinkEscapes covers the case a lexical
+// containment check misses: the path is inside the staging root by name but
+// resolves somewhere else. This handler reads as root on a server whose
+// other users are not trusted, so it has to resolve before it decides.
+func TestOpenArchiveForDownloadRefusesSymlinkEscapes(t *testing.T) {
+	root := t.TempDir()
+	store, err := nodestore.Open(filepath.Join(root, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	staging := filepath.Join(root, "staging")
+	if err := os.MkdirAll(staging, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	settings := nodestore.DefaultSettings()
+	settings.StagingRoot = staging
+	settings.ResticCache = filepath.Join(root, "cache")
+	settings.ConfigDir = filepath.Join(root, "config")
+	if err := store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	engine := newEngine(t, store, root)
+
+	secret := filepath.Join(root, "secret.tar")
+	if err := os.WriteFile(secret, []byte("not yours"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// A symlink sitting inside the staging root, pointing out of it.
+	escape := filepath.Join(staging, "cpmove-escape.tar")
+	if err := os.Symlink(secret, escape); err != nil {
+		t.Skipf("symlinks unavailable here: %v", err)
+	}
+	// And a sibling directory whose name merely starts with the root's.
+	sibling := staging + "-elsewhere"
+	if err := os.MkdirAll(sibling, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	siblingArchive := filepath.Join(sibling, "cpmove-c1.tar")
+	if err := os.WriteFile(siblingArchive, []byte("also not yours"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, path := range map[string]string{
+		"symlink out of staging": escape,
+		"sibling directory":      siblingArchive,
+		"outside entirely":       secret,
+	} {
+		restore, err := store.PutRestore(nodestore.Restore{
+			Account: "customer1", SnapshotID: "abc",
+			Status: job.StatusSuccess, ArchivePath: path,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		file, _, _, err := engine.OpenArchiveForDownload(restore.ID)
+		if err == nil {
+			file.Close()
+			t.Errorf("%s was served", name)
+		}
+	}
+
+	// A real archive in the right place still works.
+	good := filepath.Join(staging, "stage-restore-customer1", "cpmove-customer1.tar")
+	if err := os.MkdirAll(filepath.Dir(good), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(good, []byte("a real archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	restore, err := store.PutRestore(nodestore.Restore{
+		Account: "customer1", SnapshotID: "abc",
+		Status: job.StatusSuccess, ArchivePath: good,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, filename, size, err := engine.OpenArchiveForDownload(restore.ID)
+	if err != nil {
+		t.Fatalf("a legitimate archive was refused: %v", err)
+	}
+	defer file.Close()
+	if filename != "cpmove-customer1.tar" || size != int64(len("a real archive")) {
+		t.Errorf("filename=%q size=%d", filename, size)
+	}
+}

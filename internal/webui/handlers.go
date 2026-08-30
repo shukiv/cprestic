@@ -727,15 +727,9 @@ func (s *Server) handleDownloadRequest(w http.ResponseWriter, r *http.Request) {
 
 // handleDownload streams a rebuilt archive to the browser.
 func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
-	path, filename, size, err := s.engine.ArchiveForDownload(r.URL.Query().Get("id"))
+	file, filename, size, err := s.engine.OpenArchiveForDownload(r.URL.Query().Get("id"))
 	if err != nil {
 		s.redirect(w, r, "/restore", "error", err.Error())
-		return
-	}
-
-	file, err := os.Open(path)
-	if err != nil {
-		s.redirect(w, r, "/restore", "error", "The archive could not be opened: "+err.Error())
 		return
 	}
 	defer file.Close()
@@ -751,7 +745,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(w, file); err != nil {
 		// The response is already going out, so there is nothing to say
 		// to the browser beyond stopping.
-		s.log.Error("stream archive", "path", path, "error", err)
+		s.log.Error("stream archive", "file", filename, "error", err)
 	}
 }
 

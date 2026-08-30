@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -564,38 +565,60 @@ func (e *Engine) QueueDownload(ctx context.Context, account string) (nodestore.R
 	})
 }
 
-// ArchiveForDownload resolves a finished restore to the archive it produced,
-// after checking the file is where this node put it.
+// OpenArchiveForDownload opens the archive a finished restore produced.
 //
-// The path comes out of the state file rather than from a request, but it
-// becomes an open() either way, so it is checked against the staging root
-// before anything is read.
-func (e *Engine) ArchiveForDownload(restoreID string) (path, filename string, size int64, err error) {
+// The path comes from this node's own state file rather than from a
+// request, but it still becomes an open() as root on a server whose other
+// users are not trusted, so it is checked rather than believed:
+//
+//   - symlinks are resolved on both the staging root and the target before
+//     containment is decided, because a lexical prefix check is satisfied
+//     by a symlink pointing anywhere;
+//   - containment is decided with filepath.Rel, so a sibling directory
+//     whose name merely starts with the root's cannot pass;
+//   - the file is opened with O_NOFOLLOW, so a symlink swapped in at the
+//     leaf between the check and the open is refused rather than followed.
+//
+// The caller closes the file.
+func (e *Engine) OpenArchiveForDownload(restoreID string) (file *os.File, filename string, size int64, err error) {
 	restore, err := e.store.Restore(restoreID)
 	if err != nil {
-		return "", "", 0, err
+		return nil, "", 0, err
 	}
 	if restore.Status != job.StatusSuccess || restore.ArchivePath == "" {
-		return "", "", 0, fmt.Errorf("node: that restore produced no archive")
+		return nil, "", 0, fmt.Errorf("node: that restore produced no archive")
 	}
 
-	root, err := filepath.Abs(e.settings.StagingRoot)
+	root, err := filepath.EvalSymlinks(e.settings.StagingRoot)
 	if err != nil {
-		return "", "", 0, err
+		return nil, "", 0, fmt.Errorf("node: resolve the staging area: %w", err)
 	}
-	resolved, err := filepath.Abs(restore.ArchivePath)
+	resolved, err := filepath.EvalSymlinks(restore.ArchivePath)
 	if err != nil {
-		return "", "", 0, err
-	}
-	if !strings.HasPrefix(resolved, root+string(filepath.Separator)) {
-		return "", "", 0, fmt.Errorf("node: that archive is not in the staging area")
-	}
-
-	info, err := os.Stat(resolved)
-	if err != nil {
-		return "", "", 0, fmt.Errorf(
+		return nil, "", 0, fmt.Errorf(
 			"node: the archive is gone — it is removed when the account is restored again "+
 				"or the service restarts: %w", err)
 	}
-	return resolved, filepath.Base(resolved), info.Size(), nil
+
+	relative, err := filepath.Rel(root, resolved)
+	if err != nil || relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(filepath.Separator)) ||
+		filepath.IsAbs(relative) {
+		return nil, "", 0, fmt.Errorf("node: that archive is not in the staging area")
+	}
+
+	file, err = os.OpenFile(resolved, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, "", 0, fmt.Errorf("node: open the archive: %w", err)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, "", 0, err
+	}
+	if !info.Mode().IsRegular() {
+		_ = file.Close()
+		return nil, "", 0, fmt.Errorf("node: that archive is not a regular file")
+	}
+	return file, filepath.Base(resolved), info.Size(), nil
 }
