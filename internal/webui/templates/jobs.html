@@ -2,10 +2,10 @@
 {{$data := .Data}}
 <div>
   <h1>History</h1>
-  <p class="sub">Everything cprest has done on this server.</p>
+  <p class="cpr-sub">Everything cprest has done on this server.</p>
 </div>
-<div class="card">
-  <div class="pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Backups</h2></div>
+<div class="cpr-card">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Backups</h2></div>
   {{if $data.Jobs}}
   <table>
     <tr><th>When</th><th>Account</th><th>Result</th><th>Copies</th><th>Stored</th></tr>
@@ -15,25 +15,25 @@
       <td>{{.Account}}</td>
       <td>
         {{$s := printf "%s" .Status}}
-        {{if eq $s "success"}}<span class="pill ok">success</span>
-        {{else if eq $s "partial_success"}}<span class="pill warn">partial</span>
-        {{else if eq $s "failed"}}<span class="pill error">failed</span>
-        {{else}}<span class="pill">{{$s}}</span>{{end}}
+        {{if eq $s "success"}}<span class="cpr-pill cpr-ok">success</span>
+        {{else if eq $s "partial_success"}}<span class="cpr-pill cpr-warn">partial</span>
+        {{else if eq $s "failed"}}<span class="cpr-pill cpr-error">failed</span>
+        {{else}}<span class="cpr-pill">{{$s}}</span>{{end}}
       </td>
       <td>
         {{range .Targets}}
           {{$name := index $data.Destination .RepositoryID}}
           {{$ts := printf "%s" .Status}}
           <div>
-            {{if eq $ts "success"}}<span class="dot ok"></span>
-            {{else if eq $ts "failed"}}<span class="dot error"></span>
-            {{else}}<span class="dot idle"></span>{{end}}
+            {{if eq $ts "success"}}<span class="cpr-dot cpr-ok"></span>
+            {{else if eq $ts "failed"}}<span class="cpr-dot cpr-error"></span>
+            {{else}}<span class="cpr-dot cpr-idle"></span>{{end}}
             {{if $name}}{{$name}}{{else}}{{short .RepositoryID}}{{end}}
-            {{if .Error}}<br><span class="muted">{{.Error}}</span>{{end}}
-            {{if .Incomplete}}<span class="pill warn">some files unreadable</span>{{end}}
+            {{if .Error}}<br><span class="cpr-muted">{{.Error}}</span>{{end}}
+            {{if .Incomplete}}<span class="cpr-pill cpr-warn">some files unreadable</span>{{end}}
           </div>
         {{end}}
-        {{if .StagingErr}}<div class="muted">{{.StagingErr}}</div>{{end}}
+        {{if .StagingErr}}<div class="cpr-muted">{{.StagingErr}}</div>{{end}}
       </td>
       <td>
         {{range .Targets}}{{if eq (printf "%s" .Status) "success"}}
@@ -43,16 +43,16 @@
     </tr>
     {{$job := .}}
     {{range .Targets}}{{if or .Detail .SnapshotID}}
-    <tr class="detailrow">
+    <tr class="cpr-detailrow">
       <td colspan="5">
         <details>
           <summary>What restic reported for {{$job.Account}}{{with index $data.Destination .RepositoryID}} → {{.}}{{end}}</summary>
-          {{if .SnapshotID}}<p class="hint">Snapshot <span class="mono">{{short .SnapshotID}}</span>
+          {{if .SnapshotID}}<p class="cpr-hint">Snapshot <span class="cpr-mono">{{short .SnapshotID}}</span>
             · took {{printf "%.0f" .DurationSecs}}s</p>{{end}}
-          {{if .Detail}}<pre class="log">{{.Detail}}</pre>
-          {{else}}<p class="hint">restic reported nothing beyond the summary.</p>{{end}}
+          {{if .Detail}}<pre class="cpr-log">{{.Detail}}</pre>
+          {{else}}<p class="cpr-hint">restic reported nothing beyond the summary.</p>{{end}}
           {{if .Incomplete}}
-          <p class="hint">Files that vanish or cannot be read mid-backup are normal on a
+          <p class="cpr-hint">Files that vanish or cannot be read mid-backup are normal on a
           live server — sessions, sockets, caches. What matters is whether anything above
           is a file the site actually needs.</p>
           {{end}}
@@ -62,13 +62,13 @@
     {{end}}{{end}}
     {{end}}
   </table>
-  <p class="hint">"New" is what the backup actually cost in storage. On an unchanged
+  <p class="cpr-hint">"New" is what the backup actually cost in storage. On an unchanged
   account it should be a small fraction of what was read.</p>
-  {{else}}<div class="empty"><p><b>No backups have run yet.</b><br>They will appear here as schedules fire.</p></div>{{end}}
+  {{else}}<div class="cpr-empty"><p><b>No backups have run yet.</b><br>They will appear here as schedules fire.</p></div>{{end}}
 </div>
 
-<div class="card">
-  <div class="pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Restores</h2></div>
+<div class="cpr-card">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Restores</h2></div>
   {{if $data.Restores}}
   <table>
     <tr><th>When</th><th>Account</th><th>Kind</th><th>Result</th><th>Detail</th></tr>
@@ -76,24 +76,24 @@
     <tr {{if not .Status.Terminal}}data-running="1"{{end}}>
       <td>{{stamp .QueuedAt}}</td>
       <td>{{.Account}}</td>
-      <td>{{.Kind}}{{if .Applied}} <span class="pill warn">applied</span>{{end}}</td>
+      <td>{{.Kind}}{{if .Applied}} <span class="cpr-pill cpr-warn">applied</span>{{end}}</td>
       <td>
         {{$s := printf "%s" .Status}}
-        {{if eq $s "success"}}<span class="pill ok">success</span>
-        {{else if eq $s "failed"}}<span class="pill error">failed</span>
-        {{else}}<span class="pill">{{$s}}</span>{{end}}
+        {{if eq $s "success"}}<span class="cpr-pill cpr-ok">success</span>
+        {{else if eq $s "failed"}}<span class="cpr-pill cpr-error">failed</span>
+        {{else}}<span class="cpr-pill">{{$s}}</span>{{end}}
       </td>
-      <td class="mono">
+      <td class="cpr-mono">
         {{if .Detail}}<div>{{.Detail}}</div>{{end}}
         {{if .Error}}{{.Error}}
         {{else if .ArchivePath}}
-          <a href="?p=download&amp;id={{.ID}}"><button type="button" class="primary">Download</button></a>
-          <div class="muted">{{.ArchivePath}}</div>
+          <a href="?p=download&amp;id={{.ID}}"><button type="button" class="cpr-btn cpr-primary">Download</button></a>
+          <div class="cpr-muted">{{.ArchivePath}}</div>
         {{else}}{{.RestoredTo}}{{end}}
       </td>
     </tr>
     {{end}}
   </table>
-  {{else}}<div class="empty"><p>No restores or rehearsals yet.</p></div>{{end}}
+  {{else}}<div class="cpr-empty"><p>No restores or rehearsals yet.</p></div>{{end}}
 </div>
 {{end}}

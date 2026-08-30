@@ -54,25 +54,25 @@
   font:15px/1.5 "Fira Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing:antialiased;
 }
-.cprest .mono { font-family:"Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.85em; }
-.cprest .num { font-variant-numeric:tabular-nums; }
+.cprest .cpr-mono { font-family:"Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.85em; }
+.cprest .cpr-num { font-variant-numeric:tabular-nums; }
 
 /* ---- host context ---- */
-.cprest .host {
+.cprest .cpr-host {
   background:var(--surface-2); border-bottom:1px solid var(--line);
   padding:var(--s2) var(--s5); font-size:12px; color:var(--faint);
   display:flex; gap:var(--s2); align-items:center; letter-spacing:.02em;
 }
-.cprest .host b { color:var(--muted); font-weight:500; }
+.cprest .cpr-host b { color:var(--muted); font-weight:500; }
 
 /* ---- app bar ---- */
-.cprest .bar {
+.cprest .cpr-bar {
   background:var(--surface); border-bottom:1px solid var(--line);
   padding:0 var(--s5); display:flex; align-items:center; gap:var(--s6);
   position:sticky; top:0; z-index:20;
 }
-.cprest .brand { font-weight:700; letter-spacing:-.01em; padding:var(--s4) 0; white-space:nowrap; }
-.cprest .brand span { color:var(--muted); font-weight:400; }
+.cprest .cpr-brand { font-weight:700; letter-spacing:-.01em; padding:var(--s4) 0; white-space:nowrap; }
+.cprest .cpr-brand span { color:var(--muted); font-weight:400; }
 .cprest nav { display:flex; gap:var(--s5); overflow-x:auto; }
 .cprest nav button {
   appearance:none; background:none; border:0; cursor:pointer; font:inherit;
@@ -82,55 +82,55 @@
 }
 .cprest nav button:hover { color:var(--ink); }
 .cprest nav button[aria-current="page"] { color:var(--ink); font-weight:600; border-bottom-color:var(--accent); }
-.cprest nav button:focus-visible, .cprest .btn:focus-visible, .cprest .link:focus-visible, .cprest input:focus-visible, .cprest select:focus-visible {
+.cprest nav button:focus-visible, .cprest .cpr-btn:focus-visible, .cprest .cpr-link:focus-visible, .cprest input:focus-visible, .cprest select:focus-visible {
   outline:2px solid var(--accent); outline-offset:2px; border-radius:2px;
 }
 
 .cprest main { max-width:1180px; margin:0 auto; padding:var(--s5) var(--s5) 96px; }
-.cprest .screen[hidden] { display:none; }
+.cprest .cpr-screen[hidden] { display:none; }
 
 .cprest h1 { font-size:22px; margin:0 0 var(--s1); letter-spacing:-.01em; text-wrap:balance; }
-.cprest .sub { color:var(--muted); margin:0 0 var(--s5); font-size:14px; }
+.cprest .cpr-sub { color:var(--muted); margin:0 0 var(--s5); font-size:14px; }
 .cprest h2 { font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin:0 0 var(--s3); font-weight:600; }
 
-.cprest .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow); }
-.cprest .pad { padding:var(--s4) var(--s5); }
-.cprest .stack { display:flex; flex-direction:column; gap:var(--s5); }
-.cprest .row { display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap; }
-.cprest .spread { display:flex; justify-content:space-between; align-items:baseline; gap:var(--s3); }
-.cprest .grid3 { display:grid; grid-template-columns:2fr 1fr 1fr; gap:var(--s4); }
-.cprest .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:var(--s4); }
+.cprest .cpr-card { background:var(--surface); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow); }
+.cprest .cpr-pad { padding:var(--s4) var(--s5); }
+.cprest .cpr-stack { display:flex; flex-direction:column; gap:var(--s5); }
+.cprest .cpr-row { display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap; }
+.cprest .cpr-spread { display:flex; justify-content:space-between; align-items:baseline; gap:var(--s3); }
+.cprest .cpr-grid3 { display:grid; grid-template-columns:2fr 1fr 1fr; gap:var(--s4); }
+.cprest .cpr-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:var(--s4); }
 
 /* ---- coverage ---- */
-.cprest .cov-figure { font-size:34px; font-weight:700; letter-spacing:-.02em; line-height:1.1; }
-.cprest .cov-figure small { font-size:15px; font-weight:400; color:var(--muted); letter-spacing:0; }
-.cprest .meter { display:flex; height:10px; border-radius:99px; overflow:hidden; background:var(--line); margin:var(--s3) 0 var(--s2); }
-.cprest .meter i { display:block; }
-.cprest .meter .ok { background:var(--good); }
-.cprest .meter .stale { background:var(--warn); }
-.cprest .meter .none { background:var(--bad); }
-.cprest .legend { display:flex; gap:var(--s4); font-size:13px; color:var(--muted); flex-wrap:wrap; }
-.cprest .legend b { color:var(--ink); font-weight:600; }
-.cprest .key { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:6px; vertical-align:baseline; }
+.cprest .cpr-cov-figure { font-size:34px; font-weight:700; letter-spacing:-.02em; line-height:1.1; }
+.cprest .cpr-cov-figure small { font-size:15px; font-weight:400; color:var(--muted); letter-spacing:0; }
+.cprest .cpr-meter { display:flex; height:10px; border-radius:99px; overflow:hidden; background:var(--line); margin:var(--s3) 0 var(--s2); }
+.cprest .cpr-meter i { display:block; }
+.cprest .cpr-meter .cpr-ok { background:var(--good); }
+.cprest .cpr-meter .cpr-stale { background:var(--warn); }
+.cprest .cpr-meter .cpr-none { background:var(--bad); }
+.cprest .cpr-legend { display:flex; gap:var(--s4); font-size:13px; color:var(--muted); flex-wrap:wrap; }
+.cprest .cpr-legend b { color:var(--ink); font-weight:600; }
+.cprest .cpr-key { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:6px; vertical-align:baseline; }
 
-.cprest .stat { font-size:24px; font-weight:600; letter-spacing:-.01em; }
-.cprest .stat.warnish { color:var(--warn); }
-.cprest .statlabel { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--faint); margin-bottom:var(--s1); }
-.cprest .hint { font-size:13px; color:var(--muted); margin:var(--s2) 0 0; }
+.cprest .cpr-stat { font-size:24px; font-weight:600; letter-spacing:-.01em; }
+.cprest .cpr-stat.cpr-warnish { color:var(--warn); }
+.cprest .cpr-statlabel { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--faint); margin-bottom:var(--s1); }
+.cprest .cpr-hint { font-size:13px; color:var(--muted); margin:var(--s2) 0 0; }
 
 /* ---- pills ---- */
-.cprest .pill {
+.cprest .cpr-pill {
   display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:500;
   padding:2px 8px; border-radius:99px; border:1px solid transparent; white-space:nowrap;
 }
-.cprest .pill.ok { color:var(--good); background:var(--good-soft); border-color:color-mix(in srgb, var(--good) 25%, transparent); }
-.cprest .pill.warn { color:var(--warn); background:var(--warn-soft); border-color:color-mix(in srgb, var(--warn) 25%, transparent); }
-.cprest .pill.bad { color:var(--bad);  background:var(--bad-soft);  border-color:color-mix(in srgb, var(--bad) 25%, transparent); }
-.cprest .pill.idle { color:var(--muted); background:var(--surface-2); border-color:var(--line); }
-.cprest .dot { width:6px; height:6px; border-radius:50%; background:currentColor; flex:none; }
+.cprest .cpr-pill.cpr-ok { color:var(--good); background:var(--good-soft); border-color:color-mix(in srgb, var(--good) 25%, transparent); }
+.cprest .cpr-pill.cpr-warn { color:var(--warn); background:var(--warn-soft); border-color:color-mix(in srgb, var(--warn) 25%, transparent); }
+.cprest .cpr-pill.cpr-bad { color:var(--bad);  background:var(--bad-soft);  border-color:color-mix(in srgb, var(--bad) 25%, transparent); }
+.cprest .cpr-pill.cpr-idle { color:var(--muted); background:var(--surface-2); border-color:var(--line); }
+.cprest .cpr-dot { width:6px; height:6px; border-radius:50%; background:currentColor; flex:none; }
 
 /* ---- tables ---- */
-.cprest .tablewrap { overflow-x:auto; }
+.cprest .cpr-tablewrap { overflow-x:auto; }
 .cprest table { width:100%; border-collapse:collapse; font-size:14px; }
 .cprest th {
   text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.07em;
@@ -141,69 +141,69 @@
 .cprest tbody tr:last-child td { border-bottom:0; }
 .cprest tbody tr { transition:background .15s ease; }
 .cprest tbody tr:hover { background:var(--surface-2); }
-.cprest td.right, .cprest th.right { text-align:right; }
-.cprest .acct { font-weight:600; }
-.cprest .acct .link { display:block; }
-.cprest .sublabel { color:var(--faint); font-size:12px; margin-top:1px; }
+.cprest td.cpr-right, .cprest th.cpr-right { text-align:right; }
+.cprest .cpr-acct { font-weight:600; }
+.cprest .cpr-acct .cpr-link { display:block; }
+.cprest .cpr-sublabel { color:var(--faint); font-size:12px; margin-top:1px; }
 
 /* severity stripe: state readable without colour alone */
-.cprest tr.state td:first-child { border-left:3px solid transparent; padding-left:calc(var(--s3) - 3px); }
-.cprest tr.s-ok td:first-child { border-left-color:var(--good); }
-.cprest tr.s-warn td:first-child { border-left-color:var(--warn); }
-.cprest tr.s-bad td:first-child { border-left-color:var(--bad); }
+.cprest tr.cpr-state td:first-child { border-left:3px solid transparent; padding-left:calc(var(--s3) - 3px); }
+.cprest tr.cpr-s-ok td:first-child { border-left-color:var(--good); }
+.cprest tr.cpr-s-warn td:first-child { border-left-color:var(--warn); }
+.cprest tr.cpr-s-bad td:first-child { border-left-color:var(--bad); }
 
 /* ---- controls ---- */
-.cprest .btn {
+.cprest .cpr-btn {
   appearance:none; font:inherit; font-size:13px; cursor:pointer;
   padding:6px 12px; min-height:32px; border-radius:var(--r);
   border:1px solid var(--line-strong); background:var(--surface); color:var(--ink);
   transition:background .18s ease, border-color .18s ease, color .18s ease;
   white-space:nowrap;
 }
-.cprest .btn:hover { background:var(--surface-2); border-color:var(--muted); }
-.cprest .btn.primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:500; }
-.cprest .btn.primary:hover { filter:brightness(1.08); }
-.cprest .btn.quiet { border-color:transparent; color:var(--muted); }
-.cprest .btn.quiet:hover { color:var(--ink); background:var(--surface-2); }
-.cprest .btn.danger { color:var(--bad); border-color:color-mix(in srgb, var(--bad) 35%, transparent); }
-.cprest .btn.danger:hover { background:var(--bad-soft); }
-.cprest .btn[disabled] { opacity:.45; cursor:not-allowed; }
-.cprest .actions { display:flex; gap:var(--s2); justify-content:flex-end; }
+.cprest .cpr-btn:hover { background:var(--surface-2); border-color:var(--muted); }
+.cprest .cpr-btn.cpr-primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:500; }
+.cprest .cpr-btn.cpr-primary:hover { filter:brightness(1.08); }
+.cprest .cpr-btn.cpr-quiet { border-color:transparent; color:var(--muted); }
+.cprest .cpr-btn.cpr-quiet:hover { color:var(--ink); background:var(--surface-2); }
+.cprest .cpr-btn.cpr-danger { color:var(--bad); border-color:color-mix(in srgb, var(--bad) 35%, transparent); }
+.cprest .cpr-btn.cpr-danger:hover { background:var(--bad-soft); }
+.cprest .cpr-btn[disabled] { opacity:.45; cursor:not-allowed; }
+.cprest .cpr-actions { display:flex; gap:var(--s2); justify-content:flex-end; }
 
-.cprest .search {
+.cprest .cpr-search {
   display:flex; align-items:center; gap:var(--s2); background:var(--surface);
   border:1px solid var(--line-strong); border-radius:var(--r); padding:0 var(--s3); min-height:34px;
 }
-.cprest .search input { border:0; background:none; font:inherit; font-size:14px; color:var(--ink); padding:6px 0; width:200px; }
-.cprest .search input:focus { outline:none; }
-.cprest .chips { display:flex; gap:var(--s2); flex-wrap:wrap; }
-.cprest .chip {
+.cprest .cpr-search input { border:0; background:none; font:inherit; font-size:14px; color:var(--ink); padding:6px 0; width:200px; }
+.cprest .cpr-search input:focus { outline:none; }
+.cprest .cpr-chips { display:flex; gap:var(--s2); flex-wrap:wrap; }
+.cprest .cpr-chip {
   appearance:none; font:inherit; font-size:13px; cursor:pointer; padding:5px 11px; min-height:32px;
   border-radius:99px; border:1px solid var(--line-strong); background:var(--surface); color:var(--muted);
   transition:background .18s ease, color .18s ease, border-color .18s ease;
 }
-.cprest .chip:hover { color:var(--ink); }
-.cprest .chip[aria-pressed="true"] { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); font-weight:500; }
+.cprest .cpr-chip:hover { color:var(--ink); }
+.cprest .cpr-chip[aria-pressed="true"] { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); font-weight:500; }
 
-.cprest .link { color:var(--accent); text-decoration:none; border-bottom:1px solid transparent; cursor:pointer; background:none; border-x:0; border-top:0; font:inherit; padding:0; }
-.cprest .link:hover { border-bottom-color:currentColor; }
+.cprest .cpr-link { color:var(--accent); text-decoration:none; border-bottom:1px solid transparent; cursor:pointer; background:none; border-x:0; border-top:0; font:inherit; padding:0; }
+.cprest .cpr-link:hover { border-bottom-color:currentColor; }
 
 /* ---- banners ---- */
-.cprest .banner { border-radius:var(--r); padding:var(--s3) var(--s4); font-size:14px; display:flex; gap:var(--s3); align-items:flex-start; border:1px solid; }
-.cprest .banner.warn { background:var(--warn-soft); border-color:color-mix(in srgb, var(--warn) 30%, transparent); color:var(--warn); }
-.cprest .banner.bad { background:var(--bad-soft);  border-color:color-mix(in srgb, var(--bad) 30%, transparent);  color:var(--bad); }
-.cprest .banner b { font-weight:600; }
-.cprest .banner .body { color:var(--ink); }
-.cprest .banner .body b { color:inherit; }
+.cprest .cpr-banner { border-radius:var(--r); padding:var(--s3) var(--s4); font-size:14px; display:flex; gap:var(--s3); align-items:flex-start; border:1px solid; }
+.cprest .cpr-banner.cpr-warn { background:var(--warn-soft); border-color:color-mix(in srgb, var(--warn) 30%, transparent); color:var(--warn); }
+.cprest .cpr-banner.cpr-bad { background:var(--bad-soft);  border-color:color-mix(in srgb, var(--bad) 30%, transparent);  color:var(--bad); }
+.cprest .cpr-banner b { font-weight:600; }
+.cprest .cpr-banner .cpr-body { color:var(--ink); }
+.cprest .cpr-banner .cpr-body b { color:inherit; }
 
 /* ---- empty state ---- */
-.cprest .empty { text-align:center; padding:var(--s6) var(--s5); color:var(--muted); }
-.cprest .empty p { margin:0 0 var(--s4); }
+.cprest .cpr-empty { text-align:center; padding:var(--s6) var(--s5); color:var(--muted); }
+.cprest .cpr-empty p { margin:0 0 var(--s4); }
 
 /* ---- detail ---- */
-.cprest .crumb { font-size:13px; color:var(--muted); margin-bottom:var(--s2); display:flex; gap:6px; align-items:center; }
-.cprest .facts { display:grid; grid-template-columns:repeat(4, 1fr); gap:var(--s4); }
-.cprest .log {
+.cprest .cpr-crumb { font-size:13px; color:var(--muted); margin-bottom:var(--s2); display:flex; gap:6px; align-items:center; }
+.cprest .cpr-facts { display:grid; grid-template-columns:repeat(4, 1fr); gap:var(--s4); }
+.cprest .cpr-log {
   background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r);
   padding:var(--s3); font-family:"Fira Code", ui-monospace, monospace; font-size:12px;
   line-height:1.6; white-space:pre-wrap; word-break:break-word; max-height:200px; overflow:auto; color:var(--muted);
@@ -212,20 +212,21 @@
 .cprest details > summary::marker { color:var(--faint); }
 
 /* ---- destructive zone ---- */
-.cprest .danger-zone { border:1px solid color-mix(in srgb, var(--bad) 35%, transparent); border-radius:var(--r); background:var(--bad-soft); padding:var(--s4) var(--s5); }
-.cprest .danger-zone h3 { margin:0 0 var(--s1); font-size:14px; color:var(--bad); }
-.cprest .danger-zone p { margin:0 0 var(--s3); font-size:13px; color:var(--ink); max-width:62ch; }
+.cprest .cpr-danger-zone { border:1px solid color-mix(in srgb, var(--bad) 35%, transparent); border-radius:var(--r); background:var(--bad-soft); padding:var(--s4) var(--s5); }
+.cprest .cpr-danger-zone h3 { margin:0 0 var(--s1); font-size:14px; color:var(--bad); }
+.cprest .cpr-danger-zone p { margin:0 0 var(--s3); font-size:13px; color:var(--ink); max-width:62ch; }
 
-.cprest .note { font-size:12px; color:var(--faint); margin-top:var(--s4); }
-.cprest label.field { display:block; font-size:13px; font-weight:500; margin-bottom:var(--s1); }
-.cprest input[type=text], .cprest select {
+.cprest .cpr-note { font-size:12px; color:var(--faint); margin-top:var(--s4); }
+.cprest label { display:block; font-size:13px; font-weight:500; margin-bottom:var(--s1); color:var(--ink); }
+.cprest input[type=text], .cprest input[type=password], .cprest input[type=number],
+.cprest input[type=email], .cprest input[type=search], .cprest select {
   width:100%; font:inherit; font-size:14px; padding:7px 10px; border-radius:var(--r);
   border:1px solid var(--line-strong); background:var(--surface); color:var(--ink);
 }
-.cprest .help { font-size:12px; color:var(--muted); margin-top:var(--s1); }
+.cprest .cpr-help { display:block; font-size:12px; color:var(--muted); margin-top:var(--s1); }
 
 @media (max-width:900px) {
-  .cprest .grid3, .cprest .grid2, .cprest .facts { grid-template-columns:1fr; }
+  .cprest .cpr-grid3, .cprest .cpr-grid2, .cprest .cpr-facts { grid-template-columns:1fr; }
   .cprest nav { gap:var(--s4); }
 }
 @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
@@ -248,7 +249,7 @@
   max-width:1180px; margin:0 auto; padding:0;
   display:flex; flex-direction:column; gap:var(--s5);
 }
-.cprest .bar {
+.cprest .cpr-bar {
   background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
   padding:0 var(--s4); margin-bottom:var(--s5);
   display:flex; align-items:center; gap:var(--s5); position:static; box-shadow:var(--shadow);
@@ -268,27 +269,27 @@
 
 /* Theme control. WHM does not tell a plugin which theme it is wearing, so
    the operator gets the final say; the default follows the system. */
-.cprest .theme {
+.cprest .cpr-theme {
   display:flex; gap:2px; margin-left:auto; background:var(--surface-2);
   border:1px solid var(--line); border-radius:99px; padding:2px; flex:none;
 }
-.cprest .theme button {
+.cprest .cpr-theme button {
   appearance:none; border:0; background:none; font:inherit; font-size:12px; cursor:pointer;
   color:var(--muted); padding:4px 10px; min-height:28px; border-radius:99px; line-height:1;
   transition:background .18s ease, color .18s ease;
 }
-.cprest .theme button:hover { color:var(--ink); }
-.cprest .theme button[aria-pressed="true"] {
+.cprest .cpr-theme button:hover { color:var(--ink); }
+.cprest .cpr-theme button[aria-pressed="true"] {
   background:var(--surface); color:var(--ink); font-weight:500; box-shadow:var(--shadow);
 }
-.cprest .theme svg { display:block; }
+.cprest .cpr-theme svg { display:block; }
 
-.cprest .visually-hidden {
+.cprest .cpr-visually-hidden {
   position:absolute; width:1px; height:1px; padding:0; margin:-1px;
   overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
 }
 
-.cprest .banner.ok {
+.cprest .cpr-banner.cpr-ok {
   background:var(--good-soft); border-color:color-mix(in srgb, var(--good) 30%, transparent); color:var(--good);
 }
 .cprest textarea {
@@ -296,15 +297,15 @@
   padding:var(--s3); border-radius:var(--r); border:1px solid var(--line-strong);
   background:var(--surface-2); color:var(--ink); min-height:5rem; line-height:1.6;
 }
-.cprest label.check { display:flex; gap:var(--s2); align-items:flex-start; font-size:14px; margin:var(--s3) 0; font-weight:400; }
-.cprest label.check input { margin-top:4px; flex:none; }
-.cprest .muted { color:var(--muted); }
-.cprest .warnbox { border-left:3px solid var(--warn); padding-left:var(--s3); margin:var(--s3) 0; font-size:14px; }
-.cprest form.inline { display:inline; }
-.cprest tr.detailrow td { padding-top:0; }
-.cprest tr.detailrow summary { color:var(--accent); font-size:13px; }
-.cprest details.keybox { margin-top:var(--s3); border-top:1px solid var(--line); padding-top:var(--s3); }
-.cprest details.keybox summary { color:var(--accent); }
+.cprest label.cpr-check { display:flex; gap:var(--s2); align-items:flex-start; font-size:14px; margin:var(--s3) 0; font-weight:400; }
+.cprest label.cpr-check input { margin-top:4px; flex:none; }
+.cprest .cpr-muted { color:var(--muted); }
+.cprest .cpr-warnbox { border-left:3px solid var(--warn); padding-left:var(--s3); margin:var(--s3) 0; font-size:14px; }
+.cprest form.cpr-inline { display:inline; }
+.cprest tr.cpr-detailrow td { padding-top:0; }
+.cprest tr.cpr-detailrow summary { color:var(--accent); font-size:13px; }
+.cprest details.cpr-keybox { margin-top:var(--s3); border-top:1px solid var(--line); padding-top:var(--s3); }
+.cprest details.cpr-keybox summary { color:var(--accent); }
 
 /* --- holding our own inside WHM's stylesheet ------------------------- */
 
@@ -312,72 +313,80 @@
    its interface styles bare form, table, button and heading elements, and
    a plugin fragment sits right in the middle of that. Everything we render
    is therefore reset to a known state first. */
-.cprest form,
-.cprest fieldset {
+.cprest :where(form, fieldset) {
   margin:0; padding:0; border:0; background:none; box-shadow:none; border-radius:0;
 }
-.cprest form.inline { display:inline-block; vertical-align:middle; }
+.cprest form.cpr-inline { display:inline-block; vertical-align:middle; }
 
-/* A hidden input is not a control. Something in WHM's stylesheets gives
-   inputs a box, and the CSRF and account fields were being drawn as wide
-   grey rectangles in the middle of every row. */
+/* Belt and braces: a hidden input must never occupy space, whatever a
+   leaked rule says about inputs in general. */
 .cprest input[type="hidden"] { display:none !important; }
 
-/* Our visible controls state their own size, so a leaked width or display
-   rule cannot stretch them. */
-.cprest input[type="text"], .cprest input[type="password"],
-.cprest input[type="number"], .cprest select {
+/* Our visible controls state their own box, so a leaked border, padding or
+   width cannot reshape them. WHM's legacy sheet still gives text and
+   password inputs an inset two-tone border. */
+.cprest :where(input[type="text"], input[type="password"], input[type="number"],
+                input[type="email"], input[type="search"], select) {
   display:block; width:100%; max-width:100%; height:auto; min-height:34px;
+  border:1px solid var(--line-strong); border-radius:var(--r); padding:7px 10px;
+  background:var(--surface); color:var(--ink);
   box-shadow:none; text-transform:none;
 }
-.cprest .search input {
+.cprest .cpr-search input {
   display:inline-block; width:200px; min-height:0; border:0; padding:6px 0; background:none;
 }
-.cprest .btn, .cprest .chip {
+.cprest .cpr-btn, .cprest .cpr-chip {
   display:inline-flex; align-items:center; justify-content:center;
   width:auto; text-transform:none; text-shadow:none; box-shadow:none;
 }
-.cprest table { font-size:inherit; font-family:inherit; background:none; }
-.cprest th, .cprest td { background:none; }
-.cprest h1, .cprest h2, .cprest h3 { font-family:inherit; text-shadow:none; }
-.cprest p { margin:0; }
-.cprest button, .cprest input, .cprest select, .cprest textarea { font-family:inherit; }
-.cprest a { text-decoration:none; }
+.cprest :where(table) { font-size:inherit; font-family:inherit; background:none; }
+.cprest :where(th, td) { background:none; }
+.cprest :where(h1, h2, h3) {
+  font-family:inherit; text-shadow:none; color:var(--ink); margin:0;
+  font-variant:normal; letter-spacing:normal;
+}
+/* WHM colours every anchor #0088cc. Ours take their colour from the
+   component they belong to. */
+.cprest :where(a:link, a:visited, a:active) { color:inherit; }
+.cprest .cpr-link, .cprest .cpr-link:link, .cprest .cpr-link:visited { color:var(--accent); }
+.cprest :where(p) { margin:0; }
+.cprest :where(button, input, select, textarea) { font-family:inherit; }
+.cprest :where(a) { text-decoration:none; }
 
 /* --- type scale ------------------------------------------------------ */
 /* One scale, stated once, so nothing drifts: 20 / 15 / 14 / 13 / 11.5. */
 .cprest { font-size:14.5px; }
 .cprest h1 { font-size:20px; font-weight:650; }
-.cprest .sub { font-size:14px; }
+.cprest .cpr-sub { font-size:14px; }
 .cprest h2 { font-size:11.5px; }
 .cprest table { font-size:14px; }
 .cprest th { font-size:11.5px; }
-.cprest .sublabel { font-size:13px; }
-.cprest .statlabel { font-size:11.5px; }
-.cprest .hint, .cprest .help { font-size:13px; }
-.cprest .note { font-size:12.5px; }
-.cprest .pill { font-size:12.5px; }
-.cprest .btn { font-size:13.5px; }
-.cprest .chip { font-size:13.5px; }
-.cprest .cov-figure { font-size:30px; }
-.cprest .cov-figure small { font-size:14.5px; }
-.cprest .stat { font-size:22px; }
-.cprest .acct { font-weight:600; font-size:14.5px; }
+.cprest .cpr-sublabel { font-size:13px; }
+.cprest .cpr-statlabel { font-size:11.5px; }
+.cprest .cpr-hint, .cprest .cpr-help { font-size:13px; }
+.cprest .cpr-note { font-size:12.5px; }
+.cprest .cpr-pill { font-size:12.5px; }
+.cprest .cpr-btn { font-size:13.5px; }
+.cprest .cpr-chip { font-size:13.5px; }
+.cprest .cpr-cov-figure { font-size:30px; }
+.cprest .cpr-cov-figure small { font-size:14.5px; }
+.cprest .cpr-stat { font-size:22px; }
+.cprest .cpr-acct { font-weight:600; font-size:14.5px; }
 
 /* --- row state marker ------------------------------------------------ */
 /* A full-height border on every row merges into one long bar when many
    rows share a state, which reads as a rendering fault rather than as
    information. A short inset marker stays per-row. */
-.cprest tr.state td:first-child { border-left:0; padding-left:var(--s3); position:relative; }
-.cprest tr.state td:first-child::before {
+.cprest tr.cpr-state td:first-child { border-left:0; padding-left:var(--s3); position:relative; }
+.cprest tr.cpr-state td:first-child::before {
   content:""; position:absolute; left:0; top:50%; transform:translateY(-50%);
   width:3px; height:22px; border-radius:0 2px 2px 0; background:transparent;
 }
-.cprest tr.s-ok td:first-child::before   { background:var(--good); }
-.cprest tr.s-warn td:first-child::before { background:var(--warn); }
-.cprest tr.s-bad td:first-child::before  { background:var(--bad); }
+.cprest tr.cpr-s-ok td:first-child::before   { background:var(--good); }
+.cprest tr.cpr-s-warn td:first-child::before { background:var(--warn); }
+.cprest tr.cpr-s-bad td:first-child::before  { background:var(--bad); }
 
 /* --- action columns -------------------------------------------------- */
 /* Buttons in a row sit together and stay on one line. */
-.cprest .actions { display:flex; gap:var(--s2); justify-content:flex-end; align-items:center; flex-wrap:nowrap; }
-.cprest td .actions .btn { min-height:30px; padding:5px 11px; }
+.cprest .cpr-actions { display:flex; gap:var(--s2); justify-content:flex-end; align-items:center; flex-wrap:nowrap; }
+.cprest td .cpr-actions .cpr-btn { min-height:30px; padding:5px 11px; }

@@ -1,98 +1,98 @@
 {{define "content"}}
 {{$d := .Data}}
 <div>
-  <div class="crumb"><a class="link" href="?p=accounts">Accounts</a> <span>›</span> <span>{{$d.Account.User}}</span></div>
+  <div class="cpr-crumb"><a class="cpr-link" href="?p=accounts">Accounts</a> <span>›</span> <span>{{$d.Account.User}}</span></div>
   <h1>{{$d.Account.User}}</h1>
-  <p class="sub">{{if $d.Account.PrimaryDomain}}{{$d.Account.PrimaryDomain}} · {{end}}<span class="mono">{{$d.Account.HomeDir}}</span></p>
+  <p class="cpr-sub">{{if $d.Account.PrimaryDomain}}{{$d.Account.PrimaryDomain}} · {{end}}<span class="cpr-mono">{{$d.Account.HomeDir}}</span></p>
 </div>
 
-<div class="card pad">
-  <div class="facts">
-    <div><div class="statlabel">Size</div>
-      <div class="stat num">{{if $d.Account.SizeBytes}}{{bytes $d.Account.SizeBytes}}{{else}}—{{end}}</div>
-      {{if not $d.Account.SizeBytes}}<p class="hint">Measured when a backup runs.</p>{{end}}</div>
-    <div><div class="statlabel">Last backup</div>
-      <div class="stat">{{if $d.Account.LastBackup}}{{stampPtr $d.Account.LastBackup}}{{else}}Never{{end}}</div></div>
-    <div><div class="statlabel">Snapshots</div>
-      <div class="stat num">{{len $d.Snapshots}}</div>
-      {{if $d.LookupError}}<p class="hint">Could not be read</p>{{end}}</div>
-    <div><div class="statlabel">Last verified</div>
+<div class="cpr-card cpr-pad">
+  <div class="cpr-facts">
+    <div><div class="cpr-statlabel">Size</div>
+      <div class="cpr-stat cpr-num">{{if $d.Account.SizeBytes}}{{bytes $d.Account.SizeBytes}}{{else}}—{{end}}</div>
+      {{if not $d.Account.SizeBytes}}<p class="cpr-hint">Measured when a backup runs.</p>{{end}}</div>
+    <div><div class="cpr-statlabel">Last backup</div>
+      <div class="cpr-stat">{{if $d.Account.LastBackup}}{{stampPtr $d.Account.LastBackup}}{{else}}Never{{end}}</div></div>
+    <div><div class="cpr-statlabel">Snapshots</div>
+      <div class="cpr-stat cpr-num">{{len $d.Snapshots}}</div>
+      {{if $d.LookupError}}<p class="cpr-hint">Could not be read</p>{{end}}</div>
+    <div><div class="cpr-statlabel">Last verified</div>
       {{if $d.LastDrill}}
-        <div class="stat">{{if eq (printf "%s" $d.LastDrill.Status) "success"}}Passed{{else}}Failed{{end}}</div>
-        <p class="hint">{{ago $d.LastDrill.FinishedAt}}</p>
-      {{else}}<div class="stat muted">Never</div>{{end}}</div>
+        <div class="cpr-stat">{{if eq (printf "%s" $d.LastDrill.Status) "success"}}Passed{{else}}Failed{{end}}</div>
+        <p class="cpr-hint">{{ago $d.LastDrill.FinishedAt}}</p>
+      {{else}}<div class="cpr-stat cpr-muted">Never</div>{{end}}</div>
   </div>
 </div>
 
-<div class="row">
-  <form method="post" action="?p=accounts/backup" class="inline">
+<div class="cpr-row">
+  <form method="post" action="?p=accounts/backup" class="cpr-inline">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <input type="hidden" name="account" value="{{$d.Account.User}}">
-    <button class="btn primary" {{if $d.Account.Running}}disabled{{end}}>Back up now</button>
+    <button class="cpr-btn cpr-primary" {{if $d.Account.Running}}disabled{{end}}>Back up now</button>
   </form>
-  <form method="post" action="?p=accounts/download" class="inline">
+  <form method="post" action="?p=accounts/download" class="cpr-inline">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <input type="hidden" name="account" value="{{$d.Account.User}}">
-    <button class="btn" {{if or $d.Account.Running (not $d.Account.LastBackup)}}disabled{{end}}>Download latest</button>
+    <button class="cpr-btn" {{if or $d.Account.Running (not $d.Account.LastBackup)}}disabled{{end}}>Download latest</button>
   </form>
-  <form method="post" action="?p=accounts/verify" class="inline">
+  <form method="post" action="?p=accounts/verify" class="cpr-inline">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <input type="hidden" name="account" value="{{$d.Account.User}}">
-    <button class="btn" {{if or $d.Account.Running (not $d.Account.LastBackup)}}disabled{{end}}>Verify backup</button>
+    <button class="cpr-btn" {{if or $d.Account.Running (not $d.Account.LastBackup)}}disabled{{end}}>Verify backup</button>
   </form>
-  {{if $d.Account.Running}}<span class="muted" style="font-size:13px">Something is running for this account.</span>{{end}}
+  {{if $d.Account.Running}}<span class="cpr-muted" style="font-size:13px">Something is running for this account.</span>{{end}}
 </div>
 
 {{if $d.LookupError}}
-<div class="banner bad"><div class="body">
+<div class="cpr-banner cpr-bad"><div class="cpr-body">
   <b>The backups for this account could not be listed.</b> {{$d.LookupError}}
 </div></div>
 {{end}}
 
-<div class="card">
-  <div class="pad spread" style="border-bottom:1px solid var(--line)">
+<div class="cpr-card">
+  <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
     <h2 style="margin:0">Snapshots</h2>
-    {{if $d.RepositoryName}}<span style="font-size:13px; color:var(--muted)">on <span class="mono">{{$d.RepositoryName}}</span></span>{{end}}
+    {{if $d.RepositoryName}}<span style="font-size:13px; color:var(--muted)">on <span class="cpr-mono">{{$d.RepositoryName}}</span></span>{{end}}
   </div>
   {{if $d.Snapshots}}
-  <div class="tablewrap"><table>
-    <thead><tr><th>Taken</th><th>Read</th><th>Id</th><th class="right">&nbsp;</th></tr></thead>
+  <div class="cpr-tablewrap"><table>
+    <thead><tr><th>Taken</th><th>Read</th><th>Id</th><th class="cpr-right">&nbsp;</th></tr></thead>
     <tbody>
       {{range $d.Snapshots}}
       <tr>
         <td>{{stamp .Time}}</td>
-        <td class="mono num">{{bytes .Summary.TotalBytesProcessed}}</td>
-        <td class="mono">{{short .ID}}</td>
-        <td class="right"><div class="actions">
-          <a class="btn quiet" href="?p=restore&amp;account={{$d.Account.User}}&amp;repository={{$d.RepositoryID}}">Restore files…</a>
+        <td class="cpr-mono cpr-num">{{bytes .Summary.TotalBytesProcessed}}</td>
+        <td class="cpr-mono">{{short .ID}}</td>
+        <td class="cpr-right"><div class="cpr-actions">
+          <a class="cpr-btn cpr-quiet" href="?p=restore&amp;account={{$d.Account.User}}&amp;repository={{$d.RepositoryID}}">Restore files…</a>
         </div></td>
       </tr>
       {{end}}
     </tbody>
   </table></div>
   {{else if not $d.LookupError}}
-  <div class="empty"><p><b>No backups of this account yet.</b><br>
+  <div class="cpr-empty"><p><b>No backups of this account yet.</b><br>
     Back it up once and its snapshots appear here.</p></div>
   {{end}}
 </div>
 
-<div class="card">
-  <div class="pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Activity</h2></div>
+<div class="cpr-card">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Activity</h2></div>
   {{if $d.Activity}}
-  <div class="tablewrap"><table><tbody>
+  <div class="cpr-tablewrap"><table><tbody>
     {{range $d.Activity}}
-    <tr class="state {{.Stripe}}">
+    <tr class="cpr-state {{.Stripe}}">
       <td style="width:150px; white-space:nowrap">{{stamp .When}}</td>
       <td style="white-space:nowrap">{{.What}}</td>
       <td>{{template "runstate" .Status}}</td>
       <td>
         {{if .Note}}<div style="font-size:13px">{{.Note}}</div>{{end}}
-        {{if .Download}}<a class="btn" href="?p=download&amp;id={{.Download}}">Download</a>{{end}}
+        {{if .Download}}<a class="cpr-btn" href="?p=download&amp;id={{.Download}}">Download</a>{{end}}
         {{if .Log}}
         <details>
           <summary>What restic reported</summary>
-          <div class="log">{{.Log}}</div>
-          {{if .Incomplete}}<p class="hint">Files that vanish mid-backup are normal on a live
+          <div class="cpr-log">{{.Log}}</div>
+          {{if .Incomplete}}<p class="cpr-hint">Files that vanish mid-backup are normal on a live
             server — sessions, sockets, caches. What matters is whether anything above is a file
             the site actually needs.</p>{{end}}
         </details>
@@ -102,16 +102,16 @@
     {{end}}
   </tbody></table></div>
   {{else}}
-  <div class="empty"><p>Nothing has run for this account yet.</p></div>
+  <div class="cpr-empty"><p>Nothing has run for this account yet.</p></div>
   {{end}}
 </div>
 
 {{if $d.Snapshots}}
-<div class="danger-zone">
+<div class="cpr-danger-zone">
   <h3>Restore over the live account</h3>
   <p>Replaces {{$d.Account.User}}'s files, databases and settings with the contents of a backup.
     The account as it exists now is gone. There is no undo.</p>
-  <a class="btn danger" href="?p=restore&amp;account={{$d.Account.User}}&amp;repository={{$d.RepositoryID}}">Restore over {{$d.Account.User}}…</a>
+  <a class="cpr-btn cpr-danger" href="?p=restore&amp;account={{$d.Account.User}}&amp;repository={{$d.RepositoryID}}">Restore over {{$d.Account.User}}…</a>
 </div>
 {{end}}
 {{end}}

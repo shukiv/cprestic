@@ -2,15 +2,15 @@
 {{$d := .Data}}
 <div>
   <h1>Accounts</h1>
-  <p class="sub">Back up, verify or recover any account on this server.</p>
+  <p class="cpr-sub">Back up, verify or recover any account on this server.</p>
 </div>
 
-{{range $d.Warnings}}<div class="warnbox">{{.}}</div>{{end}}
+{{range $d.Warnings}}<div class="cpr-warnbox">{{.}}</div>{{end}}
 
 {{if $d.Accounts}}
-<div class="row spread">
-  <div class="row">
-    <div class="search">
+<div class="cpr-row cpr-spread">
+  <div class="cpr-row">
+    <div class="cpr-search">
       <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor"
            stroke-width="2" aria-hidden="true" style="color:var(--faint)">
         <circle cx="9" cy="9" r="6"/><path d="M14 14l4 4"/>
@@ -18,61 +18,61 @@
       <input type="text" id="filter" placeholder="Filter accounts" aria-label="Filter accounts"
              autocomplete="off" data-filter="#accounts">
     </div>
-    <div class="chips" data-filter-state="#accounts">
-      <button type="button" class="chip" aria-pressed="true" data-state="">All {{len $d.Accounts}}</button>
-      <button type="button" class="chip" aria-pressed="false" data-state="ok">Protected {{$d.Protected}}</button>
-      <button type="button" class="chip" aria-pressed="false" data-state="bad">Never {{$d.Unprotected}}</button>
+    <div class="cpr-chips" data-filter-state="#accounts">
+      <button type="button" class="cpr-chip" aria-pressed="true" data-state="">All {{len $d.Accounts}}</button>
+      <button type="button" class="cpr-chip" aria-pressed="false" data-state="ok">Protected {{$d.Protected}}</button>
+      <button type="button" class="cpr-chip" aria-pressed="false" data-state="bad">Never {{$d.Unprotected}}</button>
     </div>
   </div>
   {{if $d.Policies}}
-  <form method="post" action="?p=schedule/run" class="inline">
+  <form method="post" action="?p=schedule/run" class="cpr-inline">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
     <input type="hidden" name="id" value="{{(index $d.Policies 0).ID}}">
-    <button class="btn primary">Back up all</button>
+    <button class="cpr-btn cpr-primary">Back up all</button>
   </form>
   {{end}}
 </div>
 
-<div class="card">
-  <div class="tablewrap">
+<div class="cpr-card">
+  <div class="cpr-tablewrap">
     <table id="accounts">
       <thead>
-        <tr><th>Account</th><th>Size</th><th>Last backup</th><th>State</th><th class="right">&nbsp;</th></tr>
+        <tr><th>Account</th><th>Size</th><th>Last backup</th><th>State</th><th class="cpr-right">&nbsp;</th></tr>
       </thead>
       <tbody>
         {{range $d.Accounts}}
-        <tr class="state {{.Stripe}}" data-name="{{.User}} {{.PrimaryDomain}}" data-state="{{.Filter}}">
-          <td class="acct"><a class="link" href="?p=account&amp;user={{.User}}">{{.User}}</a>
-            {{if .PrimaryDomain}}<div class="sublabel">{{.PrimaryDomain}}</div>{{end}}</td>
-          <td class="mono num">{{if .SizeBytes}}{{bytes .SizeBytes}}{{else}}<span class="muted">—</span>{{end}}</td>
-          <td>{{if .LastBackup}}{{ago .LastBackup}}{{else}}<span class="mono">never</span>{{end}}</td>
+        <tr class="cpr-state {{.Stripe}}" data-name="{{.User}} {{.PrimaryDomain}}" data-state="{{.Filter}}">
+          <td class="cpr-acct"><a class="cpr-link" href="?p=account&amp;user={{.User}}">{{.User}}</a>
+            {{if .PrimaryDomain}}<div class="cpr-sublabel">{{.PrimaryDomain}}</div>{{end}}</td>
+          <td class="cpr-mono cpr-num">{{if .SizeBytes}}{{bytes .SizeBytes}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
+          <td>{{if .LastBackup}}{{ago .LastBackup}}{{else}}<span class="cpr-mono">never</span>{{end}}</td>
           <td>{{template "accountstate" .}}</td>
-          <td class="right"><div class="actions">
-            <form method="post" action="?p=accounts/backup" class="inline">
+          <td class="cpr-right"><div class="cpr-actions">
+            <form method="post" action="?p=accounts/backup" class="cpr-inline">
               <input type="hidden" name="csrf" value="{{$.CSRF}}">
               <input type="hidden" name="account" value="{{.User}}">
-              <button class="btn" {{if .Running}}disabled{{end}}>Back up</button>
+              <button class="cpr-btn" {{if .Running}}disabled{{end}}>Back up</button>
             </form>
-            <form method="post" action="?p=accounts/download" class="inline">
+            <form method="post" action="?p=accounts/download" class="cpr-inline">
               <input type="hidden" name="csrf" value="{{$.CSRF}}">
               <input type="hidden" name="account" value="{{.User}}">
-              <button class="btn" {{if or .Running (not .LastBackup)}}disabled{{end}}>Download</button>
+              <button class="cpr-btn" {{if or .Running (not .LastBackup)}}disabled{{end}}>Download</button>
             </form>
-            <a class="btn quiet" href="?p=account&amp;user={{.User}}">Open</a>
+            <a class="cpr-btn cpr-quiet" href="?p=account&amp;user={{.User}}">Open</a>
           </div></td>
         </tr>
         {{end}}
       </tbody>
     </table>
   </div>
-  <div class="pad" style="border-top:1px solid var(--line); color:var(--muted); font-size:13px">
+  <div class="cpr-pad" style="border-top:1px solid var(--line); color:var(--muted); font-size:13px">
     <span data-count-for="#accounts">{{len $d.Accounts}}</span> account{{if ne (len $d.Accounts) 1}}s{{end}}
   </div>
 </div>
 {{else}}
-<div class="card"><div class="empty">
+<div class="cpr-card"><div class="cpr-empty">
   <p><b>No cPanel accounts found on this server.</b><br>
-    cprest reads them from <span class="mono">/var/cpanel/users</span>.</p>
+    cprest reads them from <span class="cpr-mono">/var/cpanel/users</span>.</p>
 </div></div>
 {{end}}
 {{end}}

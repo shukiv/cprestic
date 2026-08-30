@@ -16,7 +16,7 @@
     var term = search ? search.value.trim().toLowerCase() : "";
     var state = "";
     if (chips) {
-      var pressed = chips.querySelector('.chip[aria-pressed="true"]');
+      var pressed = chips.querySelector('.cpr-chip[aria-pressed="true"]');
       state = pressed ? pressed.dataset.state : "";
     }
 
@@ -42,9 +42,9 @@
   Array.prototype.forEach.call(document.querySelectorAll("[data-filter-state]"), function (group) {
     var target = group.dataset.filterState;
     group.addEventListener("click", function (event) {
-      var chip = event.target.closest(".chip");
+      var chip = event.target.closest(".cpr-chip");
       if (!chip) { return; }
-      Array.prototype.forEach.call(group.querySelectorAll(".chip"), function (other) {
+      Array.prototype.forEach.call(group.querySelectorAll(".cpr-chip"), function (other) {
         other.setAttribute("aria-pressed", String(other === chip));
       });
       applyFilters(target);

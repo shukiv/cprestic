@@ -659,13 +659,13 @@ type accountView struct {
 func (a accountView) Stripe() string {
 	switch {
 	case a.Running:
-		return "s-warn"
+		return "cpr-s-warn"
 	case a.LastBackup == nil, a.LastStatus == job.StatusFailed:
-		return "s-bad"
+		return "cpr-s-bad"
 	case a.LastStatus == job.StatusPartialSuccess:
-		return "s-warn"
+		return "cpr-s-warn"
 	default:
-		return "s-ok"
+		return "cpr-s-ok"
 	}
 }
 
@@ -784,11 +784,11 @@ type activityRow struct {
 func (a activityRow) Stripe() string {
 	switch a.Status {
 	case job.StatusSuccess:
-		return "s-ok"
+		return "cpr-s-ok"
 	case job.StatusFailed:
-		return "s-bad"
+		return "cpr-s-bad"
 	default:
-		return "s-warn"
+		return "cpr-s-warn"
 	}
 }
 

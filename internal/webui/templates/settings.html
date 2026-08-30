@@ -2,22 +2,22 @@
 {{$data := .Data}}
 <div>
   <h1>Settings</h1>
-  <p class="sub">How this server takes its backups.</p>
+  <p class="cpr-sub">How this server takes its backups.</p>
 </div>
-<div class="card pad">
+<div class="cpr-card cpr-pad">
   <form method="post" action="?p=settings/save">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <div class="grid2">
+    <div class="cpr-grid2">
       <div>
         <label for="hostname">This server's name</label>
         <input type="text" id="hostname" name="hostname" value="{{$data.Settings.Hostname}}">
-        <small class="help">Recorded on every backup, so you can tell whose it is.</small>
+        <small class="cpr-help">Recorded on every backup, so you can tell whose it is.</small>
       </div>
       <div>
         <label for="max_concurrent">Accounts backed up at once</label>
         <input type="number" id="max_concurrent" name="max_concurrent"
                value="{{$data.Settings.MaxConcurrent}}" min="1">
-        <small class="help">Each one needs staging space of about its own size.</small>
+        <small class="cpr-help">Each one needs staging space of about its own size.</small>
       </div>
       <div>
         <label for="restic">restic binary</label>
@@ -26,37 +26,37 @@
       <div>
         <label for="restic_cacert">Extra CA bundle for restic</label>
         <input type="text" id="restic_cacert" name="restic_cacert" value="{{$data.Settings.ResticCACert}}">
-        <small class="help">Only for a backup server with a private certificate authority.</small>
+        <small class="cpr-help">Only for a backup server with a private certificate authority.</small>
       </div>
     </div>
-    <div class="actions"><button class="primary" type="submit">Save</button></div>
+    <div class="cpr-actions"><button class="cpr-btn cpr-primary" type="submit">Save</button></div>
   </form>
 </div>
 
-<div class="card pad">
+<div class="cpr-card cpr-pad">
   <h2 style="margin-top:0">Staging</h2>
-  <p><span class="mono">{{$data.Settings.StagingRoot}}</span> — {{bytes $data.StagingFree}} free</p>
-  <p class="hint">This is where an account is assembled before it is uploaded. It needs
+  <p><span class="cpr-mono">{{$data.Settings.StagingRoot}}</span> — {{bytes $data.StagingFree}} free</p>
+  <p class="cpr-hint">This is where an account is assembled before it is uploaded. It needs
   roughly as much free space as the largest account being backed up. It is deliberately
   not editable here: the path is recorded inside every backup, and changing it would
   strand the retention rules that keep your old backups tidy.</p>
 </div>
 
-<div class="card pad">
+<div class="cpr-card cpr-pad">
   <h2 style="margin-top:0">This server's pkgacct</h2>
   {{if $data.Settings.PkgacctFlags}}
   <table>
     {{range $name, $flag := $data.Settings.PkgacctFlags}}
-    <tr><td>{{$name}}</td><td class="mono">{{$flag}}</td></tr>
+    <tr><td>{{$name}}</td><td class="cpr-mono">{{$flag}}</td></tr>
     {{end}}
   </table>
   {{if not (index $data.Settings.PkgacctFlags "nocompress")}}
-  <div class="warnbox">This cPanel version cannot produce an uncompressed archive.
+  <div class="cpr-warnbox">This cPanel version cannot produce an uncompressed archive.
   Single-archive backups will store a full copy every time. Use the split payload
   mode, which is the default.</div>
   {{end}}
   {{else}}
-  <p class="hint">Not probed yet. It is checked when the service starts.</p>
+  <p class="cpr-hint">Not probed yet. It is checked when the service starts.</p>
   {{end}}
 </div>
 {{end}}

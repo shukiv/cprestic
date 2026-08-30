@@ -2,12 +2,12 @@
 {{$data := .Data}}
 <div>
   <h1>Restore</h1>
-  <p class="sub">Recover a whole account, or single files, from a backup.</p>
+  <p class="cpr-sub">Recover a whole account, or single files, from a backup.</p>
 </div>
-<div class="card pad">
+<div class="cpr-card cpr-pad">
   <form method="get">
     <input type="hidden" name="p" value="restore">
-    <div class="grid2">
+    <div class="cpr-grid2">
       <div>
         <label for="account">Account</label>
         <select id="account" name="account" onchange="this.form.submit()">
@@ -28,16 +28,16 @@
         </select>
       </div>
     </div>
-    <noscript><div class="actions"><button>Show backups</button></div></noscript>
+    <noscript><div class="cpr-actions"><button>Show backups</button></div></noscript>
   </form>
 </div>
 
 {{if $data.LookupError}}
-<div class="flash error">Could not read that destination: {{$data.LookupError}}</div>
+<div class="cpr-flash cpr-error">Could not read that destination: {{$data.LookupError}}</div>
 {{end}}
 
 {{if $data.Account}}
-<div class="card pad">
+<div class="cpr-card cpr-pad">
   <h2 style="margin-top:0">Available backups of {{$data.Account}}</h2>
   {{if $data.Snapshots}}
   <form method="post" action="?p=restore/start">
@@ -52,7 +52,7 @@
         <td><input type="radio" name="snapshot" value="{{$snapshot.ID}}" {{if eq $index 0}}checked{{end}}></td>
         <td>{{stamp $snapshot.Time}}</td>
         <td>{{bytes $snapshot.Summary.TotalBytesProcessed}}</td>
-        <td class="mono">{{short $snapshot.ID}}</td>
+        <td class="cpr-mono">{{short $snapshot.ID}}</td>
       </tr>
       {{end}}
     </table>
@@ -60,31 +60,31 @@
     <h2>What to restore</h2>
     <label for="paths">Specific files (one path per line)</label>
     <textarea id="paths" name="paths" placeholder="/home/{{$data.Account}}/public_html/index.php"></textarea>
-    <small class="help">Leave empty to rebuild the whole account.</small>
+    <small class="cpr-help">Leave empty to rebuild the whole account.</small>
 
     <label for="target">Put recovered files in</label>
     <input type="text" id="target" name="target" placeholder="/root/recovered">
-    <small class="help">Only used when restoring specific files. They keep their original paths inside it.</small>
+    <small class="cpr-help">Only used when restoring specific files. They keep their original paths inside it.</small>
 
     <h2>Whole-account restore</h2>
-    <p class="hint">By default the account archive is rebuilt and left on this server for you
+    <p class="cpr-hint">By default the account archive is rebuilt and left on this server for you
     to inspect. Nothing is overwritten.</p>
-    <label class="check"><input type="checkbox" name="apply" value="1">
+    <label class="cpr-check"><input type="checkbox" name="apply" value="1">
       <span><strong>Overwrite the live account</strong>
-      <small class="help">Hands the rebuilt archive to cPanel's restorepkg. The account's
+      <small class="cpr-help">Hands the rebuilt archive to cPanel's restorepkg. The account's
       current files, databases and settings are replaced. There is no undo.</small></span></label>
 
-    <div class="actions">
-      <button class="primary" type="submit">Start restore</button>
+    <div class="cpr-actions">
+      <button class="cpr-btn cpr-primary" type="submit">Start restore</button>
     </div>
   </form>
   {{else if not $data.LookupError}}
-  <p class="hint">No backups of {{$data.Account}} in this destination yet.</p>
+  <p class="cpr-hint">No backups of {{$data.Account}} in this destination yet.</p>
   {{end}}
 </div>
 {{end}}
 
-<div class="card pad">
+<div class="cpr-card cpr-pad">
   <h2 style="margin-top:0">Recent restores</h2>
   {{if $data.Restores}}
   <table>
@@ -93,26 +93,26 @@
     <tr {{if not .Status.Terminal}}data-running="1"{{end}}>
       <td>{{stamp .QueuedAt}}</td>
       <td>{{.Account}}</td>
-      <td>{{.Kind}}{{if .Applied}} <span class="pill warn">applied</span>{{end}}</td>
+      <td>{{.Kind}}{{if .Applied}} <span class="cpr-pill cpr-warn">applied</span>{{end}}</td>
       <td>
         {{$s := printf "%s" .Status}}
-        {{if eq $s "success"}}<span class="pill ok">success</span>
-        {{else if eq $s "failed"}}<span class="pill error">failed</span>
-        {{else}}<span class="pill">{{$s}}</span>{{end}}
+        {{if eq $s "success"}}<span class="cpr-pill cpr-ok">success</span>
+        {{else if eq $s "failed"}}<span class="cpr-pill cpr-error">failed</span>
+        {{else}}<span class="cpr-pill">{{$s}}</span>{{end}}
       </td>
-      <td class="mono">
+      <td class="cpr-mono">
         {{if .Detail}}<div>{{.Detail}}</div>{{end}}
         {{if .ArchivePath}}
-          <a href="?p=download&amp;id={{.ID}}"><button type="button" class="primary">Download</button></a>
-          <div class="muted">{{.ArchivePath}}</div>
+          <a href="?p=download&amp;id={{.ID}}"><button type="button" class="cpr-btn cpr-primary">Download</button></a>
+          <div class="cpr-muted">{{.ArchivePath}}</div>
         {{else if .RestoredTo}}{{.RestoredTo}}
         {{else}}{{.Error}}{{end}}
       </td>
     </tr>
     {{end}}
   </table>
-  <p class="hint">A rebuilt archive stays on this server until that account is rebuilt
+  <p class="cpr-hint">A rebuilt archive stays on this server until that account is rebuilt
   again. It survives a restart, and it does not hold up backups or other restores.</p>
-  {{else}}<p class="hint">No restores yet.</p>{{end}}
+  {{else}}<p class="cpr-hint">No restores yet.</p>{{end}}
 </div>
 {{end}}
