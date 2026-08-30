@@ -751,3 +751,110 @@ func TestDownloadRequestNeedsABackup(t *testing.T) {
 		t.Errorf("redirect = %q, want it to say there is no backup", location)
 	}
 }
+
+func TestDownloadServesAnExistingArchiveInsteadOfRebuilding(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	staging := engine.Settings().StagingRoot
+	dir := filepath.Join(staging, "keep-restore-customer1")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(dir, "cpmove-customer1.tar")
+	if err := os.WriteFile(archive, []byte("already rebuilt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Store().PutRestore(nodestore.Restore{
+		Account: "customer1", SnapshotID: "abc",
+		Status: job.StatusSuccess, ArchivePath: archive,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/accounts")
+	resp, err := client.PostForm("http://ui/accounts/download", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "account": {"customer1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	// Rebuilding takes minutes. If the archive is already there, pressing
+	// Download must hand it over rather than queue a copy of it.
+	location := resp.Header.Get("Location")
+	if !strings.Contains(location, "p=download") {
+		t.Fatalf("redirect = %q, want it to go straight to the download", location)
+	}
+	if restores, _ := engine.Store().Restores(0); len(restores) != 1 {
+		t.Errorf("pressing Download queued another rebuild: %d restores", len(restores))
+	}
+}
+
+func TestDownloadRebuildsWhenTheArchiveIsGone(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	// A finished restore whose archive has since been removed.
+	if _, err := engine.Store().PutRestore(nodestore.Restore{
+		Account: "customer1", SnapshotID: "abc", Status: job.StatusSuccess,
+		ArchivePath: filepath.Join(engine.Settings().StagingRoot, "gone", "cpmove.tar"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/accounts")
+	resp, err := client.PostForm("http://ui/accounts/download", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "account": {"customer1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	// No backup exists in this test, so it should report that rather than
+	// silently offering a download of nothing.
+	location := resp.Header.Get("Location")
+	if !strings.Contains(location, "kind=error") {
+		t.Errorf("redirect = %q, want an error about there being no backup", location)
+	}
+}
+
+func TestDownloadRedirectIsAQueryOnlyReference(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	staging := engine.Settings().StagingRoot
+	dir := filepath.Join(staging, "keep-restore-customer1")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(dir, "cpmove-customer1.tar")
+	if err := os.WriteFile(archive, []byte("rebuilt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	restore, err := engine.Store().PutRestore(nodestore.Restore{
+		Account: "customer1", SnapshotID: "abc",
+		Status: job.StatusSuccess, ArchivePath: archive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/accounts")
+	resp, err := client.PostForm("http://ui/accounts/download", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "account": {"customer1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	// http.Redirect resolves a query-only reference against the request
+	// path, which turns this into "?p=accounts/" and loses the route.
+	location := resp.Header.Get("Location")
+	if !strings.HasPrefix(location, "?p=download") {
+		t.Errorf("Location = %q, want it to start with ?p=download", location)
+	}
+	if !strings.Contains(location, restore.ID) {
+		t.Errorf("Location = %q, want the restore id", location)
+	}
+}

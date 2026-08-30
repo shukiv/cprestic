@@ -31,6 +31,9 @@ type Manager struct {
 // Dir is an allocated staging directory.
 type Dir struct {
 	Path string
+	// Retained marks finished output kept for collection rather than work
+	// in progress.
+	Retained bool
 	// Key identifies what is staged here. It is stable across runs — the
 	// account name, not the job id — so the paths restic records in a
 	// snapshot are the same every night. Paths that changed per job would
@@ -81,12 +84,15 @@ func (m *Manager) Allocate(key string, estimatedBytes uint64) (*Dir, error) {
 	}
 
 	if m.MaxConcurrent > 0 {
-		active, err := m.List()
+		// Only work actually in progress counts. A rebuilt archive waiting
+		// to be downloaded is finished, and letting it hold a slot meant
+		// one uncollected download blocked every other account.
+		active, err := m.Active()
 		if err != nil {
 			return nil, err
 		}
 		if len(active) >= m.MaxConcurrent {
-			return nil, fmt.Errorf("staging: %d accounts already staged, limit is %d",
+			return nil, fmt.Errorf("staging: %d accounts already being worked on, limit is %d",
 				len(active), m.MaxConcurrent)
 		}
 	}
@@ -102,27 +108,64 @@ func (m *Manager) Allocate(key string, estimatedBytes uint64) (*Dir, error) {
 	return &Dir{Path: path, Key: key}, nil
 }
 
-// List returns the staging directories currently on disk.
+// List returns every staging directory, in progress or retained.
+func (m *Manager) List() ([]Dir, error) { return m.list(true) }
+
+// Active returns only the directories being worked in.
 //
-// The agent calls this at startup to clear what a previous process left
-// behind. Cleaning up only on the success path is not enough: the failure
-// path is precisely when the volume is already under pressure.
-func (m *Manager) List() ([]Dir, error) {
+// The agent clears these at startup: work interrupted by a crash leaves
+// them behind, and cleaning up only on the success path is not enough,
+// because the failure path is precisely when the volume is under pressure.
+func (m *Manager) Active() ([]Dir, error) { return m.list(false) }
+
+func (m *Manager) list(includeRetained bool) ([]Dir, error) {
 	entries, err := os.ReadDir(m.Root)
 	if err != nil {
 		return nil, fmt.Errorf("staging: read root: %w", err)
 	}
 	var dirs []Dir
 	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), dirPrefix) {
+		if !entry.IsDir() {
 			continue
 		}
-		dirs = append(dirs, Dir{
-			Path: filepath.Join(m.Root, entry.Name()),
-			Key:  strings.TrimPrefix(entry.Name(), dirPrefix),
-		})
+		name := entry.Name()
+		switch {
+		case strings.HasPrefix(name, dirPrefix):
+			dirs = append(dirs, Dir{
+				Path: filepath.Join(m.Root, name),
+				Key:  strings.TrimPrefix(name, dirPrefix),
+			})
+		case includeRetained && strings.HasPrefix(name, keepPrefix):
+			dirs = append(dirs, Dir{
+				Path:     filepath.Join(m.Root, name),
+				Key:      strings.TrimPrefix(name, keepPrefix),
+				Retained: true,
+			})
+		}
 	}
 	return dirs, nil
+}
+
+// Retain marks a finished directory as output to be collected, so it stops
+// counting as work in progress and survives a restart.
+//
+// It returns the directory at its new location, with any previous output
+// for the same key replaced: a newer rebuild supersedes an older one.
+func (m *Manager) Retain(dir *Dir) (*Dir, error) {
+	if dir == nil || dir.Retained {
+		return dir, nil
+	}
+	if err := validateKey(dir.Key); err != nil {
+		return nil, err
+	}
+	target := filepath.Join(m.Root, keepPrefix+dir.Key)
+	if err := os.RemoveAll(target); err != nil {
+		return nil, fmt.Errorf("staging: clear previous output: %w", err)
+	}
+	if err := os.Rename(dir.Path, target); err != nil {
+		return nil, fmt.Errorf("staging: retain %s: %w", dir.Path, err)
+	}
+	return &Dir{Path: target, Key: dir.Key, Retained: true}, nil
 }
 
 // Reclaim removes a leftover staging directory for a key, if one exists,
@@ -136,16 +179,20 @@ func (m *Manager) Reclaim(key string) (bool, error) {
 	if err := validateKey(key); err != nil {
 		return false, err
 	}
-	path := filepath.Join(m.Root, dirPrefix+key)
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return false, nil
-	} else if err != nil {
-		return false, fmt.Errorf("staging: stat %s: %w", path, err)
+	var reclaimed bool
+	for _, prefix := range []string{dirPrefix, keepPrefix} {
+		path := filepath.Join(m.Root, prefix+key)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			continue
+		} else if err != nil {
+			return false, fmt.Errorf("staging: stat %s: %w", path, err)
+		}
+		if err := m.Release(&Dir{Path: path, Key: key}); err != nil {
+			return false, err
+		}
+		reclaimed = true
 	}
-	if err := m.Release(&Dir{Path: path, Key: key}); err != nil {
-		return false, err
-	}
-	return true, nil
+	return reclaimed, nil
 }
 
 // Release removes a staging directory. It is called only once every target
@@ -174,7 +221,15 @@ func AvailableBytes(path string) (uint64, error) {
 	return stat.Bavail * uint64(stat.Bsize), nil
 }
 
-const dirPrefix = "stage-"
+const (
+	// dirPrefix marks a directory being worked in right now.
+	dirPrefix = "stage-"
+	// keepPrefix marks output that is finished and waiting to be
+	// collected — a rebuilt archive somebody was told to download. It is
+	// deliberately not counted against the concurrency limit, and it
+	// survives a restart, because it is a result rather than debris.
+	keepPrefix = "keep-"
+)
 
 // validateKey rejects identifiers that could escape the staging root once
 // joined into a path.

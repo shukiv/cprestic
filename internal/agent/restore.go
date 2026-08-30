@@ -65,17 +65,11 @@ func (a *Agent) RunRestore(ctx context.Context, assignment protocol.RestoreAssig
 		report.Error = err.Error()
 		return report
 	}
-	keepStaging := false
+	// Set when the run produced something to collect, which is then kept
+	// rather than deleted.
+	retain := false
 	defer func() {
-		if keepStaging {
-			// The rebuilt archive lives here and an operator still needs
-			// it. Releasing would delete the thing we just produced.
-			//
-			// It survives until the next restore of this account or the
-			// next agent restart, whichever comes first: the startup sweep
-			// cannot tell a finished restore's output from a crashed one's
-			// debris. The path is recorded on the restore job so an
-			// operator knows what was there.
+		if retain {
 			return
 		}
 		if err := a.staging.Release(dir); err != nil {
@@ -95,11 +89,28 @@ func (a *Agent) RunRestore(ctx context.Context, assignment protocol.RestoreAssig
 			report.Error = err.Error()
 			return report
 		}
-		keepStaging = !assignment.Apply
 		report.Status = string(job.StatusSuccess)
 		report.BytesRestored = result.BytesRestored
 		report.ArchivePath = result.ArchivePath
 		report.Applied = assignment.Apply
+
+		if !assignment.Apply {
+			// The archive is the deliverable. Retaining it stops it
+			// counting as work in progress — an uncollected download used
+			// to hold a concurrency slot and block every other account —
+			// and lets it survive a restart.
+			retained, err := a.staging.Retain(dir)
+			if err != nil {
+				log.Error("retain the rebuilt archive", "error", err)
+				report.Error = err.Error()
+				report.Status = string(job.StatusFailed)
+				return report
+			}
+			retain = true
+			report.ArchivePath = filepath.Join(retained.Path,
+				filepath.Base(result.ArchivePath))
+			log.Info("archive ready to collect", "path", report.ArchivePath)
+		}
 		return report
 	default:
 		report.Error = fmt.Sprintf("agent: unknown restore kind %q", assignment.Kind)

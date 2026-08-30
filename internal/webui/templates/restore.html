@@ -106,8 +106,8 @@
     </tr>
     {{end}}
   </table>
-  <p class="hint">A rebuilt archive stays on this server until the next restore of that
-  account, or until the service restarts. Download it before then.</p>
+  <p class="hint">A rebuilt archive stays on this server until that account is rebuilt
+  again. It survives a restart, and it does not hold up backups or other restores.</p>
   {{else}}<p class="hint">No restores yet.</p>{{end}}
 </div>
 {{end}}

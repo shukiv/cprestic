@@ -160,10 +160,10 @@ func (e *Engine) RecoverFromRestart() error {
 		interrupted++
 	}
 
-	// Whatever those left behind is debris. A rebuilt restore archive that
-	// nobody collected goes too: there is no way to tell it apart from a
-	// half-written one, and keeping it would block the next restore.
-	dirs, err := e.staging.List()
+	// Whatever those left behind is debris. Finished output is kept: a
+	// rebuilt archive somebody was told to download should still be there
+	// after a restart.
+	dirs, err := e.staging.Active()
 	if err != nil {
 		return err
 	}

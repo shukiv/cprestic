@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -716,13 +717,27 @@ func (s *Server) handleStartRestore(w http.ResponseWriter, r *http.Request) {
 // that can then be fetched.
 func (s *Server) handleDownloadRequest(w http.ResponseWriter, r *http.Request) {
 	account := r.PostFormValue("account")
+
+	// Download should download. Rebuilding takes minutes, so if an archive
+	// for this account is already sitting there, hand that over instead of
+	// making the operator wait for a copy of what they already have.
+	if ready, found := s.engine.ReadyDownload(account); found {
+		// Written directly, not through http.Redirect, which resolves a
+		// query-only reference against the request path and would turn
+		// this into "?p=accounts/".
+		w.Header().Set("Location", "?p=download&id="+url.QueryEscape(ready.ID))
+		w.WriteHeader(http.StatusSeeOther)
+		return
+	}
+
 	if _, err := s.engine.QueueDownload(r.Context(), account); err != nil {
 		s.redirect(w, r, "/accounts", "error", err.Error())
 		return
 	}
 	s.redirect(w, r, "/restore", "ok", fmt.Sprintf(
-		"Rebuilding the newest backup of %s. When it finishes, a Download link appears "+
-			"beside it below. Nothing on the live account is touched.", account))
+		"Rebuilding the newest backup of %s. It takes a minute or two; a Download button "+
+			"appears beside it below when it is ready. Nothing on the live account is "+
+			"touched.", account))
 }
 
 // handleDownload streams a rebuilt archive to the browser.

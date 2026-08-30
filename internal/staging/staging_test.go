@@ -165,3 +165,112 @@ func TestReclaim(t *testing.T) {
 		t.Error("an unsafe key should be rejected")
 	}
 }
+
+// TestRetainedOutputDoesNotHoldAConcurrencySlot covers the failure that
+// blocked a live server: a rebuilt archive left for collection counted as
+// work in progress, so with a limit of one, a single uncollected download
+// stopped every other account being backed up or restored.
+func TestRetainedOutputDoesNotHoldAConcurrencySlot(t *testing.T) {
+	root := t.TempDir()
+	manager := &Manager{Root: root, MaxConcurrent: 1}
+
+	dir, err := manager.Allocate("restore-customer1", 1024)
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir.Path, "cpmove.tar"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// While it is still work in progress, the limit applies.
+	if _, err := manager.Allocate("customer2", 1024); err == nil {
+		t.Error("the concurrency limit was not applied to work in progress")
+	}
+
+	retained, err := manager.Retain(dir)
+	if err != nil {
+		t.Fatalf("Retain: %v", err)
+	}
+	if !retained.Retained {
+		t.Error("Retain did not mark the directory as output")
+	}
+	if _, err := os.Stat(filepath.Join(retained.Path, "cpmove.tar")); err != nil {
+		t.Errorf("retaining lost the archive: %v", err)
+	}
+
+	// Once it is finished output, another account can be worked on.
+	if _, err := manager.Allocate("customer2", 1024); err != nil {
+		t.Errorf("retained output still blocks other accounts: %v", err)
+	}
+
+	// It is still listed, so a sweep can find it, but not as active work.
+	all, err := manager.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := manager.Active()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 || len(active) != 1 {
+		t.Errorf("list=%d active=%d, want 2 and 1", len(all), len(active))
+	}
+	if active[0].Key != "customer2" {
+		t.Errorf("active = %+v, want only the account being worked on", active)
+	}
+}
+
+func TestRetainReplacesPreviousOutput(t *testing.T) {
+	root := t.TempDir()
+	manager := &Manager{Root: root}
+
+	for _, body := range []string{"first", "second"} {
+		dir, err := manager.Allocate("restore-customer1", 1024)
+		if err != nil {
+			t.Fatalf("Allocate %s: %v", body, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir.Path, "cpmove.tar"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := manager.Retain(dir); err != nil {
+			t.Fatalf("Retain %s: %v", body, err)
+		}
+	}
+
+	// A newer rebuild supersedes the older one rather than piling up.
+	got, err := os.ReadFile(filepath.Join(root, "keep-restore-customer1", "cpmove.tar"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "second" {
+		t.Errorf("kept %q, want the newer rebuild", got)
+	}
+	entries, _ := os.ReadDir(root)
+	if len(entries) != 1 {
+		t.Errorf("root holds %d directories, want just the retained one", len(entries))
+	}
+}
+
+func TestReclaimRemovesRetainedOutputToo(t *testing.T) {
+	root := t.TempDir()
+	manager := &Manager{Root: root}
+
+	dir, err := manager.Allocate("restore-customer1", 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Retain(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	reclaimed, err := manager.Reclaim("restore-customer1")
+	if err != nil {
+		t.Fatalf("Reclaim: %v", err)
+	}
+	if !reclaimed {
+		t.Error("Reclaim did not report removing the retained output")
+	}
+	if entries, _ := os.ReadDir(root); len(entries) != 0 {
+		t.Errorf("root still holds %d directories", len(entries))
+	}
+}

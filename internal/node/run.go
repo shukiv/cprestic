@@ -514,6 +514,30 @@ func (e *Engine) RunPolicyNow(ctx context.Context, policyID string) (queued int,
 	return queued, skipped, nil
 }
 
+// ReadyDownload finds an archive already rebuilt for an account and still
+// on disk, so pressing Download can hand it over rather than rebuilding
+// something that is right there.
+func (e *Engine) ReadyDownload(account string) (nodestore.Restore, bool) {
+	restores, err := e.store.Restores(0)
+	if err != nil {
+		return nodestore.Restore{}, false
+	}
+	for _, restore := range restores {
+		if restore.Account != account || restore.Status != job.StatusSuccess {
+			continue
+		}
+		if restore.ArchivePath == "" || restore.Applied {
+			continue
+		}
+		if _, _, _, err := e.statArchive(restore); err != nil {
+			continue
+		}
+		// Restores come back newest first.
+		return restore, true
+	}
+	return nodestore.Restore{}, false
+}
+
 // QueueDownload asks for an account's newest backup to be rebuilt into an
 // archive that can then be downloaded.
 //
@@ -585,26 +609,9 @@ func (e *Engine) OpenArchiveForDownload(restoreID string) (file *os.File, filena
 	if err != nil {
 		return nil, "", 0, err
 	}
-	if restore.Status != job.StatusSuccess || restore.ArchivePath == "" {
-		return nil, "", 0, fmt.Errorf("node: that restore produced no archive")
-	}
-
-	root, err := filepath.EvalSymlinks(e.settings.StagingRoot)
+	resolved, filename, size, err := e.statArchive(restore)
 	if err != nil {
-		return nil, "", 0, fmt.Errorf("node: resolve the staging area: %w", err)
-	}
-	resolved, err := filepath.EvalSymlinks(restore.ArchivePath)
-	if err != nil {
-		return nil, "", 0, fmt.Errorf(
-			"node: the archive is gone — it is removed when the account is restored again "+
-				"or the service restarts: %w", err)
-	}
-
-	relative, err := filepath.Rel(root, resolved)
-	if err != nil || relative == ".." ||
-		strings.HasPrefix(relative, ".."+string(filepath.Separator)) ||
-		filepath.IsAbs(relative) {
-		return nil, "", 0, fmt.Errorf("node: that archive is not in the staging area")
+		return nil, "", 0, err
 	}
 
 	file, err = os.OpenFile(resolved, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
@@ -620,5 +627,39 @@ func (e *Engine) OpenArchiveForDownload(restoreID string) (file *os.File, filena
 		_ = file.Close()
 		return nil, "", 0, fmt.Errorf("node: that archive is not a regular file")
 	}
-	return file, filepath.Base(resolved), info.Size(), nil
+	return file, filename, info.Size(), nil
+}
+
+// statArchive resolves a restore's archive and checks it is where this node
+// puts them, without opening it.
+func (e *Engine) statArchive(restore nodestore.Restore) (path, filename string, size int64, err error) {
+	if restore.Status != job.StatusSuccess || restore.ArchivePath == "" {
+		return "", "", 0, fmt.Errorf("node: that restore produced no archive")
+	}
+
+	// Both sides are resolved before containment is decided: a lexical
+	// prefix check is satisfied by a symlink pointing anywhere.
+	root, err := filepath.EvalSymlinks(e.settings.StagingRoot)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("node: resolve the staging area: %w", err)
+	}
+	resolved, err := filepath.EvalSymlinks(restore.ArchivePath)
+	if err != nil {
+		return "", "", 0, fmt.Errorf(
+			"node: the archive is gone — it is replaced when the account is rebuilt "+
+				"again: %w", err)
+	}
+
+	relative, err := filepath.Rel(root, resolved)
+	if err != nil || relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(filepath.Separator)) ||
+		filepath.IsAbs(relative) {
+		return "", "", 0, fmt.Errorf("node: that archive is not in the staging area")
+	}
+
+	info, err := os.Lstat(resolved)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("node: the archive is gone: %w", err)
+	}
+	return resolved, filepath.Base(resolved), info.Size(), nil
 }
