@@ -49,9 +49,11 @@ removes a whole class of accident.
   server. This is recorded as an open question in DESIGN §14.
 - The reassembly step depends on cPanel's cpmove layout. The top-level
   directory name is discovered from the extracted archive rather than
-  assumed, but the `homedir/` and `mysql/` subdirectory names are constants
-  that have never been checked against a live cPanel. They are the most
-  likely thing to be wrong.
+  assumed, and the `homedir/` and `mysql/` subdirectory names are
+  constants. Those were verified on cPanel 136: a rebuilt archive's
+  top-level entries are the same set that native `pkgacct` produces, with
+  the home directory restored into `homedir/`. What remains unverified is
+  whether `restorepkg` accepts one, which only a real restore can answer.
 - Because reassembly extracts an archive produced on a server that may be
   compromised, extraction refuses path traversal and escaping symlinks and
   drops setuid bits.

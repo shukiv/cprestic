@@ -82,7 +82,20 @@ func TestRecoverFromRestartUnwedgesAnAccount(t *testing.T) {
 		}
 	}
 
+	// Something merely queued must survive: a restart should not empty
+	// the queue.
+	queued, err := store.PutJob(nodestore.Job{Account: "customer3", Status: job.StatusPending})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	engine := newEngine(t, store, root)
+
+	if survived, err := store.Job(queued.ID); err != nil {
+		t.Fatal(err)
+	} else if survived.Status != job.StatusPending {
+		t.Errorf("a queued job became %q on restart", survived.Status)
+	}
 
 	recovered, err := store.Job(crashed.ID)
 	if err != nil {

@@ -79,7 +79,13 @@
         {{else if eq $s "failed"}}<span class="pill error">failed</span>
         {{else}}<span class="pill">{{$s}}</span>{{end}}
       </td>
-      <td class="mono">{{if .Error}}{{.Error}}{{else if .ArchivePath}}{{.ArchivePath}}{{else}}{{.RestoredTo}}{{end}}</td>
+      <td class="mono">
+        {{if .Error}}{{.Error}}
+        {{else if .ArchivePath}}
+          <a href="?p=download&amp;id={{.ID}}"><button type="button" class="primary">Download</button></a>
+          <div class="muted">{{.ArchivePath}}</div>
+        {{else}}{{.RestoredTo}}{{end}}
+      </td>
     </tr>
     {{end}}
   </table>

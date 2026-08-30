@@ -126,7 +126,10 @@ func (e *Engine) RecoverFromRestart() error {
 	}
 	var interrupted int
 	for _, stored := range jobs {
-		if stored.Status.Terminal() {
+		// Only work that was actually in flight. Something merely queued
+		// is still perfectly good work, and failing it would mean a
+		// restart quietly emptied the queue.
+		if stored.Status != job.StatusRunning {
 			continue
 		}
 		stored.Status = job.StatusFailed
@@ -144,7 +147,7 @@ func (e *Engine) RecoverFromRestart() error {
 		return err
 	}
 	for _, stored := range restores {
-		if stored.Status.Terminal() {
+		if stored.Status != job.StatusRunning {
 			continue
 		}
 		stored.Status = job.StatusFailed

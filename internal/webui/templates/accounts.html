@@ -29,6 +29,11 @@
           {{end}}
           <button {{if .Running}}disabled{{end}}>Back up now</button>
         </form>
+        <form method="post" action="?p=accounts/download" class="inline">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="account" value="{{.User}}">
+          <button {{if not .LastBackup}}disabled title="No backup of this account yet"{{end}}>Download</button>
+        </form>
         <a href="?p=restore&amp;account={{.User}}"><button type="button">Restore</button></a>
       </td>
     </tr>

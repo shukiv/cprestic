@@ -1,6 +1,8 @@
 package pkgacct
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -209,4 +211,67 @@ func contains(args []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestVerifyRejectsAnIncompletePayload(t *testing.T) {
+	dir := t.TempDir()
+	metadata := filepath.Join(dir, "metadata")
+	home := filepath.Join(dir, "home")
+	for _, path := range []string{metadata, home} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	payload := Payload{Mode: ModeSplit, Account: "c1", Parts: []Part{
+		{Kind: PartMetadata, Path: metadata},
+		{Kind: PartHomedir, Path: home},
+	}}
+
+	// An empty metadata directory is what pkgacct leaves when it writes
+	// nothing and still exits zero. restic would warn and carry on, so
+	// this has to be caught before the backup runs.
+	err := payload.Verify()
+	if err == nil {
+		t.Fatal("an empty metadata directory was accepted")
+	}
+	if !strings.Contains(err.Error(), "metadata") || !strings.Contains(err.Error(), "empty") {
+		t.Errorf("err = %v, want it to name the empty part", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(metadata, "cpmove-c1.tar"),
+		[]byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "index.html"),
+		[]byte("<h1>hi</h1>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := payload.Verify(); err != nil {
+		t.Errorf("a complete payload was rejected: %v", err)
+	}
+}
+
+func TestVerifyRejectsAMissingPart(t *testing.T) {
+	dir := t.TempDir()
+	payload := Payload{Parts: []Part{
+		{Kind: PartMetadata, Path: filepath.Join(dir, "nothing-here")},
+	}}
+	err := payload.Verify()
+	if err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Errorf("err = %v, want it to report the missing part", err)
+	}
+}
+
+func TestVerifyRejectsAnEmptyArchive(t *testing.T) {
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "cpmove-c1.tar")
+	if err := os.WriteFile(archive, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A zero-byte archive restores nothing at all.
+	payload := Payload{Parts: []Part{{Kind: PartArchive, Path: archive}}}
+	if err := payload.Verify(); err == nil {
+		t.Error("a zero-byte archive was accepted")
+	}
 }

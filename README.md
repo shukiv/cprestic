@@ -112,7 +112,9 @@ PostgreSQL, real restic and a real append-only rest-server.
 | Maintenance: provision, retention, integrity check, restore drills | working |
 | Restore: whole account, single file, opt-in apply to the live account | working |
 | Administration CLI (`cprest-controller <command>`) | working |
-| Real cPanel provider (`pkgacct`, `mysqldump`, `restorepkg`) | written, **unvalidated** — no cPanel host available |
+| Real cPanel provider (`pkgacct`, `mysqldump`) | working; verified on cPanel 136 |
+| `restorepkg` (applying a restore) | written, **unvalidated** — never run against a live account |
+| Downloading a rebuilt account archive | working |
 | Standalone mode + WHM plugin GUI | working |
 | Controller web UI | not built; the API and CLI are the fleet-mode interface |
 | Azure/GCS/rclone destinations | not built |

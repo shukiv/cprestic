@@ -634,3 +634,120 @@ func TestRunScheduleWithNoDestinationIsRefused(t *testing.T) {
 		t.Errorf("redirect = %q, want it to say there is nowhere to send a backup", location)
 	}
 }
+
+func TestDownloadStreamsARebuiltArchive(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	// A finished restore, with its archive where the engine puts them.
+	staging := engine.Settings().StagingRoot
+	dir := filepath.Join(staging, "stage-restore-customer1")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(dir, "cpmove-customer1.tar")
+	body := []byte("not really a tar, but the bytes should arrive intact")
+	if err := os.WriteFile(archive, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	restore, err := engine.Store().PutRestore(nodestore.Restore{
+		Account: "customer1", SnapshotID: "abc",
+		Status: job.StatusSuccess, ArchivePath: archive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := client.Get("http://ui/download?id=" + restore.ID)
+	if err != nil {
+		t.Fatalf("GET download: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("download = %d", resp.StatusCode)
+	}
+	// Content-Disposition is what makes the browser save the file and is
+	// the only place the name survives, because cpsrvd strips
+	// Content-Type from what the plugin returns.
+	disposition := resp.Header.Get("Content-Disposition")
+	if !strings.Contains(disposition, `filename="cpmove-customer1.tar"`) {
+		t.Errorf("Content-Disposition = %q", disposition)
+	}
+	if !strings.HasPrefix(disposition, "attachment") {
+		t.Errorf("Content-Disposition = %q, want an attachment", disposition)
+	}
+	got, _ := io.ReadAll(resp.Body)
+	if string(got) != string(body) {
+		t.Errorf("downloaded %d bytes, want %d", len(got), len(body))
+	}
+}
+
+func TestDownloadRefusesAnArchiveOutsideStaging(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	// The path is ours, not the browser's, but it still becomes an open(),
+	// so it is checked against the staging root.
+	outside := filepath.Join(t.TempDir(), "passwd.tar")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	restore, err := engine.Store().PutRestore(nodestore.Restore{
+		Account: "customer1", SnapshotID: "abc",
+		Status: job.StatusSuccess, ArchivePath: outside,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := client.Get("http://ui/download?id=" + restore.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("download = %d, want a redirect with an error", resp.StatusCode)
+	}
+	if location := resp.Header.Get("Location"); !strings.Contains(location, "kind=error") {
+		t.Errorf("redirect = %q", location)
+	}
+}
+
+func TestDownloadOfAnUnfinishedRestoreIsRefused(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	restore, err := engine.Store().PutRestore(nodestore.Restore{
+		Account: "customer1", SnapshotID: "abc", Status: job.StatusRunning,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := client.Get("http://ui/download?id=" + restore.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Errorf("download = %d, want a redirect with an error", resp.StatusCode)
+	}
+}
+
+func TestDownloadRequestNeedsABackup(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	_, page := get(t, client, "/accounts")
+	resp, err := client.PostForm("http://ui/accounts/download", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "account": {"customer1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	location := resp.Header.Get("Location")
+	if !strings.Contains(location, "kind=error") {
+		t.Fatalf("redirect = %q, want an error", location)
+	}
+	if !strings.Contains(location, "no+backup+yet") {
+		t.Errorf("redirect = %q, want it to say there is no backup", location)
+	}
+}

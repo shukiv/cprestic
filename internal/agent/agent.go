@@ -236,6 +236,14 @@ func (a *Agent) RunJob(ctx context.Context, assignment protocol.JobAssignment) p
 	if payload.Degraded {
 		log.Warn("payload will deduplicate poorly", "reason", payload.Reason)
 	}
+	// restic treats a path it cannot read as a warning and carries on, so
+	// a missing part would become a snapshot that looks fine and restores
+	// an incomplete account. It has to stop the job instead.
+	if err := payload.Verify(); err != nil {
+		log.Error("staged payload is incomplete", "error", err)
+		report.StagingError = err.Error()
+		return report
+	}
 
 	// pkgacct runs once; the staged payload is uploaded to every target.
 	for _, target := range assignment.Targets {

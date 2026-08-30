@@ -8,6 +8,7 @@ package pkgacct
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -58,6 +59,36 @@ type Payload struct {
 	// surfaces this rather than letting storage cost silently balloon.
 	Degraded bool
 	Reason   string
+}
+
+// Verify checks that every part a payload promised is actually on disk.
+//
+// This exists because of a real failure: pkgacct wrote nothing where it was
+// told to, restic warned that it could not read the path and carried on,
+// and the result was a snapshot holding the home directory and none of the
+// account's configuration — reported as a success. A backup missing a part
+// is not a backup, so it has to fail here rather than later.
+func (p Payload) Verify() error {
+	var missing []string
+	for _, part := range p.Parts {
+		info, err := os.Stat(part.Path)
+		switch {
+		case err != nil:
+			missing = append(missing, fmt.Sprintf("%s (%s) is missing", part.Kind, part.Path))
+		case info.IsDir():
+			entries, err := os.ReadDir(part.Path)
+			if err != nil || len(entries) == 0 {
+				missing = append(missing, fmt.Sprintf("%s (%s) is empty", part.Kind, part.Path))
+			}
+		case info.Size() == 0:
+			missing = append(missing, fmt.Sprintf("%s (%s) is empty", part.Kind, part.Path))
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("pkgacct: the staged payload is incomplete: %s",
+			strings.Join(missing, "; "))
+	}
+	return nil
 }
 
 // Paths returns the staged paths in payload order.

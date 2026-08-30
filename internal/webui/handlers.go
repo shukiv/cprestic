@@ -2,6 +2,7 @@ package webui
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -709,6 +710,49 @@ func (s *Server) handleStartRestore(w http.ResponseWriter, r *http.Request) {
 		message = "Restore queued. It WILL overwrite the live account when it runs."
 	}
 	s.redirect(w, r, "/restore?account="+restore.Account, "ok", message)
+}
+
+// handleDownloadRequest rebuilds an account's newest backup into an archive
+// that can then be fetched.
+func (s *Server) handleDownloadRequest(w http.ResponseWriter, r *http.Request) {
+	account := r.PostFormValue("account")
+	if _, err := s.engine.QueueDownload(r.Context(), account); err != nil {
+		s.redirect(w, r, "/accounts", "error", err.Error())
+		return
+	}
+	s.redirect(w, r, "/restore", "ok", fmt.Sprintf(
+		"Rebuilding the newest backup of %s. When it finishes, a Download link appears "+
+			"beside it below. Nothing on the live account is touched.", account))
+}
+
+// handleDownload streams a rebuilt archive to the browser.
+func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
+	path, filename, size, err := s.engine.ArchiveForDownload(r.URL.Query().Get("id"))
+	if err != nil {
+		s.redirect(w, r, "/restore", "error", err.Error())
+		return
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		s.redirect(w, r, "/restore", "error", "The archive could not be opened: "+err.Error())
+		return
+	}
+	defer file.Close()
+
+	// Content-Disposition is what makes the browser save rather than
+	// render, and it is also the only place the filename survives: cpsrvd
+	// strips Content-Type from what the plugin returns.
+	w.Header().Set("Content-Type", "application/x-tar")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	if _, err := io.Copy(w, file); err != nil {
+		// The response is already going out, so there is nothing to say
+		// to the browser beyond stopping.
+		s.log.Error("stream archive", "path", path, "error", err)
+	}
 }
 
 // --- jobs ---

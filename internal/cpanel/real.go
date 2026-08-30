@@ -187,9 +187,21 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 		return pkgacct.Payload{}, err
 	}
 
+	// pkgacct writes its archive into a directory it is given and does not
+	// create it. Without this it wrote nothing, exited zero, and the
+	// backup silently lost the account's configuration.
+	for _, part := range payload.Parts {
+		if part.Kind == pkgacct.PartMetadata {
+			if err := os.MkdirAll(part.Path, 0o700); err != nil {
+				return pkgacct.Payload{}, fmt.Errorf("cpanel: create %s: %w", part.Path, err)
+			}
+		}
+	}
+
 	args := pkgacct.CommandArgs(req.Account.User, req.StagingDir, req.Mode, caps)
 	cmd := exec.CommandContext(ctx, r.pkgacct(), args...)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	output, err := cmd.CombinedOutput()
+	if err != nil {
 		return pkgacct.Payload{}, fmt.Errorf("cpanel: pkgacct failed: %w: %s",
 			err, lastLine(output))
 	}
@@ -198,6 +210,12 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 		if err := r.dumpDatabases(ctx, req, payload); err != nil {
 			return pkgacct.Payload{}, err
 		}
+	}
+
+	// pkgacct can exit zero having produced nothing useful, so what it
+	// left behind is checked rather than assumed.
+	if err := payload.Verify(); err != nil {
+		return pkgacct.Payload{}, fmt.Errorf("%w (pkgacct said: %s)", err, lastLine(output))
 	}
 	return payload, nil
 }

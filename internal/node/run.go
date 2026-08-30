@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -508,4 +511,91 @@ func (e *Engine) RunPolicyNow(ctx context.Context, policyID string) (queued int,
 	e.log.Info("schedule run by hand",
 		"policy", policy.Name, "queued", queued, "skipped", len(skipped))
 	return queued, skipped, nil
+}
+
+// QueueDownload asks for an account's newest backup to be rebuilt into an
+// archive that can then be downloaded.
+//
+// It is a restore that is deliberately not applied: the archive is left on
+// this server for someone to fetch, and nothing on the live account is
+// touched.
+func (e *Engine) QueueDownload(ctx context.Context, account string) (nodestore.Restore, error) {
+	repositories, err := e.store.Repositories()
+	if err != nil {
+		return nodestore.Restore{}, err
+	}
+
+	var (
+		newest     resticrun.Snapshot
+		newestRepo string
+		lastErr    error
+	)
+	for _, repository := range repositories {
+		if repository.InitialisedAt == nil {
+			continue
+		}
+		snapshots, err := e.Snapshots(ctx, repository.ID, account)
+		if err != nil {
+			// One unreachable destination should not stop us looking in
+			// the others.
+			lastErr = err
+			continue
+		}
+		for _, snapshot := range snapshots {
+			if snapshot.Time.After(newest.Time) {
+				newest, newestRepo = snapshot, repository.ID
+			}
+		}
+	}
+
+	if newestRepo == "" {
+		if lastErr != nil {
+			return nodestore.Restore{}, fmt.Errorf(
+				"node: no backup of %s could be found: %w", account, lastErr)
+		}
+		return nodestore.Restore{}, fmt.Errorf("node: %s has no backup yet", account)
+	}
+
+	return e.QueueRestore(nodestore.Restore{
+		Account:      account,
+		RepositoryID: newestRepo,
+		SnapshotID:   newest.ID,
+		Kind:         protocol.RestoreAccount,
+	})
+}
+
+// ArchiveForDownload resolves a finished restore to the archive it produced,
+// after checking the file is where this node put it.
+//
+// The path comes out of the state file rather than from a request, but it
+// becomes an open() either way, so it is checked against the staging root
+// before anything is read.
+func (e *Engine) ArchiveForDownload(restoreID string) (path, filename string, size int64, err error) {
+	restore, err := e.store.Restore(restoreID)
+	if err != nil {
+		return "", "", 0, err
+	}
+	if restore.Status != job.StatusSuccess || restore.ArchivePath == "" {
+		return "", "", 0, fmt.Errorf("node: that restore produced no archive")
+	}
+
+	root, err := filepath.Abs(e.settings.StagingRoot)
+	if err != nil {
+		return "", "", 0, err
+	}
+	resolved, err := filepath.Abs(restore.ArchivePath)
+	if err != nil {
+		return "", "", 0, err
+	}
+	if !strings.HasPrefix(resolved, root+string(filepath.Separator)) {
+		return "", "", 0, fmt.Errorf("node: that archive is not in the staging area")
+	}
+
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", "", 0, fmt.Errorf(
+			"node: the archive is gone — it is removed when the account is restored again "+
+				"or the service restarts: %w", err)
+	}
+	return resolved, filepath.Base(resolved), info.Size(), nil
 }
