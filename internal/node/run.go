@@ -470,3 +470,42 @@ func (e *Engine) newRepository(destinationID, path string) (nodestore.Repository
 		DestinationID: destinationID, Path: path, PasswordSecretID: passwordID,
 	})
 }
+
+// RunPolicyNow queues every account a schedule covers, immediately.
+//
+// It deliberately leaves the schedule's last-fired time alone: running one
+// by hand is extra work, not a replacement for tonight's run, and moving
+// the marker would skip that.
+func (e *Engine) RunPolicyNow(ctx context.Context, policyID string) (queued int, skipped []string, err error) {
+	policy, err := e.store.Policy(policyID)
+	if err != nil {
+		return 0, nil, err
+	}
+	if len(policy.RepositoryIDs) == 0 {
+		return 0, nil, fmt.Errorf(
+			"node: %q has no destination, so there is nowhere to send a backup", policy.Name)
+	}
+
+	accounts, err := e.accountsFor(ctx, policy)
+	if err != nil {
+		return 0, nil, err
+	}
+	if len(accounts) == 0 {
+		return 0, nil, fmt.Errorf("node: %q covers no accounts", policy.Name)
+	}
+
+	for _, account := range accounts {
+		if _, err := e.QueueBackup(policy.ID, account); err != nil {
+			// Almost always because that account is already being backed
+			// up, which is a skip rather than a failure.
+			e.log.Warn("skipped account on a manual run",
+				"policy", policy.Name, "account", account, "reason", err)
+			skipped = append(skipped, account)
+			continue
+		}
+		queued++
+	}
+	e.log.Info("schedule run by hand",
+		"policy", policy.Name, "queued", queued, "skipped", len(skipped))
+	return queued, skipped, nil
+}

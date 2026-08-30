@@ -13,6 +13,11 @@
       <td class="muted">{{.Retention.KeepDaily}} daily, {{.Retention.KeepWeekly}} weekly, {{.Retention.KeepMonthly}} monthly</td>
       <td>{{ago .LastRunAt}}</td>
       <td class="right">
+        <form method="post" action="?p=schedule/run" class="inline">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <button class="primary">Run now</button>
+        </form>
         <a href="?p=schedule&amp;edit={{.ID}}"><button type="button">Edit</button></a>
         <form method="post" action="?p=schedule/delete" class="inline"
               data-confirm="Delete this schedule? Backups already taken are kept.">

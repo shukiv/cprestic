@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/shuki/cprest/internal/cpanel"
+	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/node"
 	"github.com/shuki/cprest/internal/nodestore"
 	"github.com/shuki/cprest/internal/vault"
@@ -517,5 +518,119 @@ func TestEditDestinationKeepsCredentialsAndRepositoryPath(t *testing.T) {
 	}
 	if repos[0].Path != "cp01" {
 		t.Errorf("repository path changed to %q", repos[0].Path)
+	}
+}
+
+func TestRunScheduleNow(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	_, page := get(t, client, "/destinations")
+	added, err := client.PostForm("http://ui/destinations/add", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Local disk"}, "type": {"local"},
+		"root": {t.TempDir()}, "repo_path": {"cp01"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	added.Body.Close()
+	repos, err := engine.Store().Repositories()
+	if err != nil || len(repos) != 1 {
+		t.Fatalf("repositories = %+v (%v)", repos, err)
+	}
+
+	_, page = get(t, client, "/schedule")
+	saved, err := client.PostForm("http://ui/schedule/save", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Nightly"}, "cron": {"0 2 * * *"},
+		"repository": {repos[0].ID}, "scope": {"all"}, "enabled": {"1"}, "mode": {"split"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved.Body.Close()
+	policies, err := engine.Store().Policies()
+	if err != nil || len(policies) != 1 {
+		t.Fatalf("policies = %+v", policies)
+	}
+
+	_, page = get(t, client, "/schedule")
+	if !strings.Contains(page, "Run now") {
+		t.Fatal("the schedules page offers no way to run one")
+	}
+	run, err := client.PostForm("http://ui/schedule/run", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "id": {policies[0].ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.Body.Close()
+	if location := run.Header.Get("Location"); !strings.Contains(location, "kind=ok") {
+		t.Fatalf("redirect = %q, want success", location)
+	}
+
+	jobs, err := engine.Store().Jobs(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The fake host has one account, so one job should be waiting.
+	if len(jobs) != 1 || jobs[0].Account != "customer1" {
+		t.Fatalf("jobs = %+v", jobs)
+	}
+	if jobs[0].Status != job.StatusPending {
+		t.Errorf("job status = %q, want pending", jobs[0].Status)
+	}
+
+	// Running by hand must not move the schedule's marker, or tonight's
+	// run would be skipped.
+	after, err := engine.Store().Policy(policies[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.LastRunAt != nil {
+		t.Error("a manual run moved the schedule's last-fired time")
+	}
+
+	// A second press while that account is still queued is a skip, not a
+	// second job for the same account.
+	_, page = get(t, client, "/schedule")
+	again, err := client.PostForm("http://ui/schedule/run", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "id": {policies[0].ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	again.Body.Close()
+	if location := again.Header.Get("Location"); !strings.Contains(location, "kind=warn") {
+		t.Errorf("second run redirect = %q, want a warning", location)
+	}
+	jobs, _ = engine.Store().Jobs(0)
+	if len(jobs) != 1 {
+		t.Errorf("a second press queued %d jobs for one account", len(jobs))
+	}
+}
+
+func TestRunScheduleWithNoDestinationIsRefused(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	// Written straight to the store: the form will not save one like this,
+	// but a schedule can end up here if its destination was removed.
+	policy, err := engine.Store().PutPolicy(nodestore.Policy{
+		Name: "Orphaned", ScheduleCron: "0 2 * * *", Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/schedule")
+	resp, err := client.PostForm("http://ui/schedule/run", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "id": {policy.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	location := resp.Header.Get("Location")
+	if !strings.Contains(location, "kind=error") || !strings.Contains(location, "nowhere") {
+		t.Errorf("redirect = %q, want it to say there is nowhere to send a backup", location)
 	}
 }

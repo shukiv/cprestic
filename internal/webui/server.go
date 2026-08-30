@@ -129,6 +129,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /schedule", s.handleSchedule)
 	mux.HandleFunc("POST /schedule/save", s.guard(s.handleSaveSchedule))
+	mux.HandleFunc("POST /schedule/run", s.guard(s.handleRunSchedule))
 	mux.HandleFunc("POST /schedule/delete", s.guard(s.handleDeleteSchedule))
 
 	mux.HandleFunc("GET /accounts", s.handleAccounts)

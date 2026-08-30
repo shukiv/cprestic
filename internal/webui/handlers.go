@@ -493,6 +493,29 @@ func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 	s.redirect(w, r, "/schedule", "ok", "Schedule saved.")
 }
 
+// handleRunSchedule queues a schedule's accounts straight away, rather
+// than waiting for its next cron time.
+func (s *Server) handleRunSchedule(w http.ResponseWriter, r *http.Request) {
+	queued, skipped, err := s.engine.RunPolicyNow(r.Context(), r.PostFormValue("id"))
+	if err != nil {
+		s.redirect(w, r, "/schedule", "error", err.Error())
+		return
+	}
+
+	switch {
+	case queued == 0:
+		s.redirect(w, r, "/schedule", "warn", fmt.Sprintf(
+			"Nothing queued: %s already being backed up.", strings.Join(skipped, ", ")))
+	case len(skipped) > 0:
+		s.redirect(w, r, "/schedule", "warn", fmt.Sprintf(
+			"Queued %d account(s). Skipped %s, already being backed up.",
+			queued, strings.Join(skipped, ", ")))
+	default:
+		s.redirect(w, r, "/schedule", "ok", fmt.Sprintf(
+			"Queued %d account(s). Watch progress under History.", queued))
+	}
+}
+
 func (s *Server) handleDeleteSchedule(w http.ResponseWriter, r *http.Request) {
 	if err := s.engine.Store().DeletePolicy(r.PostFormValue("id")); err != nil {
 		s.redirect(w, r, "/schedule", "error", err.Error())
