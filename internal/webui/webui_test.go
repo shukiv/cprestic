@@ -858,3 +858,137 @@ func TestDownloadRedirectIsAQueryOnlyReference(t *testing.T) {
 		t.Errorf("Location = %q, want the restore id", location)
 	}
 }
+
+func TestAccountsListMakesNoRemoteCalls(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	// A destination whose repository cannot be reached at all. Listing
+	// accounts must not touch it: one round trip per repository across
+	// every account is the slow-page mistake this design avoids.
+	_, page := get(t, client, "/destinations")
+	added, err := client.PostForm("http://ui/destinations/add", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Local disk"}, "type": {"local"},
+		"root": {t.TempDir()}, "repo_path": {"cp01"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	added.Body.Close()
+
+	started := time.Now()
+	status, body := get(t, client, "/accounts")
+	if status != http.StatusOK {
+		t.Fatalf("GET accounts = %d", status)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Errorf("listing accounts took %s; it is talking to a destination", elapsed)
+	}
+	if !strings.Contains(body, "customer1") {
+		t.Error("the account is missing from the list")
+	}
+	// The state filter and search are what make the page survive a server
+	// with hundreds of accounts.
+	if !strings.Contains(body, `data-filter="#accounts"`) {
+		t.Error("the list has no search")
+	}
+	if !strings.Contains(body, `data-state="bad"`) {
+		t.Error("the list has no state filter")
+	}
+	_ = engine
+}
+
+func TestAccountDetailShowsSnapshotsAndActivity(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	// Some history for the account, so the page has something to show.
+	finished := time.Now().Add(-time.Hour)
+	if _, err := engine.Store().PutJob(nodestore.Job{
+		Account: "customer1", Status: job.StatusSuccess, FinishedAt: &finished,
+		Targets: []nodestore.JobTarget{{
+			RepositoryID: "repo", Status: job.TargetSuccess, SnapshotID: "40dc1520",
+			BytesAdded: 1024, BytesProcessed: 8192,
+			Detail:     "error: lstat /home/customer1/tmp/sess_9f2b: no such file",
+			Incomplete: true,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Store().PutRestore(nodestore.Restore{
+		Account: "customer1", SnapshotID: "abc", Kind: node.KindVerify,
+		Status: job.StatusSuccess, FinishedAt: &finished,
+		Detail: "archive present; account tree present; 12 files in the home directory",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	status, body := get(t, client, "/account?user=customer1")
+	if status != http.StatusOK {
+		t.Fatalf("GET account = %d", status)
+	}
+	for _, want := range []string{
+		"customer1",
+		"1.0 KiB stored of 8.0 KiB read",
+		"Restore rehearsed",
+		"archive present; account tree present",
+		"What restic reported",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the account page is missing %q", want)
+		}
+	}
+}
+
+func TestAccountDetailRejectsAnUnknownAccount(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	resp, err := client.Get("http://ui/account?user=nosuchaccount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("GET = %d, want a redirect", resp.StatusCode)
+	}
+	if location := resp.Header.Get("Location"); !strings.Contains(location, "kind=error") {
+		t.Errorf("redirect = %q, want an error", location)
+	}
+}
+
+func TestOverviewLeadsWithCoverage(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	status, body := get(t, client, "/")
+	if status != http.StatusOK {
+		t.Fatalf("GET overview = %d", status)
+	}
+	// The question an operator actually has is whether everything is
+	// protected, so that is what the page opens with.
+	for _, want := range []string{
+		"of 1 accounts have a usable backup",
+		"Staging space",
+		// With nothing configured, the first thing to say is what to do.
+		"No backup destination yet",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the overview is missing %q", want)
+		}
+	}
+
+	// Once a destination exists, the unprotected accounts become the
+	// thing worth saying.
+	_, page := get(t, client, "/destinations")
+	added, err := client.PostForm("http://ui/destinations/add", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Local disk"}, "type": {"local"},
+		"root": {t.TempDir()}, "repo_path": {"cp01"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	added.Body.Close()
+
+	_, body = get(t, client, "/")
+	if !strings.Contains(body, "never been backed up") {
+		t.Error("the overview does not say that an account has no backup")
+	}
+	_ = engine
+}

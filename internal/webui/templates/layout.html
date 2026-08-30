@@ -7,21 +7,24 @@
 <style>{{.Assets.CSS}}</style>
 </head>
 <body>
+<div class="host">WHM <span>›</span> Plugins <span>›</span> <b>cprest Backups</b></div>
+
 <header class="bar">
-  <span class="brand">cprest backups</span>
+  <div class="brand">cprest <span>backups</span></div>
   <nav>
-    <a href="?p=" {{if eq .Nav "dashboard"}}class="on"{{end}}>Overview</a>
-    <a href="?p=destinations" {{if eq .Nav "destinations"}}class="on"{{end}}>Destinations</a>
-    <a href="?p=schedule" {{if eq .Nav "schedule"}}class="on"{{end}}>Schedules</a>
-    <a href="?p=accounts" {{if eq .Nav "accounts"}}class="on"{{end}}>Accounts</a>
-    <a href="?p=restore" {{if eq .Nav "restore"}}class="on"{{end}}>Restore</a>
-    <a href="?p=jobs" {{if eq .Nav "jobs"}}class="on"{{end}}>History</a>
-    <a href="?p=settings" {{if eq .Nav "settings"}}class="on"{{end}}>Settings</a>
+    <a href="?p=" {{if eq .Nav "dashboard"}}aria-current="page"{{end}}>Overview</a>
+    <a href="?p=accounts" {{if eq .Nav "accounts"}}aria-current="page"{{end}}>Accounts</a>
+    <a href="?p=destinations" {{if eq .Nav "destinations"}}aria-current="page"{{end}}>Destinations</a>
+    <a href="?p=schedule" {{if eq .Nav "schedule"}}aria-current="page"{{end}}>Schedules</a>
+    <a href="?p=jobs" {{if eq .Nav "jobs"}}aria-current="page"{{end}}>History</a>
+    <a href="?p=settings" {{if eq .Nav "settings"}}aria-current="page"{{end}}>Settings</a>
   </nav>
 </header>
+
 <main>
-  <h1>{{.Title}}</h1>
-  {{with .Flash}}<div class="flash {{.Kind}}">{{.Message}}</div>{{end}}
+  {{with .Flash}}<div class="banner {{if eq .Kind "ok"}}ok{{else if eq .Kind "warn"}}warn{{else}}bad{{end}}">
+    <div class="body">{{.Message}}</div>
+  </div>{{end}}
   {{template "content" .}}
 </main>
 <script>{{.Assets.JS}}</script>

@@ -1,6 +1,10 @@
 {{define "content"}}
 {{$data := .Data}}
-<div class="panel">
+<div>
+  <h1>Settings</h1>
+  <p class="sub">How this server takes its backups.</p>
+</div>
+<div class="card pad">
   <form method="post" action="?p=settings/save">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <div class="grid2">
@@ -29,7 +33,7 @@
   </form>
 </div>
 
-<div class="panel">
+<div class="card pad">
   <h2 style="margin-top:0">Staging</h2>
   <p><span class="mono">{{$data.Settings.StagingRoot}}</span> — {{bytes $data.StagingFree}} free</p>
   <p class="hint">This is where an account is assembled before it is uploaded. It needs
@@ -38,7 +42,7 @@
   strand the retention rules that keep your old backups tidy.</p>
 </div>
 
-<div class="panel">
+<div class="card pad">
   <h2 style="margin-top:0">This server's pkgacct</h2>
   {{if $data.Settings.PkgacctFlags}}
   <table>

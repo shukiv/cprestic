@@ -1,7 +1,11 @@
 {{define "content"}}
 {{$data := .Data}}
-<div class="panel">
-  <h2 style="margin-top:0">Backups</h2>
+<div>
+  <h1>History</h1>
+  <p class="sub">Everything cprest has done on this server.</p>
+</div>
+<div class="card">
+  <div class="pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Backups</h2></div>
   {{if $data.Jobs}}
   <table>
     <tr><th>When</th><th>Account</th><th>Result</th><th>Copies</th><th>Stored</th></tr>
@@ -60,11 +64,11 @@
   </table>
   <p class="hint">"New" is what the backup actually cost in storage. On an unchanged
   account it should be a small fraction of what was read.</p>
-  {{else}}<p class="hint">No backups have run yet.</p>{{end}}
+  {{else}}<div class="empty"><p><b>No backups have run yet.</b><br>They will appear here as schedules fire.</p></div>{{end}}
 </div>
 
-<div class="panel">
-  <h2 style="margin-top:0">Restores</h2>
+<div class="card">
+  <div class="pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Restores</h2></div>
   {{if $data.Restores}}
   <table>
     <tr><th>When</th><th>Account</th><th>Kind</th><th>Result</th><th>Detail</th></tr>
@@ -90,6 +94,6 @@
     </tr>
     {{end}}
   </table>
-  {{else}}<p class="hint">No restores yet.</p>{{end}}
+  {{else}}<div class="empty"><p>No restores or rehearsals yet.</p></div>{{end}}
 </div>
 {{end}}

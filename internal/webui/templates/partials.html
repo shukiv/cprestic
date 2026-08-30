@@ -1,8 +1,19 @@
 {{/* Shared fragments used by more than one page. */}}
-{{define "status"}}
+
+{{define "accountstate"}}
+  {{if .Running}}<span class="pill warn"><span class="dot"></span>Working</span>
+  {{else if not .LastBackup}}<span class="pill bad"><span class="dot"></span>No backup</span>
+  {{else if eq (printf "%s" .LastStatus) "success"}}<span class="pill ok"><span class="dot"></span>Protected</span>
+  {{else if eq (printf "%s" .LastStatus) "partial_success"}}<span class="pill warn"><span class="dot"></span>Partial</span>
+  {{else if eq (printf "%s" .LastStatus) "failed"}}<span class="pill bad"><span class="dot"></span>Last run failed</span>
+  {{else}}<span class="pill idle"><span class="dot"></span>—</span>{{end}}
+{{end}}
+
+{{define "runstate"}}
   {{$s := printf "%s" .}}
-  {{if eq $s "success"}}<span class="pill ok">success</span>
-  {{else if eq $s "partial_success"}}<span class="pill warn">partial</span>
-  {{else if eq $s "failed"}}<span class="pill error">failed</span>
-  {{else}}<span class="pill">{{$s}}</span>{{end}}
+  {{if eq $s "success"}}<span class="pill ok"><span class="dot"></span>Success</span>
+  {{else if eq $s "partial_success"}}<span class="pill warn"><span class="dot"></span>Partial</span>
+  {{else if eq $s "failed"}}<span class="pill bad"><span class="dot"></span>Failed</span>
+  {{else if eq $s "running"}}<span class="pill warn"><span class="dot"></span>Running</span>
+  {{else}}<span class="pill idle"><span class="dot"></span>{{$s}}</span>{{end}}
 {{end}}

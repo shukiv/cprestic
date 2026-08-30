@@ -133,6 +133,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /schedule/delete", s.guard(s.handleDeleteSchedule))
 
 	mux.HandleFunc("GET /accounts", s.handleAccounts)
+	mux.HandleFunc("GET /account", s.handleAccount)
 	mux.HandleFunc("POST /accounts/backup", s.guard(s.handleBackupNow))
 	mux.HandleFunc("POST /accounts/download", s.guard(s.handleDownloadRequest))
 	mux.HandleFunc("POST /accounts/verify", s.guard(s.handleVerifyRequest))

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/robfig/cron/v3"
+
 	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/destination"
 	"github.com/shuki/cprest/internal/job"
@@ -24,12 +26,35 @@ import (
 // --- dashboard ---
 
 type dashboardView struct {
-	Destinations []destinationView
+	Hostname     string
 	Accounts     []accountView
-	Jobs         []nodestore.Job
-	Restores     []nodestore.Restore
-	Warnings     []string
+	Destinations []destinationView
+	Policies     []nodestore.Policy
+
+	Protected      int
+	Stale          int
+	Unprotected    int
+	ProtectedPct   int
+	StalePct       int
+	UnprotectedPct int
+
+	// Attention lists the accounts worth acting on, worst first.
+	Attention     []accountView
+	AttentionMore int
+
+	NextRun       string
+	NextRunPolicy string
+	NextRunIn     string
+
+	StagingFree uint64
+	SpaceTight  bool
+
+	LastDrill *nodestore.Restore
 }
+
+// attentionLimit keeps the overview short: it is a prompt to act, not a
+// second copy of the accounts page.
+const attentionLimit = 3
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	destinations, err := s.destinationViews()
@@ -37,30 +62,124 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusInternalServerError, err)
 		return
 	}
-	accounts, warnings, err := s.accountViews(r)
+	accounts, _, err := s.accountViews(r)
 	if err != nil {
 		s.fail(w, r, http.StatusInternalServerError, err)
 		return
 	}
-	jobs, err := s.engine.Store().Jobs(10)
-	if err != nil {
-		s.fail(w, r, http.StatusInternalServerError, err)
-		return
-	}
-	restores, err := s.engine.Store().Restores(5)
+	policies, err := s.engine.Store().Policies()
 	if err != nil {
 		s.fail(w, r, http.StatusInternalServerError, err)
 		return
 	}
 
-	if len(destinations) == 0 {
-		warnings = append(warnings,
-			"No backup destination yet. Add one before anything can be backed up.")
+	view := dashboardView{
+		Hostname:     s.engine.Settings().Hostname,
+		Accounts:     accounts,
+		Destinations: destinations,
+		Policies:     policies,
 	}
-	s.render(w, r, "dashboard.html", "Overview", "dashboard", dashboardView{
-		Destinations: destinations, Accounts: accounts,
-		Jobs: jobs, Restores: restores, Warnings: warnings,
+
+	for _, account := range accounts {
+		switch {
+		case account.Protected():
+			view.Protected++
+		case account.LastBackup == nil:
+			view.Unprotected++
+		default:
+			view.Stale++
+		}
+	}
+	if total := len(accounts); total > 0 {
+		view.ProtectedPct = view.Protected * 100 / total
+		view.StalePct = view.Stale * 100 / total
+		// The remainder, so the bar always fills exactly.
+		view.UnprotectedPct = 100 - view.ProtectedPct - view.StalePct
+	}
+
+	// Worst first: never backed up, then failing, then stale.
+	for _, account := range accounts {
+		if account.Protected() || account.Running {
+			continue
+		}
+		view.Attention = append(view.Attention, account)
+	}
+	sort.SliceStable(view.Attention, func(i, j int) bool {
+		return attentionRank(view.Attention[i]) < attentionRank(view.Attention[j])
 	})
+	if len(view.Attention) > attentionLimit {
+		view.AttentionMore = len(view.Attention) - attentionLimit
+		view.Attention = view.Attention[:attentionLimit]
+	}
+
+	view.NextRun, view.NextRunPolicy, view.NextRunIn = nextRun(policies, time.Now())
+
+	settings := s.engine.Settings()
+	if free, err := stagingFree(settings.StagingRoot); err == nil {
+		view.StagingFree = free
+		// Roughly: not enough room for a large account plus headroom.
+		view.SpaceTight = free < 10<<30
+	}
+
+	if restores, err := s.engine.Store().Restores(0); err == nil {
+		for i := range restores {
+			if restores[i].Kind == node.KindVerify && restores[i].Status.Terminal() {
+				view.LastDrill = &restores[i]
+				break
+			}
+		}
+	}
+
+	s.render(w, r, "dashboard.html", "Overview", "dashboard", view)
+}
+
+func attentionRank(a accountView) int {
+	switch {
+	case a.LastBackup == nil:
+		return 0
+	case a.LastStatus == job.StatusFailed:
+		return 1
+	default:
+		return 2
+	}
+}
+
+// nextRun reports when the soonest enabled schedule fires.
+func nextRun(policies []nodestore.Policy, now time.Time) (at, name, in string) {
+	var (
+		soonest time.Time
+		which   string
+	)
+	for _, policy := range policies {
+		if !policy.Enabled || len(policy.RepositoryIDs) == 0 {
+			continue
+		}
+		schedule, err := cron.ParseStandard(policy.ScheduleCron)
+		if err != nil {
+			continue
+		}
+		next := schedule.Next(now)
+		if soonest.IsZero() || next.Before(soonest) {
+			soonest, which = next, policy.Name
+		}
+	}
+	if soonest.IsZero() {
+		return "", "", ""
+	}
+	return soonest.Local().Format("15:04"), which, "in " + humanUntil(soonest.Sub(now))
+}
+
+func humanUntil(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "under a minute"
+	case d < time.Hour:
+		return fmt.Sprintf("%d min", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%d h", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%d days", int(d.Hours()/24))
+	}
 }
 
 // --- destinations ---
@@ -535,6 +654,37 @@ type accountView struct {
 	Running    bool
 }
 
+// Stripe is the severity colour on the row's leading edge, so state reads
+// without depending on colour alone.
+func (a accountView) Stripe() string {
+	switch {
+	case a.Running:
+		return "s-warn"
+	case a.LastBackup == nil, a.LastStatus == job.StatusFailed:
+		return "s-bad"
+	case a.LastStatus == job.StatusPartialSuccess:
+		return "s-warn"
+	default:
+		return "s-ok"
+	}
+}
+
+// Filter is the value the client-side state filter matches on.
+func (a accountView) Filter() string {
+	if a.LastBackup == nil {
+		return "bad"
+	}
+	if a.LastStatus == job.StatusSuccess {
+		return "ok"
+	}
+	return "warn"
+}
+
+// Protected reports whether this account has a backup that worked.
+func (a accountView) Protected() bool {
+	return a.LastBackup != nil && a.LastStatus == job.StatusSuccess
+}
+
 func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) {
 	accounts, err := s.engine.Accounts(r.Context())
 	if err != nil {
@@ -584,6 +734,12 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 	return views, warnings, nil
 }
 
+// handleAccounts lists what this server has, using local state only.
+//
+// Nothing here talks to a backup destination: listing snapshots means a
+// round trip per repository, and doing that for every account would make
+// the page as slow as the account walk this replaced. Snapshots are read
+// when one account is opened.
 func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	accounts, warnings, err := s.accountViews(r)
 	if err != nil {
@@ -595,11 +751,205 @@ func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusInternalServerError, err)
 		return
 	}
-	s.render(w, r, "accounts.html", "Accounts", "accounts", struct {
-		Accounts []accountView
-		Policies []nodestore.Policy
-		Warnings []string
-	}{accounts, policies, warnings})
+
+	view := struct {
+		Accounts    []accountView
+		Policies    []nodestore.Policy
+		Warnings    []string
+		Protected   int
+		Unprotected int
+	}{Accounts: accounts, Policies: policies, Warnings: warnings}
+	for _, account := range accounts {
+		switch {
+		case account.Protected():
+			view.Protected++
+		case account.LastBackup == nil:
+			view.Unprotected++
+		}
+	}
+	s.render(w, r, "accounts.html", "Accounts", "accounts", view)
+}
+
+// activityRow is one thing that happened to an account.
+type activityRow struct {
+	When       time.Time
+	What       string
+	Status     job.Status
+	Note       string
+	Log        string
+	Download   string
+	Incomplete bool
+}
+
+func (a activityRow) Stripe() string {
+	switch a.Status {
+	case job.StatusSuccess:
+		return "s-ok"
+	case job.StatusFailed:
+		return "s-bad"
+	default:
+		return "s-warn"
+	}
+}
+
+// handleAccount shows one account: its snapshots, its rehearsals and what
+// has happened to it.
+//
+// This is the page that reads from the backup destination, and it does so
+// for one account only — which is why it is a page you open rather than
+// something folded into the list.
+func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
+	user := r.URL.Query().Get("user")
+	accounts, _, err := s.accountViews(r)
+	if err != nil {
+		s.fail(w, r, http.StatusInternalServerError, err)
+		return
+	}
+
+	var account accountView
+	found := false
+	for _, candidate := range accounts {
+		if candidate.User == user {
+			account, found = candidate, true
+			break
+		}
+	}
+	if !found {
+		s.redirect(w, r, "/accounts", "error", "There is no account called "+user+" on this server.")
+		return
+	}
+
+	view := struct {
+		Account        accountView
+		Snapshots      []resticrun.Snapshot
+		RepositoryID   string
+		RepositoryName string
+		LookupError    string
+		Activity       []activityRow
+		LastDrill      *nodestore.Restore
+	}{Account: account}
+
+	// Read this account's snapshots from the first provisioned
+	// destination. One account, one round trip.
+	destinations, err := s.destinationViews()
+	if err != nil {
+		s.fail(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	for _, destination := range destinations {
+		if destination.Repository.InitialisedAt == nil {
+			continue
+		}
+		view.RepositoryID = destination.Repository.ID
+		view.RepositoryName = destination.Name
+		snapshots, err := s.engine.Snapshots(r.Context(), destination.Repository.ID, user)
+		if err != nil {
+			view.LookupError = err.Error()
+			break
+		}
+		sort.Slice(snapshots, func(i, j int) bool {
+			return snapshots[i].Time.After(snapshots[j].Time)
+		})
+		view.Snapshots = snapshots
+		break
+	}
+
+	names := map[string]string{}
+	for _, destination := range destinations {
+		names[destination.Repository.ID] = destination.Name
+	}
+
+	jobs, err := s.engine.Store().Jobs(0)
+	if err != nil {
+		s.fail(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	for _, stored := range jobs {
+		if stored.Account != user {
+			continue
+		}
+		when := stored.QueuedAt
+		if stored.FinishedAt != nil {
+			when = *stored.FinishedAt
+		}
+		for _, target := range stored.Targets {
+			row := activityRow{
+				When:       when,
+				What:       "Backed up to " + fallback(names[target.RepositoryID], "a destination"),
+				Status:     stored.Status,
+				Log:        target.Detail,
+				Incomplete: target.Incomplete,
+			}
+			switch {
+			case target.Error != "":
+				row.Note = target.Error
+			case target.Status == job.TargetSuccess:
+				row.Note = fmt.Sprintf("%s stored of %s read",
+					humanBytes(target.BytesAdded), humanBytes(target.BytesProcessed))
+			}
+			view.Activity = append(view.Activity, row)
+		}
+		if len(stored.Targets) == 0 {
+			view.Activity = append(view.Activity, activityRow{
+				When: when, What: "Backup", Status: stored.Status, Note: stored.StagingErr,
+			})
+		}
+	}
+
+	restores, err := s.engine.Store().Restores(0)
+	if err != nil {
+		s.fail(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	for i := range restores {
+		restore := restores[i]
+		if restore.Account != user {
+			continue
+		}
+		when := restore.QueuedAt
+		if restore.FinishedAt != nil {
+			when = *restore.FinishedAt
+		}
+		row := activityRow{When: when, Status: restore.Status, Note: restore.Error}
+		switch restore.Kind {
+		case node.KindVerify:
+			row.What = "Restore rehearsed"
+			if restore.Detail != "" {
+				row.Note = restore.Detail
+			}
+			if view.LastDrill == nil && restore.Status.Terminal() {
+				view.LastDrill = &restores[i]
+			}
+		case protocol.RestoreFiles:
+			row.What = "Files recovered"
+			if restore.RestoredTo != "" {
+				row.Note = "into " + restore.RestoredTo
+			}
+		default:
+			row.What = "Rebuilt for download"
+			if restore.Applied {
+				row.What = "Restored over the live account"
+			}
+			if restore.ArchivePath != "" && !restore.Applied {
+				row.Download = restore.ID
+				row.Note = ""
+			}
+		}
+		view.Activity = append(view.Activity, row)
+	}
+
+	sort.Slice(view.Activity, func(i, j int) bool {
+		return view.Activity[i].When.After(view.Activity[j].When)
+	})
+
+	s.render(w, r, "account.html", account.User, "accounts", view)
+}
+
+func fallback(value, whenEmpty string) string {
+	if value == "" {
+		return whenEmpty
+	}
+	return value
 }
 
 func (s *Server) handleBackupNow(w http.ResponseWriter, r *http.Request) {

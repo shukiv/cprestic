@@ -1,7 +1,11 @@
 {{define "content"}}
 {{$data := .Data}}
-<div class="panel">
-  <h2 style="margin-top:0">Configured destinations</h2>
+<div>
+  <h1>Destinations</h1>
+  <p class="sub">Where this server sends its backups.</p>
+</div>
+<div class="card">
+  <div class="pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Configured destinations</h2></div>
   {{if $data.Destinations}}
   <table>
     <tr><th>Name</th><th>Endpoint</th><th>Repository</th><th>Status</th><th class="right">&nbsp;</th></tr>
@@ -53,12 +57,12 @@
      so it is done for you.</p>
   {{end}}
   {{else}}
-  <p class="hint">None yet. Add one below.</p>
+  <div class="empty"><p><b>No destination yet.</b><br>Nothing can be backed up until this server has somewhere to send it.</p></div>
   {{end}}
 </div>
 
 {{$editing := $data.Editing}}
-<div class="panel">
+<div class="card pad">
   <h2 style="margin-top:0">{{if $editing}}Edit “{{$editing.Name}}”{{else}}Add a destination{{end}}</h2>
   <form method="post" action="{{if $editing}}?p=destinations/edit{{else}}?p=destinations/add{{end}}">
     <input type="hidden" name="csrf" value="{{.CSRF}}">

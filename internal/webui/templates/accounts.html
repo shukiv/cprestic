@@ -1,53 +1,78 @@
 {{define "content"}}
-{{$data := .Data}}
-{{range $data.Warnings}}<div class="warnbox">{{.}}</div>{{end}}
-<div class="panel">
-  {{if $data.Accounts}}
-  <table>
-    <tr><th>Account</th><th>Domain</th><th>Size</th><th>Last backup</th><th>Result</th><th class="right">&nbsp;</th></tr>
-    {{range $data.Accounts}}
-    <tr {{if .Running}}data-running="1"{{end}}>
-      <td>{{.User}}</td>
-      <td class="muted">{{if .PrimaryDomain}}{{.PrimaryDomain}}{{else}}—{{end}}</td>
-      <td>{{if .SizeBytes}}{{bytes .SizeBytes}}{{else}}<span class="muted">measured at backup</span>{{end}}</td>
-      <td>{{ago .LastBackup}}</td>
-      <td>
-        {{if .Running}}<span class="pill">running now</span>
-        {{else if eq (printf "%s" .LastStatus) "success"}}<span class="pill ok">ok</span>
-        {{else if eq (printf "%s" .LastStatus) "partial_success"}}<span class="pill warn">partial</span>
-        {{else if eq (printf "%s" .LastStatus) "failed"}}<span class="pill error">failed</span>
-        {{else}}<span class="muted">never</span>{{end}}
-      </td>
-      <td class="right">
-        <form method="post" action="?p=accounts/backup" class="inline">
-          <input type="hidden" name="csrf" value="{{$.CSRF}}">
-          <input type="hidden" name="account" value="{{.User}}">
-          {{if gt (len $data.Policies) 1}}
-          <select name="policy">
-            {{range $data.Policies}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
-          </select>
-          {{end}}
-          <button {{if .Running}}disabled{{end}}>Back up now</button>
-        </form>
-        <form method="post" action="?p=accounts/download" class="inline">
-          <input type="hidden" name="csrf" value="{{$.CSRF}}">
-          <input type="hidden" name="account" value="{{.User}}">
-          <button {{if not .LastBackup}}disabled title="No backup of this account yet"{{end}}
-                  title="Downloads the rebuilt archive, or rebuilds it first if there is none">Download</button>
-        </form>
-        <form method="post" action="?p=accounts/verify" class="inline">
-          <input type="hidden" name="csrf" value="{{$.CSRF}}">
-          <input type="hidden" name="account" value="{{.User}}">
-          <button {{if not .LastBackup}}disabled{{end}}
-                  title="Rebuilds the backup in scratch space, checks it and deletes it. The live account is not touched.">Verify</button>
-        </form>
-        <a href="?p=restore&amp;account={{.User}}"><button type="button">Restore</button></a>
-      </td>
-    </tr>
-    {{end}}
-  </table>
-  {{else}}
-  <p class="hint">No cPanel accounts found on this server.</p>
+{{$d := .Data}}
+<div>
+  <h1>Accounts</h1>
+  <p class="sub">Back up, verify or recover any account on this server.</p>
+</div>
+
+{{range $d.Warnings}}<div class="warnbox">{{.}}</div>{{end}}
+
+{{if $d.Accounts}}
+<div class="row spread">
+  <div class="row">
+    <div class="search">
+      <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor"
+           stroke-width="2" aria-hidden="true" style="color:var(--faint)">
+        <circle cx="9" cy="9" r="6"/><path d="M14 14l4 4"/>
+      </svg>
+      <input type="text" id="filter" placeholder="Filter accounts" aria-label="Filter accounts"
+             autocomplete="off" data-filter="#accounts">
+    </div>
+    <div class="chips" data-filter-state="#accounts">
+      <button type="button" class="chip" aria-pressed="true" data-state="">All {{len $d.Accounts}}</button>
+      <button type="button" class="chip" aria-pressed="false" data-state="ok">Protected {{$d.Protected}}</button>
+      <button type="button" class="chip" aria-pressed="false" data-state="bad">Never {{$d.Unprotected}}</button>
+    </div>
+  </div>
+  {{if $d.Policies}}
+  <form method="post" action="?p=schedule/run" class="inline">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="id" value="{{(index $d.Policies 0).ID}}">
+    <button class="btn primary">Back up all</button>
+  </form>
   {{end}}
 </div>
+
+<div class="card">
+  <div class="tablewrap">
+    <table id="accounts">
+      <thead>
+        <tr><th>Account</th><th>Size</th><th>Last backup</th><th>State</th><th class="right">&nbsp;</th></tr>
+      </thead>
+      <tbody>
+        {{range $d.Accounts}}
+        <tr class="state {{.Stripe}}" data-name="{{.User}} {{.PrimaryDomain}}" data-state="{{.Filter}}">
+          <td class="acct"><a class="link" href="?p=account&amp;user={{.User}}">{{.User}}</a>
+            {{if .PrimaryDomain}}<div class="sublabel">{{.PrimaryDomain}}</div>{{end}}</td>
+          <td class="mono num">{{if .SizeBytes}}{{bytes .SizeBytes}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{if .LastBackup}}{{ago .LastBackup}}{{else}}<span class="mono">never</span>{{end}}</td>
+          <td>{{template "accountstate" .}}</td>
+          <td class="right"><div class="actions">
+            <form method="post" action="?p=accounts/backup" class="inline">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <input type="hidden" name="account" value="{{.User}}">
+              <button class="btn" {{if .Running}}disabled{{end}}>Back up</button>
+            </form>
+            <form method="post" action="?p=accounts/download" class="inline">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <input type="hidden" name="account" value="{{.User}}">
+              <button class="btn" {{if or .Running (not .LastBackup)}}disabled{{end}}>Download</button>
+            </form>
+            <a class="btn quiet" href="?p=account&amp;user={{.User}}">Open</a>
+          </div></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  <div class="pad" style="border-top:1px solid var(--line); color:var(--muted); font-size:13px">
+    <span data-count-for="#accounts">{{len $d.Accounts}}</span> account{{if ne (len $d.Accounts) 1}}s{{end}}
+  </div>
+</div>
+{{else}}
+<div class="card"><div class="empty">
+  <p><b>No cPanel accounts found on this server.</b><br>
+    cprest reads them from <span class="mono">/var/cpanel/users</span>.</p>
+</div></div>
+{{end}}
 {{end}}

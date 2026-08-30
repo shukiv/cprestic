@@ -1,6 +1,10 @@
 {{define "content"}}
 {{$data := .Data}}
-<div class="panel">
+<div>
+  <h1>Restore</h1>
+  <p class="sub">Recover a whole account, or single files, from a backup.</p>
+</div>
+<div class="card pad">
   <form method="get">
     <input type="hidden" name="p" value="restore">
     <div class="grid2">
@@ -33,7 +37,7 @@
 {{end}}
 
 {{if $data.Account}}
-<div class="panel">
+<div class="card pad">
   <h2 style="margin-top:0">Available backups of {{$data.Account}}</h2>
   {{if $data.Snapshots}}
   <form method="post" action="?p=restore/start">
@@ -80,7 +84,7 @@
 </div>
 {{end}}
 
-<div class="panel">
+<div class="card pad">
   <h2 style="margin-top:0">Recent restores</h2>
   {{if $data.Restores}}
   <table>
