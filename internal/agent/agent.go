@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/shuki/cprest/internal/cpanel"
@@ -296,6 +297,7 @@ func (a *Agent) backupTarget(ctx context.Context, log *slog.Logger,
 	result.BytesAdded = backup.Summary.DataAdded
 	result.BytesProcessed = backup.Summary.TotalBytesProcessed
 	result.Incomplete = backup.Incomplete
+	result.Detail = trimDetail(backup.Stderr)
 	if backup.Incomplete {
 		log.Warn("snapshot is incomplete: some source files could not be read",
 			"repository_id", target.RepositoryID, "snapshot_id", result.SnapshotID)
@@ -304,4 +306,23 @@ func (a *Agent) backupTarget(ctx context.Context, log *slog.Logger,
 		"repository_id", target.RepositoryID, "snapshot_id", result.SnapshotID,
 		"bytes_added", result.BytesAdded, "bytes_processed", result.BytesProcessed)
 	return result
+}
+
+// maxDetail bounds what is kept from restic's error stream. A backup of a
+// busy account can name thousands of transient files, and the last of them
+// are the ones worth reading.
+const maxDetail = 16 << 10
+
+// trimDetail keeps the tail of restic's error output, which is where its
+// summary of what it could not read appears.
+func trimDetail(stderr string) string {
+	trimmed := strings.TrimSpace(stderr)
+	if len(trimmed) <= maxDetail {
+		return trimmed
+	}
+	cut := trimmed[len(trimmed)-maxDetail:]
+	if newline := strings.IndexByte(cut, '\n'); newline >= 0 {
+		cut = cut[newline+1:]
+	}
+	return "… earlier output omitted …\n" + cut
 }

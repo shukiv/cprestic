@@ -367,3 +367,155 @@ func TestRedirectsStayRelativeSoWHMKeepsItsToken(t *testing.T) {
 		t.Errorf("Location = %q, want no path component", location)
 	}
 }
+
+func TestEditSchedule(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	// A destination to point the schedule at.
+	_, page := get(t, client, "/destinations")
+	added, err := client.PostForm("http://ui/destinations/add", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Local disk"}, "type": {"local"},
+		"root": {t.TempDir()}, "repo_path": {"cp01"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	added.Body.Close()
+	repos, err := engine.Store().Repositories()
+	if err != nil || len(repos) != 1 {
+		t.Fatalf("repositories = %+v (%v)", repos, err)
+	}
+
+	_, page = get(t, client, "/schedule")
+	saved, err := client.PostForm("http://ui/schedule/save", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Nightly"}, "cron": {"0 2 * * *"},
+		"repository": {repos[0].ID}, "scope": {"all"}, "enabled": {"1"},
+		"keep_daily": {"7"}, "mode": {"split"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved.Body.Close()
+
+	policies, err := engine.Store().Policies()
+	if err != nil || len(policies) != 1 {
+		t.Fatalf("policies = %+v (%v)", policies, err)
+	}
+	original := policies[0]
+
+	// The edit form must arrive filled in, or an operator retypes
+	// everything and loses whatever they forget.
+	editPage := func() string {
+		t.Helper()
+		status, body := get(t, client, "/schedule?edit="+original.ID)
+		if status != http.StatusOK {
+			t.Fatalf("GET edit page = %d", status)
+		}
+		return body
+	}
+	form := editPage()
+	for _, want := range []string{
+		`value="Nightly"`, `value="0 2 * * *"`,
+		`name="id" value="` + original.ID + `"`,
+		"Save changes",
+	} {
+		if !strings.Contains(form, want) {
+			t.Errorf("the edit form is missing %q", want)
+		}
+	}
+
+	// Saving with the id updates rather than creating a second schedule.
+	updated, err := client.PostForm("http://ui/schedule/save", map[string][]string{
+		"csrf": {csrfToken(t, form)}, "id": {original.ID},
+		"name": {"Weekly"}, "cron": {"0 3 * * 0"},
+		"repository": {repos[0].ID}, "scope": {"all"}, "enabled": {"1"},
+		"keep_daily": {"14"}, "mode": {"split"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated.Body.Close()
+
+	policies, err = engine.Store().Policies()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(policies) != 1 {
+		t.Fatalf("editing produced %d schedules, want 1", len(policies))
+	}
+	if policies[0].Name != "Weekly" || policies[0].ScheduleCron != "0 3 * * 0" {
+		t.Errorf("policy = %+v", policies[0])
+	}
+	if policies[0].Retention.KeepDaily != 14 {
+		t.Errorf("retention = %+v", policies[0].Retention)
+	}
+	if policies[0].CreatedAt != original.CreatedAt {
+		t.Error("editing changed when the schedule was created")
+	}
+}
+
+func TestEditDestinationKeepsCredentialsAndRepositoryPath(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	_, page := get(t, client, "/destinations")
+	added, err := client.PostForm("http://ui/destinations/add", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Wasabi"}, "type": {"s3"},
+		"bucket": {"cp-backups"}, "region": {"us-east-1"},
+		"endpoint":          {"s3.us-east-1.wasabisys.com"},
+		"access_key_id":     {"AKIA-ORIGINAL"},
+		"secret_access_key": {"SECRET-ORIGINAL"},
+		"repo_path":         {"cp01"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	added.Body.Close()
+
+	destinations, err := engine.Store().Destinations()
+	if err != nil || len(destinations) != 1 {
+		t.Fatalf("destinations = %+v (%v)", destinations, err)
+	}
+	original := destinations[0]
+
+	status, form := get(t, client, "/destinations?edit="+original.ID)
+	if status != http.StatusOK {
+		t.Fatalf("GET edit page = %d", status)
+	}
+	for _, want := range []string{`value="Wasabi"`, `value="cp-backups"`, "Save changes"} {
+		if !strings.Contains(form, want) {
+			t.Errorf("the edit form is missing %q", want)
+		}
+	}
+
+	// Correcting the bucket must not require retyping the secret key.
+	edited, err := client.PostForm("http://ui/destinations/edit", map[string][]string{
+		"csrf": {csrfToken(t, form)}, "id": {original.ID},
+		"name": {"Wasabi Miami"}, "bucket": {"cp-backups-2"},
+		"region": {"us-east-1"}, "endpoint": {"s3.us-east-1.wasabisys.com"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited.Body.Close()
+
+	destinations, err = engine.Store().Destinations()
+	if err != nil || len(destinations) != 1 {
+		t.Fatalf("editing produced %d destinations", len(destinations))
+	}
+	updated := destinations[0]
+	if updated.Name != "Wasabi Miami" || updated.Config["bucket"] != "cp-backups-2" {
+		t.Errorf("destination = %+v", updated)
+	}
+	if updated.CredentialsSecretID != original.CredentialsSecretID {
+		t.Error("the stored credentials were replaced by an empty form")
+	}
+
+	// The repository is where the backups already are.
+	repos, err := engine.Store().Repositories()
+	if err != nil || len(repos) != 1 {
+		t.Fatalf("repositories = %+v", repos)
+	}
+	if repos[0].Path != "cp01" {
+		t.Errorf("repository path changed to %q", repos[0].Path)
+	}
+}

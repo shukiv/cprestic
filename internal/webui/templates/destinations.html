@@ -18,6 +18,7 @@
         {{else}}<span class="dot idle"></span>not checked{{end}}
       </td>
       <td class="right">
+        <a href="?p=destinations&amp;edit={{.ID}}"><button type="button">Edit</button></a>
         <form method="post" action="?p=destinations/test" class="inline">
           <input type="hidden" name="csrf" value="{{$.CSRF}}">
           <input type="hidden" name="id" value="{{.ID}}">
@@ -56,35 +57,44 @@
   {{end}}
 </div>
 
+{{$editing := $data.Editing}}
 <div class="panel">
-  <h2 style="margin-top:0">Add a destination</h2>
-  <form method="post" action="?p=destinations/add">
+  <h2 style="margin-top:0">{{if $editing}}Edit “{{$editing.Name}}”{{else}}Add a destination{{end}}</h2>
+  <form method="post" action="{{if $editing}}?p=destinations/edit{{else}}?p=destinations/add{{end}}">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
+    {{with $editing}}<input type="hidden" name="id" value="{{.ID}}">{{end}}
     <div class="grid2">
       <div>
         <label for="name">Name</label>
-        <input type="text" id="name" name="name" placeholder="Backup server, Wasabi, …" required>
+        <input type="text" id="name" name="name" placeholder="Backup server, Wasabi, …" required
+               value="{{with $editing}}{{.Name}}{{end}}">
       </div>
       <div>
         <label for="type">Type</label>
+        {{if $editing}}
+        <input type="text" value="{{$editing.Type}}" disabled>
+        <small class="help">A destination's type cannot change. Remove it and add a new one instead.</small>
+        {{else}}
         <select id="type" name="type" data-destination-type>
           <option value="rest">Backup server (restic REST)</option>
           <option value="sftp">Another Linux server (SFTP)</option>
           <option value="s3">S3 or S3-compatible</option>
           <option value="local">Local disk or mounted NAS</option>
         </select>
+        {{end}}
       </div>
     </div>
 
-    <div data-for-type="rest">
+    <div {{if $editing}}{{if ne $editing.Type "rest"}}hidden{{end}}{{else}}data-for-type="rest"{{end}}>
       <label for="base_url">Server address</label>
-      <input type="text" id="base_url" name="base_url" placeholder="https://backup.example.com">
+      <input type="text" id="base_url" name="base_url" value="{{with $editing}}{{index .Config "base_url"}}{{end}}" placeholder="https://backup.example.com">
       <small class="help">Must be https. Point it at a rest-server instance.</small>
 
       <div class="grid2">
         <div>
           <label for="username">Username</label>
           <input type="text" id="username" name="username">
+          {{if $editing}}<small class="help">Leave empty to keep the stored credentials.</small>{{end}}
         </div>
         <div>
           <label for="password">Password</label>
@@ -92,7 +102,7 @@
         </div>
       </div>
 
-      <label class="check"><input type="checkbox" name="append_only" value="1">
+      <label class="check"><input type="checkbox" name="append_only" value="1" {{with $editing}}{{if .AppendOnly}}checked{{end}}{{end}}>
         <span>The server runs with <span class="mono">--append-only</span>
         <small class="help">Recommended: this server can then add backups but never delete
         them, so ransomware here cannot destroy your history. It also means retention
@@ -105,27 +115,27 @@
       Without it, nothing can ever prune old backups.</small>
 
       <label for="ca_bundle">CA bundle file (optional)</label>
-      <input type="text" id="ca_bundle" name="ca_bundle" placeholder="/etc/cprest/backup-ca.pem">
+      <input type="text" id="ca_bundle" name="ca_bundle" value="{{with $editing}}{{index .Config "ca_bundle"}}{{end}}" placeholder="/etc/cprest/backup-ca.pem">
       <small class="help">Only if the backup server uses a private certificate authority.</small>
     </div>
 
-    <div data-for-type="sftp" hidden>
+    <div {{if $editing}}{{if ne $editing.Type "sftp"}}hidden{{end}}{{else}}data-for-type="sftp" hidden{{end}}>
       <div class="grid2">
         <div>
           <label for="host">Host</label>
-          <input type="text" id="host" name="host" placeholder="backup.example.com">
+          <input type="text" id="host" name="host" value="{{with $editing}}{{index .Config "host"}}{{end}}" placeholder="backup.example.com">
         </div>
         <div>
           <label for="port">Port</label>
-          <input type="number" id="port" name="port" value="22">
+          <input type="number" id="port" name="port" value="{{if $editing}}{{if index $editing.Config "port"}}{{index $editing.Config "port"}}{{else}}22{{end}}{{else}}22{{end}}">
         </div>
         <div>
           <label for="user">SSH user</label>
-          <input type="text" id="user" name="user" placeholder="cpbackup">
+          <input type="text" id="user" name="user" value="{{with $editing}}{{index .Config "user"}}{{end}}" placeholder="cpbackup">
         </div>
         <div>
           <label for="root">Remote directory</label>
-          <input type="text" id="root" name="root" placeholder="/home/cpbackup/backups">
+          <input type="text" id="root" name="root" value="{{with $editing}}{{index .Config "root"}}{{end}}" placeholder="/home/cpbackup/backups">
         </div>
       </div>
 
@@ -148,24 +158,25 @@
       </details>
     </div>
 
-    <div data-for-type="s3" hidden>
+    <div {{if $editing}}{{if ne $editing.Type "s3"}}hidden{{end}}{{else}}data-for-type="s3" hidden{{end}}>
       <div class="grid2">
         <div>
           <label for="bucket">Bucket</label>
-          <input type="text" id="bucket" name="bucket">
+          <input type="text" id="bucket" name="bucket" value="{{with $editing}}{{index .Config "bucket"}}{{end}}">
         </div>
         <div>
           <label for="region">Region</label>
-          <input type="text" id="region" name="region" placeholder="us-east-1">
+          <input type="text" id="region" name="region" value="{{with $editing}}{{index .Config "region"}}{{end}}" placeholder="us-east-1">
         </div>
       </div>
       <label for="endpoint">Endpoint (leave empty for Amazon S3)</label>
-      <input type="text" id="endpoint" name="endpoint" placeholder="s3.us-east-1.wasabisys.com">
+      <input type="text" id="endpoint" name="endpoint" value="{{with $editing}}{{index .Config "endpoint"}}{{end}}" placeholder="s3.us-east-1.wasabisys.com">
       <small class="help">Wasabi, Cloudflare R2, MinIO, Backblaze B2 and Ceph all work here.</small>
       <div class="grid2">
         <div>
           <label for="access_key_id">Access key</label>
           <input type="text" id="access_key_id" name="access_key_id">
+          {{if $editing}}<small class="help">Leave empty to keep the stored credentials.</small>{{end}}
         </div>
         <div>
           <label for="secret_access_key">Secret key</label>
@@ -174,20 +185,28 @@
       </div>
     </div>
 
-    <div data-for-type="local" hidden>
+    <div {{if $editing}}{{if ne $editing.Type "local"}}hidden{{end}}{{else}}data-for-type="local" hidden{{end}}>
       <label for="local_root">Directory</label>
-      <input type="text" id="local_root" name="root" placeholder="/mnt/backups">
+      <input type="text" id="local_root" name="root" value="{{with $editing}}{{index .Config "root"}}{{end}}" placeholder="/mnt/backups">
       <small class="help">A disk on this machine protects against a lost file, not a lost
       server. Pair it with something remote.</small>
     </div>
 
+    {{if $editing}}
+    <label>Folder inside the destination</label>
+    <input type="text" value="{{$editing.Repository.Path}}" disabled>
+    <small class="help">This is where the existing backups are. Changing it would start an
+    empty repository somewhere else, so it is fixed once the destination is created.</small>
+    {{else}}
     <label for="repo_path">Folder inside the destination</label>
     <input type="text" id="repo_path" name="repo_path" value="{{$data.Hostname}}">
     <small class="help">Keeps this server's backups separate from any other server's.</small>
+    {{end}}
 
     <div class="actions">
-      <button class="primary" type="submit">Add and test</button>
-      <span class="muted">Credentials are encrypted before they are written to disk.</span>
+      <button class="primary" type="submit">{{if $editing}}Save changes{{else}}Add and test{{end}}</button>
+      {{if $editing}}<a href="?p=destinations" class="muted">Cancel</a>
+      {{else}}<span class="muted">Credentials are encrypted before they are written to disk.</span>{{end}}
     </div>
   </form>
 </div>

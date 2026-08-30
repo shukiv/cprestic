@@ -37,6 +37,25 @@
         {{end}}{{end}}
       </td>
     </tr>
+    {{$job := .}}
+    {{range .Targets}}{{if or .Detail .SnapshotID}}
+    <tr class="detailrow">
+      <td colspan="5">
+        <details>
+          <summary>What restic reported for {{$job.Account}}{{with index $data.Destination .RepositoryID}} → {{.}}{{end}}</summary>
+          {{if .SnapshotID}}<p class="hint">Snapshot <span class="mono">{{short .SnapshotID}}</span>
+            · took {{printf "%.0f" .DurationSecs}}s</p>{{end}}
+          {{if .Detail}}<pre class="log">{{.Detail}}</pre>
+          {{else}}<p class="hint">restic reported nothing beyond the summary.</p>{{end}}
+          {{if .Incomplete}}
+          <p class="hint">Files that vanish or cannot be read mid-backup are normal on a
+          live server — sessions, sockets, caches. What matters is whether anything above
+          is a file the site actually needs.</p>
+          {{end}}
+        </details>
+      </td>
+    </tr>
+    {{end}}{{end}}
     {{end}}
   </table>
   <p class="hint">"New" is what the backup actually cost in storage. On an unchanged

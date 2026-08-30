@@ -93,6 +93,10 @@ type JobTarget struct {
 	DurationSecs   float64          `json:"duration_seconds"`
 	Incomplete     bool             `json:"incomplete"`
 	Error          string           `json:"error,omitempty"`
+	// Detail is restic's own account of the run: the files it could not
+	// read, and any warnings. Kept so "some files unreadable" can be
+	// looked into rather than merely noticed.
+	Detail string `json:"detail,omitempty"`
 }
 
 // Restore is one restore run.

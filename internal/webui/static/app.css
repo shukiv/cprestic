@@ -89,6 +89,14 @@ button.link { border: none; background: none; color: var(--accent); padding: 0.2
 .actions { margin-top: 1.1rem; display: flex; gap: 0.6rem; align-items: center; }
 .muted { color: var(--muted); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.86rem; }
+tr.detailrow td { padding-top: 0; border-bottom: 1px solid var(--line); }
+tr.detailrow summary { cursor: pointer; color: var(--accent); font-size: 0.88rem; }
+pre.log {
+  background: #f2f4f7; border: 1px solid var(--line); border-radius: 6px;
+  padding: 0.7rem 0.8rem; overflow-x: auto; max-height: 22rem;
+  font-size: 0.8rem; line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+}
+
 details.keybox { margin-top: 0.9rem; border-top: 1px solid var(--line); padding-top: 0.7rem; }
 details.keybox summary { cursor: pointer; color: var(--accent); }
 details.keybox textarea { margin-top: 0.5rem; font-size: 0.8rem; }

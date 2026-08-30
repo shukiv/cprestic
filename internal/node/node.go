@@ -391,3 +391,17 @@ func (e *Engine) targetFor(repositoryID string) (protocol.Target, error) {
 		RepoPassword: string(password),
 	}, nil
 }
+
+// SaveDestination stores changes to an existing destination, after checking
+// that what was typed still produces something restic can be pointed at.
+func (e *Engine) SaveDestination(dest nodestore.Destination) error {
+	spec, err := e.buildSpec(dest)
+	if err != nil {
+		return err
+	}
+	if _, err := destination.Build(spec); err != nil {
+		return err
+	}
+	_, err = e.store.PutDestination(dest)
+	return err
+}

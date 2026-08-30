@@ -145,6 +145,11 @@ type TargetReport struct {
 	Attempt        int     `json:"attempt"`
 	Incomplete     bool    `json:"incomplete"`
 	Error          string  `json:"error,omitempty"`
+	// Detail is what restic reported on its error stream: which files it
+	// could not read, and any warning it raised. Without it "some files
+	// unreadable" is a dead end for whoever has to decide whether it
+	// matters.
+	Detail string `json:"detail,omitempty"`
 }
 
 // JobReport closes out a job. The controller derives the job's status from

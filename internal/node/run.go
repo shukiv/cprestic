@@ -155,6 +155,7 @@ func (e *Engine) runBackup(ctx context.Context, stored nodestore.Job) error {
 			DurationSecs:   target.DurationSecs,
 			Incomplete:     target.Incomplete,
 			Error:          target.Error,
+			Detail:         target.Detail,
 		})
 		results = append(results, job.TargetResult{Status: job.TargetStatus(target.Status)})
 	}

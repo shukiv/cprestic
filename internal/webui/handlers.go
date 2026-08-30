@@ -141,10 +141,25 @@ func (s *Server) handleDestinations(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusInternalServerError, err)
 		return
 	}
-	s.render(w, r, "destinations.html", "Backup destinations", "destinations", struct {
+	view := struct {
 		Destinations []destinationView
 		Hostname     string
-	}{views, s.engine.Settings().Hostname})
+		Editing      *destinationView
+	}{Destinations: views, Hostname: s.engine.Settings().Hostname}
+
+	if id := r.URL.Query().Get("edit"); id != "" {
+		for i := range views {
+			if views[i].ID == id {
+				view.Editing = &views[i]
+				break
+			}
+		}
+		if view.Editing == nil {
+			s.redirect(w, r, "/destinations", "error", "That destination no longer exists.")
+			return
+		}
+	}
+	s.render(w, r, "destinations.html", "Backup destinations", "destinations", view)
 }
 
 func (s *Server) handleAddDestination(w http.ResponseWriter, r *http.Request) {
@@ -270,6 +285,95 @@ func repositoryPathFrom(r *http.Request, hostname string) string {
 	return path
 }
 
+// handleEditDestination updates a destination that already exists.
+//
+// Credentials left blank are kept, so an operator correcting a hostname is
+// not made to retype an access key. The repository path is not editable
+// once the repository exists: it is where the backups already are, and
+// changing it would silently start a new empty repository elsewhere.
+func (s *Server) handleEditDestination(w http.ResponseWriter, r *http.Request) {
+	id := r.PostFormValue("id")
+	dest, err := s.engine.Store().Destination(id)
+	if err != nil {
+		s.redirect(w, r, "/destinations", "error", "That destination no longer exists.")
+		return
+	}
+
+	name := strings.TrimSpace(r.PostFormValue("name"))
+	if name == "" {
+		s.redirect(w, r, "/destinations?edit="+id, "error", "Give the destination a name.")
+		return
+	}
+	dest.Name = name
+
+	config := map[string]string{}
+	secrets := map[string]string{}
+	switch destination.Type(dest.Type) {
+	case destination.TypeREST:
+		config["base_url"] = strings.TrimSpace(r.PostFormValue("base_url"))
+		if maintenance := strings.TrimSpace(r.PostFormValue("maintenance_base_url")); maintenance != "" {
+			config["maintenance_base_url"] = maintenance
+		}
+		if r.PostFormValue("append_only") != "" {
+			config["append_only"] = "true"
+		}
+		if bundle := strings.TrimSpace(r.PostFormValue("ca_bundle")); bundle != "" {
+			config["ca_bundle"] = bundle
+		}
+		if user := strings.TrimSpace(r.PostFormValue("username")); user != "" {
+			secrets["username"] = user
+			secrets["password"] = r.PostFormValue("password")
+		}
+	case destination.TypeSFTP:
+		config["host"] = strings.TrimSpace(r.PostFormValue("host"))
+		config["user"] = strings.TrimSpace(r.PostFormValue("user"))
+		config["root"] = strings.TrimSpace(r.PostFormValue("root"))
+		// The generated key and the learned host key belong to this
+		// destination and are not something to retype.
+		config["identity_file"] = dest.Config["identity_file"]
+		config["known_hosts_file"] = dest.Config["known_hosts_file"]
+		if port := strings.TrimSpace(r.PostFormValue("port")); port != "" && port != "22" {
+			config["port"] = port
+		}
+	case destination.TypeS3:
+		config["bucket"] = strings.TrimSpace(r.PostFormValue("bucket"))
+		if endpoint := strings.TrimSpace(r.PostFormValue("endpoint")); endpoint != "" {
+			config["endpoint"] = endpoint
+		}
+		if region := strings.TrimSpace(r.PostFormValue("region")); region != "" {
+			config["region"] = region
+		}
+		if key := strings.TrimSpace(r.PostFormValue("access_key_id")); key != "" {
+			secrets["access_key_id"] = key
+			secrets["secret_access_key"] = r.PostFormValue("secret_access_key")
+		}
+	case destination.TypeLocal:
+		config["root"] = strings.TrimSpace(r.PostFormValue("root"))
+	}
+	dest.Config = config
+	dest.AppendOnly = config["append_only"] == "true"
+
+	if len(secrets) > 0 {
+		secretID, err := node.SealCredentials(s.engine.Store(), s.engine.Vault(), secrets)
+		if err != nil {
+			s.redirect(w, r, "/destinations?edit="+id, "error", err.Error())
+			return
+		}
+		dest.CredentialsSecretID = secretID
+	}
+
+	if err := s.engine.SaveDestination(dest); err != nil {
+		s.redirect(w, r, "/destinations?edit="+id, "error", err.Error())
+		return
+	}
+	if err := s.engine.TestDestination(r.Context(), id); err != nil {
+		s.redirect(w, r, "/destinations", "warn",
+			fmt.Sprintf("Saved, but %s could not be reached: %v", name, err))
+		return
+	}
+	s.redirect(w, r, "/destinations", "ok", name+" updated and reachable.")
+}
+
 func (s *Server) handleTestDestination(w http.ResponseWriter, r *http.Request) {
 	id := r.PostFormValue("id")
 	if err := s.engine.TestDestination(r.Context(), id); err != nil {
@@ -308,11 +412,32 @@ func (s *Server) handleSchedule(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusInternalServerError, err)
 		return
 	}
-	s.render(w, r, "schedule.html", "Schedules", "schedule", struct {
+	view := struct {
 		Policies     []nodestore.Policy
 		Destinations []destinationView
 		Accounts     []accountView
-	}{policies, destinations, accounts})
+		Editing      *nodestore.Policy
+		Selected     map[string]bool
+		Chosen       map[string]bool
+	}{Policies: policies, Destinations: destinations, Accounts: accounts}
+
+	if id := r.URL.Query().Get("edit"); id != "" {
+		policy, err := s.engine.Store().Policy(id)
+		if err != nil {
+			s.redirect(w, r, "/schedule", "error", "That schedule no longer exists.")
+			return
+		}
+		view.Editing = &policy
+		view.Selected = map[string]bool{}
+		for _, repositoryID := range policy.RepositoryIDs {
+			view.Selected[repositoryID] = true
+		}
+		view.Chosen = map[string]bool{}
+		for _, account := range policy.Accounts {
+			view.Chosen[account] = true
+		}
+	}
+	s.render(w, r, "schedule.html", "Schedules", "schedule", view)
 }
 
 func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
@@ -356,8 +481,13 @@ func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	editing := policy.ID != ""
 	if _, err := s.engine.Store().PutPolicy(policy); err != nil {
 		s.redirect(w, r, "/schedule", "error", err.Error())
+		return
+	}
+	if editing {
+		s.redirect(w, r, "/schedule", "ok", "Schedule updated.")
 		return
 	}
 	s.redirect(w, r, "/schedule", "ok", "Schedule saved.")
