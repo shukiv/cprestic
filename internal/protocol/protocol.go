@@ -11,15 +11,80 @@ import (
 )
 
 // Paths on the controller's agent API.
+//
+// Backups and restores share one poll endpoint so an agent holds a single
+// long-poll connection and one lease mechanism covers both.
 const (
-	PathEnrol    = "/v1/enrol"
-	PathNextJob  = "/v1/jobs/next"
-	PathReport   = "/v1/jobs/report"
-	PathHealthz  = "/healthz"
-	HeaderAgent  = "X-Cprest-Agent"
-	DefaultPoll  = 60 * time.Second
-	MaxBodyBytes = 1 << 20
+	PathEnrol         = "/v1/enrol"
+	PathNextJob       = "/v1/jobs/next"
+	PathReport        = "/v1/jobs/report"
+	PathRestoreReport = "/v1/restores/report"
+	PathHealthz       = "/healthz"
+	DefaultPoll       = 60 * time.Second
+	MaxBodyBytes      = 1 << 20
 )
+
+// Work kinds an assignment can carry.
+const (
+	KindBackup  = "backup"
+	KindRestore = "restore"
+)
+
+// Assignment is one unit of work for an agent. Exactly one of Backup or
+// Restore is set, matching Kind.
+type Assignment struct {
+	Kind    string             `json:"kind"`
+	Backup  *JobAssignment     `json:"backup,omitempty"`
+	Restore *RestoreAssignment `json:"restore,omitempty"`
+}
+
+// Restore kinds.
+const (
+	// RestoreAccount rebuilds the whole account archive.
+	RestoreAccount = "account"
+	// RestoreFiles pulls named paths out of a snapshot.
+	RestoreFiles = "files"
+)
+
+// RestoreAssignment is one account, or part of one, to bring back.
+type RestoreAssignment struct {
+	JobID      string `json:"job_id"`
+	AccountID  string `json:"account_id"`
+	CPanelUser string `json:"cpanel_user"`
+
+	SnapshotID string `json:"snapshot_id"`
+	Kind       string `json:"kind"`
+	// IncludePaths selects individual files for a RestoreFiles job. They
+	// keep their original paths under TargetDir.
+	IncludePaths []string `json:"include_paths,omitempty"`
+	TargetDir    string   `json:"target_dir,omitempty"`
+	// Apply hands the rebuilt archive to cPanel's restorepkg, overwriting
+	// the live account. Off unless an operator asked for it.
+	Apply bool `json:"apply"`
+
+	// Source is the repository to read from. The controller picks it; the
+	// agent never chooses where a restore comes from.
+	Source Target `json:"source"`
+	// SizeEstimate drives the staging space preflight, taken from the
+	// snapshot's recorded size.
+	SizeEstimate   uint64    `json:"size_estimate"`
+	LeaseExpiresAt time.Time `json:"lease_expires_at"`
+}
+
+// RestoreReport closes out a restore.
+type RestoreReport struct {
+	JobID         string  `json:"job_id"`
+	Status        string  `json:"status"`
+	BytesRestored uint64  `json:"bytes_restored"`
+	DurationSecs  float64 `json:"duration_seconds"`
+	// ArchivePath is where the rebuilt account archive was left, for a
+	// restore that did not apply it.
+	ArchivePath string `json:"archive_path,omitempty"`
+	// RestoredTo is where a files restore left what it recovered.
+	RestoredTo string `json:"restored_to,omitempty"`
+	Applied    bool   `json:"applied"`
+	Error      string `json:"error,omitempty"`
+}
 
 // EnrolRequest is sent once at startup so the controller learns what this
 // server can do. Flag support differs between cPanel versions and is

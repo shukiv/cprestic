@@ -1,0 +1,41 @@
+{{define "content"}}
+{{$data := .Data}}
+{{range $data.Warnings}}<div class="warnbox">{{.}}</div>{{end}}
+<div class="panel">
+  {{if $data.Accounts}}
+  <table>
+    <tr><th>Account</th><th>Domain</th><th>Size</th><th>Last backup</th><th>Result</th><th class="right">&nbsp;</th></tr>
+    {{range $data.Accounts}}
+    <tr {{if .Running}}data-running="1"{{end}}>
+      <td>{{.User}}</td>
+      <td class="muted">{{if .PrimaryDomain}}{{.PrimaryDomain}}{{else}}—{{end}}</td>
+      <td>{{if .SizeBytes}}{{bytes .SizeBytes}}{{else}}<span class="muted">measured at backup</span>{{end}}</td>
+      <td>{{ago .LastBackup}}</td>
+      <td>
+        {{if .Running}}<span class="pill">running now</span>
+        {{else if eq (printf "%s" .LastStatus) "success"}}<span class="pill ok">ok</span>
+        {{else if eq (printf "%s" .LastStatus) "partial_success"}}<span class="pill warn">partial</span>
+        {{else if eq (printf "%s" .LastStatus) "failed"}}<span class="pill error">failed</span>
+        {{else}}<span class="muted">never</span>{{end}}
+      </td>
+      <td class="right">
+        <form method="post" action="?p=accounts/backup" class="inline">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="account" value="{{.User}}">
+          {{if gt (len $data.Policies) 1}}
+          <select name="policy">
+            {{range $data.Policies}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+          </select>
+          {{end}}
+          <button {{if .Running}}disabled{{end}}>Back up now</button>
+        </form>
+        <a href="?p=restore&amp;account={{.User}}"><button type="button">Restore</button></a>
+      </td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}
+  <p class="hint">No cPanel accounts found on this server.</p>
+  {{end}}
+</div>
+{{end}}

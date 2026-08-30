@@ -92,23 +92,38 @@ func (c *Client) Enrol(ctx context.Context, req protocol.EnrolRequest) (protocol
 	return response, nil
 }
 
-// NextJob long-polls for work. It returns ErrNoWork when the controller
-// answers that nothing is queued.
-func (c *Client) NextJob(ctx context.Context) (protocol.JobAssignment, error) {
-	var assignment protocol.JobAssignment
-	err := c.do(ctx, http.MethodGet, protocol.PathNextJob, nil, &assignment)
-	if err != nil {
-		return protocol.JobAssignment{}, err
+// NextWork long-polls for work, which may be a backup or a restore. It
+// returns ErrNoWork when the controller answers that nothing is queued.
+func (c *Client) NextWork(ctx context.Context) (protocol.Assignment, error) {
+	var assignment protocol.Assignment
+	if err := c.do(ctx, http.MethodGet, protocol.PathNextJob, nil, &assignment); err != nil {
+		return protocol.Assignment{}, err
 	}
-	if assignment.JobID == "" {
-		return protocol.JobAssignment{}, ErrNoWork
+	switch assignment.Kind {
+	case protocol.KindBackup:
+		if assignment.Backup == nil || assignment.Backup.JobID == "" {
+			return protocol.Assignment{}, errors.New("agent: backup assignment is empty")
+		}
+	case protocol.KindRestore:
+		if assignment.Restore == nil || assignment.Restore.JobID == "" {
+			return protocol.Assignment{}, errors.New("agent: restore assignment is empty")
+		}
+	case "":
+		return protocol.Assignment{}, ErrNoWork
+	default:
+		return protocol.Assignment{}, fmt.Errorf("agent: unknown work kind %q", assignment.Kind)
 	}
 	return assignment, nil
 }
 
-// Report submits a job's outcome.
+// Report submits a backup job's outcome.
 func (c *Client) Report(ctx context.Context, report protocol.JobReport) error {
 	return c.do(ctx, http.MethodPost, protocol.PathReport, report, nil)
+}
+
+// ReportRestore submits a restore's outcome.
+func (c *Client) ReportRestore(ctx context.Context, report protocol.RestoreReport) error {
+	return c.do(ctx, http.MethodPost, protocol.PathRestoreReport, report, nil)
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {

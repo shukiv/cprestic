@@ -131,3 +131,37 @@ func TestReleaseRefusesOutsideRoot(t *testing.T) {
 		t.Error("Release must not have removed the outside directory")
 	}
 }
+
+func TestReclaim(t *testing.T) {
+	root := t.TempDir()
+	manager := &Manager{Root: root}
+
+	if reclaimed, err := manager.Reclaim("restore-customer1"); err != nil || reclaimed {
+		t.Errorf("Reclaim on a clean root = %v, %v; want false, nil", reclaimed, err)
+	}
+
+	dir, err := manager.Allocate("restore-customer1", 1024)
+	if err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir.Path, "cpmove.tar"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// A second restore of the account supersedes the first one's archive,
+	// rather than failing on the directory that is already there.
+	reclaimed, err := manager.Reclaim("restore-customer1")
+	if err != nil {
+		t.Fatalf("Reclaim: %v", err)
+	}
+	if !reclaimed {
+		t.Error("Reclaim did not report removing the directory")
+	}
+	if _, err := manager.Allocate("restore-customer1", 1024); err != nil {
+		t.Errorf("a reclaimed key should be allocatable again: %v", err)
+	}
+
+	if _, err := manager.Reclaim("../escape"); err == nil {
+		t.Error("an unsafe key should be rejected")
+	}
+}

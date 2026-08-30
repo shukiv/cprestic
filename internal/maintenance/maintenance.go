@@ -69,31 +69,34 @@ func (r *Runner) ProvisionPending(ctx context.Context) (int, error) {
 // getting this wrong permanently rules out replicating between a server's
 // repositories with "restic copy". See docs/DESIGN.md §7.
 func (r *Runner) Provision(ctx context.Context, repositoryID string) error {
-	return r.withRun(ctx, repositoryID, KindProvision, func(repo resticrun.Repository) error {
+	return r.withRun(ctx, repositoryID, KindProvision, func(repo resticrun.Repository) (string, error) {
 		stored, _, err := r.store.RepositoryWithDestination(ctx, repositoryID)
 		if err != nil {
-			return err
+			return "", err
 		}
 
 		var source *resticrun.Repository
 		if stored.ChunkerSourceRepoID != "" {
 			opened, err := r.openRepository(ctx, stored.ChunkerSourceRepoID)
 			if err != nil {
-				return fmt.Errorf("maintenance: open chunker source: %w", err)
+				return "", fmt.Errorf("maintenance: open chunker source: %w", err)
 			}
 			source = &opened
 		}
 
 		if err := r.restic.Init(ctx, repo, source); err != nil {
-			return err
+			return "", err
 		}
 		if err := r.store.MarkRepositoryInitialised(ctx, repositoryID); err != nil {
-			return err
+			return "", err
 		}
 		r.log.Info("repository provisioned",
 			"repository_id", repositoryID, "path", stored.Path,
 			"chunker_source", stored.ChunkerSourceRepoID)
-		return nil
+		if stored.ChunkerSourceRepoID == "" {
+			return "initialised as this server's chunker source", nil
+		}
+		return "initialised with chunker parameters from " + stored.ChunkerSourceRepoID, nil
 	})
 }
 
@@ -102,8 +105,8 @@ func (r *Runner) Provision(ctx context.Context, repositoryID string) error {
 // This is the operation an agent cannot perform: against an append-only
 // destination, only these credentials may delete.
 func (r *Runner) Forget(ctx context.Context, repositoryID string, retention store.Retention, prune bool) error {
-	return r.withRun(ctx, repositoryID, KindForget, func(repo resticrun.Repository) error {
-		return r.restic.Forget(ctx, repo, resticrun.ForgetSpec{
+	return r.withRun(ctx, repositoryID, KindForget, func(repo resticrun.Repository) (string, error) {
+		return "", r.restic.Forget(ctx, repo, resticrun.ForgetSpec{
 			KeepLast:    retention.KeepLast,
 			KeepDaily:   retention.KeepDaily,
 			KeepWeekly:  retention.KeepWeekly,
@@ -124,17 +127,27 @@ func (r *Runner) Forget(ctx context.Context, repositoryID string, retention stor
 // the pack data. Reading data back costs the same bandwidth the backup did,
 // which is why this runs here and not on the cPanel server.
 func (r *Runner) Check(ctx context.Context, repositoryID string, readDataSubsetPercent int) error {
-	return r.withRun(ctx, repositoryID, KindCheck, func(repo resticrun.Repository) error {
-		return r.restic.Check(ctx, repo, resticrun.CheckSpec{
+	return r.withRun(ctx, repositoryID, KindCheck, func(repo resticrun.Repository) (string, error) {
+		if err := r.restic.Check(ctx, repo, resticrun.CheckSpec{
 			ReadDataSubsetPercent: readDataSubsetPercent,
-		})
+		}); err != nil {
+			return "", err
+		}
+		if readDataSubsetPercent > 0 {
+			return fmt.Sprintf("structure verified, %d%% of pack data re-read",
+				readDataSubsetPercent), nil
+		}
+		return "structure verified", nil
 	})
 }
 
 // withRun records a maintenance run around an operation so a failure is
 // visible in history rather than only in a log.
+//
+// The operation may return a line of detail to store alongside the result;
+// a drill uses it to record exactly which checks it made.
 func (r *Runner) withRun(ctx context.Context, repositoryID, kind string,
-	operation func(resticrun.Repository) error) error {
+	operation func(resticrun.Repository) (string, error)) error {
 
 	repo, err := r.openRepository(ctx, repositoryID)
 	if err != nil {
@@ -146,8 +159,8 @@ func (r *Runner) withRun(ctx context.Context, repositoryID, kind string,
 		return err
 	}
 
-	opErr := operation(repo)
-	status, output := string(job.StatusSuccess), ""
+	detail, opErr := operation(repo)
+	status, output := string(job.StatusSuccess), detail
 	if opErr != nil {
 		status, output = string(job.StatusFailed), opErr.Error()
 	}

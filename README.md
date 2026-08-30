@@ -9,6 +9,68 @@ so adding servers does not turn it into a bandwidth bottleneck.
 Full design, including the reasoning behind each component:
 **[docs/DESIGN.md](docs/DESIGN.md)**.
 
+## Two ways to run it
+
+**Standalone** — one cPanel server, backing itself up, managed from a WHM
+plugin. No controller, no PostgreSQL, no second machine. This is the way in.
+
+**Fleet** — many cPanel servers, a controller that schedules them, and a
+separate maintenance host that holds the credentials able to delete
+backups. More apparatus, and the only shape where an attacker with root on
+a cPanel server cannot destroy your backup history.
+
+Both run the same code for the parts that make a backup correct. See
+[ADR 7](docs/adr/0007-standalone-mode.md) for what standalone gives up.
+
+## Installing the WHM plugin
+
+On a machine with Go:
+
+```bash
+make plugin           # builds bin/cprest-plugin-amd64.tar.gz
+```
+
+On the cPanel server, as root:
+
+```bash
+tar xzf cprest-plugin-amd64.tar.gz
+cprest-plugin/install.sh
+```
+
+The installer checks for restic (and tells you how to get it), installs the
+service and the plugin, registers it with WHM, and confirms WHM kept the
+registration. Then open WHM and look for **cprest Backups** in the left
+sidebar's **Plugins** group.
+
+Not on the **Manage Plugins** page — that lists cPanel's own RPM addons.
+A plugin registered through AppConfig appears in the sidebar, and its
+registration under **Development → Apps Managed by AppConfig**.
+
+From there: add a destination, add a schedule, and the server backs itself
+up. Restores are on the Restore page — a whole account, or named files —
+and by default a restore rebuilds the archive and leaves it for you rather
+than overwriting anything.
+
+Its pages are addressed as `cprest.cgi?p=destinations` and so on: cpsrvd
+will not route a path after the script name, so routes travel in a query
+parameter ([ADR 8](docs/adr/0008-query-string-routing-under-whm.md)).
+
+Two things the plugin does that are worth knowing:
+
+- The interface listens on a unix socket, not a port. cPanel servers are
+  multi-tenant and this interface can read every stored credential, so it
+  is not reachable over the network at all; the WHM plugin proxies to it and
+  refuses any WHM user that is not root.
+- Destination credentials are encrypted with a key in `/etc/cprest/master.key`.
+  Back that file up somewhere other than this server. Without it the stored
+  credentials cannot be read.
+
+Standalone mode makes one deliberate trade. Retention runs on the cPanel
+server, so the credential able to delete backups lives on the machine an
+attacker would compromise. Fleet mode keeps it on a separate host and an
+append-only endpoint then means backup history cannot be destroyed at all.
+[ADR 7](docs/adr/0007-standalone-mode.md) sets out what you give up.
+
 ## What runs
 
 ```
@@ -19,9 +81,11 @@ Controller ──control only──> Agent (per cPanel server) ──data──>
 
 | Binary | Runs on | Does |
 |---|---|---|
+| `cprest-agent -standalone` | one cPanel server | the whole thing on its own: local state, its own schedule, the interface behind the WHM plugin |
+| `cprest.cgi` | one cPanel server | the WHM plugin: proxies WHM to that interface, root only |
 | `cprest-controller` | trusted infrastructure | agent API over mTLS, scheduler, credential vault, administration CLI |
 | `cprest-agent` | every cPanel server | polls for jobs, stages a payload once, uploads it to each target repository |
-| `cprest-maintenance` | trusted infrastructure | provisions repositories, applies retention, verifies integrity |
+| `cprest-maintenance` | trusted infrastructure | provisions repositories, applies retention, verifies integrity, rehearses restores |
 
 The **maintenance runner** is not optional. Destinations we control run
 `rest-server --append-only`, which rejects deletes — so nothing on a cPanel
@@ -45,12 +109,13 @@ PostgreSQL, real restic and a real append-only rest-server.
 |---|---|
 | Controller: agent API, mTLS auth, job leasing, scheduler, vault | working |
 | Agent: enrolment, polling, staging, multi-target upload, reporting | working |
-| Maintenance: provision, retention, integrity check | working |
+| Maintenance: provision, retention, integrity check, restore drills | working |
+| Restore: whole account, single file, opt-in apply to the live account | working |
 | Administration CLI (`cprest-controller <command>`) | working |
-| Real cPanel provider (`pkgacct`, `mysqldump`) | written, **unvalidated** — no cPanel host available |
-| Restore | not built; the design is in DESIGN §10 |
-| Web UI | not built; the API and CLI are the interface |
-| Restore drills, Azure/GCS/rclone destinations | not built |
+| Real cPanel provider (`pkgacct`, `mysqldump`, `restorepkg`) | written, **unvalidated** — no cPanel host available |
+| Standalone mode + WHM plugin GUI | working |
+| Controller web UI | not built; the API and CLI are the fleet-mode interface |
+| Azure/GCS/rclone destinations | not built |
 
 ## Three decisions worth knowing before reading the code
 
@@ -65,7 +130,12 @@ PostgreSQL, real restic and a real append-only rest-server.
    "back up once, replicate with `restic copy`" stays possible. Retrofitting
    is impossible. The store fills the source in automatically and a database
    trigger enforces it. See DESIGN §7.
-3. **Secrets never reach argv.** `/proc/<pid>/cmdline` is world-readable on a
+3. **Restore is a job like any other.** It runs on the cPanel server, is
+   leased through the same endpoint as a backup, and reads only the
+   repository the controller names. Applying the result to the live
+   account is opt-in; by default the rebuilt archive is left in place and
+   nothing is overwritten. See DESIGN §10.
+4. **Secrets never reach argv.** `/proc/<pid>/cmdline` is world-readable on a
    multi-tenant cPanel server. Backend credentials go in the child
    environment; repository passwords go in transient mode-0600 files. File
    *paths* are not secrets, so ssh's identity and known-hosts files do travel
@@ -103,6 +173,14 @@ What it proves, against the real binaries:
   reachable copy intact
 - a client certificate that is not registered being refused
 - an account too large for the staging volume refused before pkgacct runs
+- a whole account restored and compared **byte for byte** against the
+  original tree, with its database dumps and metadata
+- a single file recovered at its original path, and nothing else with it
+- `restorepkg` invoked only when the restore asked for it
+- a restore read back through the append-only endpoint, which never
+  restricted reads
+- a drill rehearsing a restore and recording what it checked
+- a second restore of an account superseding the archive the first left
 
 ## Getting started
 
@@ -162,7 +240,32 @@ Then, from cron on the maintenance host:
 ```bash
 cprest-maintenance -kind forget            # retention and prune
 cprest-maintenance -kind check -read-data-subset 5
+cprest-maintenance -kind drill             # rehearse a restore and record it
 ```
+
+## Restoring
+
+```bash
+# What is there?
+cprest-controller snapshots -server cp01.example.com -user customer1
+
+# One file back, at the path it came from. Nothing else is touched.
+cprest-controller restore -server cp01.example.com -user customer1 \
+    -snapshot 40dc1520 \
+    -files /home/customer1/public_html/index.php -target /root/recovered
+
+# The whole account. By default the agent rebuilds the cpmove archive and
+# leaves it on the server; add -apply to hand it to restorepkg, which
+# overwrites the live account.
+cprest-controller restore -server cp01.example.com -user customer1 -snapshot 40dc1520
+
+cprest-controller restore-status -job <restore-id>
+```
+
+The rebuilt archive stays on the cPanel server under the staging root until
+the next restore of that account, or until the agent restarts — its startup
+sweep cannot tell a finished restore's output from a crashed one's debris.
+Collect it promptly; `restore-status` prints where it is.
 
 `cprest-agent -fake-cpanel-root <dir>` swaps in a synthetic cPanel provider,
 which is how the agent is exercised on a machine with no cPanel.
@@ -174,6 +277,7 @@ cmd/
   agent/         runs on each cPanel server
   controller/    agent API, scheduler and administration CLI
   maintenance/   provisioning, retention, integrity checks
+  whmcgi/        the WHM plugin CGI
 internal/
   agent/         the job loop and the controller client
   certs/         CA and certificate issuance for agent mTLS
@@ -184,14 +288,19 @@ internal/
   job/           job and per-target status model
   maintenance/   repository upkeep with delete-capable credentials
   pkgacct/       capability probing and payload planning
+  node/          standalone engine: scheduling and running work with no controller
+  nodestore/     standalone state: destinations, schedules and history in bbolt
   protocol/      wire types shared by agent and controller
+  reassemble/    rebuilding a cpmove archive from split backup parts
+  webui/         the interface the WHM plugin proxies to
   repobuild/     the single path from sealed credentials to a usable repository
   resticrun/     the single restic execution path
   staging/       scratch space allocation and reclamation
   store/         PostgreSQL queries and the migration runner
   testsupport/   throwaway PostgreSQL and binary discovery for tests
   vault/         envelope encryption for stored credentials
-migrations/      PostgreSQL schema
+migrations/      PostgreSQL schema (fleet mode)
+packaging/whm/   WHM plugin installer
 docs/            DESIGN.md and architecture decision records
 ```
 

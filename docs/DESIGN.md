@@ -2,9 +2,10 @@
 
 cPanel fleet backup orchestration built on [restic](https://restic.net/).
 
-Status: design accepted; the pipeline described here is implemented and
-covered end to end. Restore (§10) and the real cPanel provider are the
-outstanding pieces — see the status table in the README.
+Status: design accepted; everything described here is implemented and
+covered end to end, except the real cPanel provider, which is written but
+has never been run against a cPanel host. See the status table in the
+README.
 Last updated: 2026-08-30.
 
 ---
@@ -315,7 +316,7 @@ A repository holds every account on its server, so `restic forget` has to be app
 
 Two consequences that are easy to violate:
 
-- **Snapshot paths must repeat between runs.** Staging is keyed by account, not by job id. A per-job staging path would make every night a distinct group of one, and a group of one is never pruned.
+- **Snapshot paths must repeat between runs.** Staging is keyed by account, not by job id. A per-job staging path would make every night a distinct group of one, and a group of one is never pruned. For the same reason restic is pointed at the *database directory* rather than at each dump file: naming the files would change a snapshot's paths the moment an account gained or lost a database.
 - **Tags must not include anything per-run.** A `job:<id>` tag would do the same damage. The job a snapshot came from is recorded in the database against its snapshot id, which is where that lookup belongs.
 
 Both are asserted by the end-to-end suite, because the failure mode is silent: backups keep succeeding and storage grows forever.
@@ -373,29 +374,67 @@ Staging is retained until all targets reach a terminal state, then removed.
 
 A backup product's deliverable is restore. This section is not optional.
 
-### Full account restore
+### Restore is a job, dispatched like any other
+
+A restore runs **on the cPanel server**, through the same machinery as a backup: the operator queues it, the controller leases it to the agent that polls, the agent does the work and reports. One long-poll endpoint returns either kind of assignment, so there is one lease mechanism, one credential path, and one place where an abandoned attempt is re-queued.
+
+The controller chooses the source repository. The agent is told which repository and which snapshot, and never picks for itself — the same trust boundary as a backup, where the agent is told where to write.
 
 ```
-operator selects account + point in time
+operator: cprest-controller restore -server cp01 -user customer1 -snapshot 40dc1520
         ↓
-controller picks a healthy repository holding that snapshot
+restore_jobs row, status pending
         ↓
-restic restore <snapshot> --target <staging>       (on the destination-side runner
-        ↓                                           or the target cPanel server)
-reassemble cpmove structure  (split mode only)
+the agent's next poll returns a restore assignment, carrying the source
+repository's credentials and password resolved for this job alone
         ↓
-/scripts/restorepkg <archive>
+staging space preflight, keyed "restore-<account>" so it cannot collide
+with a backup of the same account
         ↓
-post-restore verification: domains resolve, DBs present, mail routing intact
+reassembly (below)
+        ↓
+report: archive path, bytes restored, whether it was applied
 ```
+
+An account with a backup already running is skipped until that finishes, and vice versa: both stage under the account's name.
+
+### Rebuilding the account archive
+
+A monolithic snapshot already holds the archive; it is restored and that is the whole job.
+
+A split snapshot has to be put back together, which is the cost of the decision in §4:
+
+```
+1. restore <snap>:<staging>/metadata  → work/metadata
+      the pkgacct archive of everything except homedir and databases
+2. extract it → work/tree/<discovered top-level directory>
+3. restore <snap>:/home/<user>        → work/tree/<top>/homedir
+4. restore <snap>:<staging>/databases → work/tree/<top>/mysql
+5. repack work/tree                   → cpmove-<user>.tar
+```
+
+Each part is fetched with restic's subpath form (`snapshot:path`), which places a subtree directly at the target instead of recreating its leading directories. No path surgery is involved.
+
+Two deliberate cautions:
+
+- The archive's **top-level directory name is discovered, not assumed**. It is cPanel's to choose, and reassembly fails loudly if what it extracts is not a single account tree. The `homedir/` and `mysql/` subdirectory names are constants carrying the same caveat: **they have never been verified against a live cPanel here.**
+- Extraction refuses entries that escape the extraction directory, refuses symlinks pointing outside it, and drops setuid bits. The archive comes from the server being restored, which in this threat model may be the compromised one.
+
+### Applying to a live account is opt-in
+
+By default a restore rebuilds the archive and leaves it on the server. Nothing is overwritten. `restorepkg` runs only when the job was created with `-apply`, because materialising files is safe and overwriting a live account is not. The flag is refused for a files restore, which has no whole-account archive to hand over.
 
 ### Single-file restore
 
-Browse the snapshot tree (`restic ls`), fetch one path (`restic restore --include`), deliver to the operator or drop it into the account's home directory. This is the most common real-world request and must not require a full account restore.
+The same job kind with `-files`. It uses `restic restore --include`, which preserves the original paths under the target directory so an operator can see where each file came from — the opposite of the subpath form used for reassembly, and deliberately so.
+
+This is the most common real-world request and does not require a full account restore.
 
 ### Restore drills
 
-The maintenance runner performs scheduled drills on a rotating sample of accounts: restore into a scratch location, assert structural expectations (expected paths present, SQL dumps parse, archive manifest complete), record the result, discard. A repository whose drill fails is marked degraded and alerts.
+`cprest-maintenance -kind drill` rehearses a restore from trusted infrastructure: rebuild the newest snapshot for an account into scratch space, assert what can be asserted, record the result in `maintenance_runs`, delete the scratch.
+
+The checks are structural — the archive exists and is non-empty, the extracted tree has exactly one top-level directory, the home directory contains files, every SQL dump is non-empty and contains a `CREATE` statement. Nothing here can tell you cPanel would accept the archive; only a real `restorepkg` on a real host can. But a drill that fails means the backup certainly cannot be restored, which is the question worth answering nightly.
 
 An untested backup is not a backup.
 
@@ -470,9 +509,7 @@ Two deliberate details: job targets reference `repository_id`, not `destination_
 
 ## 14. Open questions
 
-0. **Restore is designed but not built.** Everything in §10 is still on
-   paper. It is the largest remaining gap and the next thing to build.
-1. **Where does restore-side restic run?** On the target cPanel server (simple, but pulls a full payload through the server being restored) or on a destination-side runner that then ships the reassembled archive (faster for large accounts, more infrastructure). Probably both, selected per job.
+1. **Restore always runs on the cPanel server** (§10). For a very large account that means pulling the whole payload through the machine being restored. A destination-side runner that reassembled and shipped only the finished archive would be faster, at the cost of more infrastructure. Worth revisiting once there is a real account size distribution to look at.
 2. **Mail deltas.** Large mail accounts change constantly and dedup poorly even in `split` mode. Worth measuring before assuming `split` handles it.
 3. **Bandwidth scheduling.** `--limit-upload` per policy is easy; fleet-wide coordination so 50 servers do not saturate a shared uplink at 02:00 is not.
 4. **pkgacct flag probing.** Needs validation against the specific cPanel versions in the fleet before `monolithic` mode can be called supported (§4).

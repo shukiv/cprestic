@@ -1,0 +1,8 @@
+{{/* Shared fragments used by more than one page. */}}
+{{define "status"}}
+  {{$s := printf "%s" .}}
+  {{if eq $s "success"}}<span class="pill ok">success</span>
+  {{else if eq $s "partial_success"}}<span class="pill warn">partial</span>
+  {{else if eq $s "failed"}}<span class="pill error">failed</span>
+  {{else}}<span class="pill">{{$s}}</span>{{end}}
+{{end}}

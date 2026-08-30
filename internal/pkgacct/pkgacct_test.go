@@ -55,11 +55,14 @@ func TestPlanSplit(t *testing.T) {
 	if payload.Degraded {
 		t.Errorf("split mode on a capable server should not be degraded: %s", payload.Reason)
 	}
+	// restic is pointed at the database directory rather than at each
+	// dump, so a snapshot's paths stay identical when an account gains or
+	// loses a database. Paths that change would put every run in its own
+	// retention group, and a group of one is never pruned.
 	want := []string{
 		"/var/cprest/staging/job-42/metadata",
 		"/home/customer1",
-		"/var/cprest/staging/job-42/databases/customer1_wp.sql",
-		"/var/cprest/staging/job-42/databases/customer1_shop.sql",
+		"/var/cprest/staging/job-42/databases",
 	}
 	got := payload.Paths()
 	if len(got) != len(want) {
@@ -68,6 +71,38 @@ func TestPlanSplit(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("paths = %v, want %v", got, want)
+		}
+	}
+
+	for _, database := range []string{"customer1_wp", "customer1_shop"} {
+		want := "/var/cprest/staging/job-42/databases/" + database + ".sql"
+		if got := payload.DumpPaths[database]; got != want {
+			t.Errorf("dump path for %s = %q, want %q", database, got, want)
+		}
+	}
+}
+
+func TestPlanSplitPathsAreStableAcrossDatabaseChanges(t *testing.T) {
+	plan := func(databases ...string) []string {
+		t.Helper()
+		payload, err := Plan(PlanRequest{
+			Account: "c1", HomeDir: "/home/c1", Databases: databases,
+			StagingDir: "/stage", Mode: ModeSplit, Caps: ProbeCapabilities(helpModern),
+		})
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		return payload.Paths()
+	}
+
+	before := plan("c1_wp")
+	after := plan("c1_wp", "c1_shop")
+	if len(before) != len(after) {
+		t.Fatalf("adding a database changed the snapshot paths:\n  %v\n  %v", before, after)
+	}
+	for i := range before {
+		if before[i] != after[i] {
+			t.Fatalf("adding a database changed the snapshot paths:\n  %v\n  %v", before, after)
 		}
 	}
 }

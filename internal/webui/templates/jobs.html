@@ -1,0 +1,69 @@
+{{define "content"}}
+{{$data := .Data}}
+<div class="panel">
+  <h2 style="margin-top:0">Backups</h2>
+  {{if $data.Jobs}}
+  <table>
+    <tr><th>When</th><th>Account</th><th>Result</th><th>Copies</th><th>Stored</th></tr>
+    {{range $data.Jobs}}
+    <tr {{if not .Status.Terminal}}data-running="1"{{end}}>
+      <td>{{stamp .QueuedAt}}</td>
+      <td>{{.Account}}</td>
+      <td>
+        {{$s := printf "%s" .Status}}
+        {{if eq $s "success"}}<span class="pill ok">success</span>
+        {{else if eq $s "partial_success"}}<span class="pill warn">partial</span>
+        {{else if eq $s "failed"}}<span class="pill error">failed</span>
+        {{else}}<span class="pill">{{$s}}</span>{{end}}
+      </td>
+      <td>
+        {{range .Targets}}
+          {{$name := index $data.Destination .RepositoryID}}
+          {{$ts := printf "%s" .Status}}
+          <div>
+            {{if eq $ts "success"}}<span class="dot ok"></span>
+            {{else if eq $ts "failed"}}<span class="dot error"></span>
+            {{else}}<span class="dot idle"></span>{{end}}
+            {{if $name}}{{$name}}{{else}}{{short .RepositoryID}}{{end}}
+            {{if .Error}}<br><span class="muted">{{.Error}}</span>{{end}}
+            {{if .Incomplete}}<span class="pill warn">some files unreadable</span>{{end}}
+          </div>
+        {{end}}
+        {{if .StagingErr}}<div class="muted">{{.StagingErr}}</div>{{end}}
+      </td>
+      <td>
+        {{range .Targets}}{{if eq (printf "%s" .Status) "success"}}
+        <div>{{bytes .BytesAdded}} new of {{bytes .BytesProcessed}}</div>
+        {{end}}{{end}}
+      </td>
+    </tr>
+    {{end}}
+  </table>
+  <p class="hint">"New" is what the backup actually cost in storage. On an unchanged
+  account it should be a small fraction of what was read.</p>
+  {{else}}<p class="hint">No backups have run yet.</p>{{end}}
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0">Restores</h2>
+  {{if $data.Restores}}
+  <table>
+    <tr><th>When</th><th>Account</th><th>Kind</th><th>Result</th><th>Detail</th></tr>
+    {{range $data.Restores}}
+    <tr {{if not .Status.Terminal}}data-running="1"{{end}}>
+      <td>{{stamp .QueuedAt}}</td>
+      <td>{{.Account}}</td>
+      <td>{{.Kind}}{{if .Applied}} <span class="pill warn">applied</span>{{end}}</td>
+      <td>
+        {{$s := printf "%s" .Status}}
+        {{if eq $s "success"}}<span class="pill ok">success</span>
+        {{else if eq $s "failed"}}<span class="pill error">failed</span>
+        {{else}}<span class="pill">{{$s}}</span>{{end}}
+      </td>
+      <td class="mono">{{if .Error}}{{.Error}}{{else if .ArchivePath}}{{.ArchivePath}}{{else}}{{.RestoredTo}}{{end}}</td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}<p class="hint">No restores yet.</p>{{end}}
+</div>
+{{end}}

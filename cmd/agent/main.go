@@ -44,6 +44,11 @@ type config struct {
 	logLevel      string
 	fakeRoot      string
 	preflightOnly bool
+
+	standalone    bool
+	statePath     string
+	socketPath    string
+	masterKeyPath string
 }
 
 func main() {
@@ -88,6 +93,14 @@ func parseFlags() config {
 	flag.StringVar(&cfg.fakeRoot, "fake-cpanel-root", "",
 		"use a synthetic cPanel provider rooted here, for development without cPanel")
 	flag.BoolVar(&cfg.preflightOnly, "preflight", false, "check local prerequisites and exit")
+	flag.BoolVar(&cfg.standalone, "standalone", false,
+		"run this server on its own, with local state and the WHM interface, and no controller")
+	flag.StringVar(&cfg.statePath, "state", "/var/lib/cprest/state.db",
+		"standalone: where this server keeps its own configuration and history")
+	flag.StringVar(&cfg.socketPath, "socket", "/var/run/cprest/ui.sock",
+		"standalone: unix socket the WHM plugin connects to")
+	flag.StringVar(&cfg.masterKeyPath, "master-key", "/etc/cprest/master.key",
+		"standalone: key that encrypts stored destination credentials")
 	flag.Parse()
 	return cfg
 }
@@ -121,6 +134,10 @@ func run(ctx context.Context, cfg config, log *slog.Logger) error {
 	capabilities, err := provider.Capabilities(ctx)
 	if err != nil {
 		return err
+	}
+
+	if cfg.standalone && !cfg.preflightOnly {
+		return runStandalone(ctx, cfg, log)
 	}
 
 	if cfg.preflightOnly {

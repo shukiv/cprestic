@@ -1,0 +1,107 @@
+{{define "content"}}
+{{$data := .Data}}
+<div class="panel">
+  <form method="get">
+    <input type="hidden" name="p" value="restore">
+    <div class="grid2">
+      <div>
+        <label for="account">Account</label>
+        <select id="account" name="account" onchange="this.form.submit()">
+          <option value="">Choose an account…</option>
+          {{range $data.Accounts}}
+          <option value="{{.User}}" {{if eq .User $data.Account}}selected{{end}}>{{.User}}</option>
+          {{end}}
+        </select>
+      </div>
+      <div>
+        <label for="repository">Restore from</label>
+        <select id="repository" name="repository" onchange="this.form.submit()">
+          {{range $data.Repositories}}
+            {{if .Repository.InitialisedAt}}
+            <option value="{{.Repository.ID}}" {{if eq .Repository.ID $data.RepositoryID}}selected{{end}}>{{.Name}}</option>
+            {{end}}
+          {{end}}
+        </select>
+      </div>
+    </div>
+    <noscript><div class="actions"><button>Show backups</button></div></noscript>
+  </form>
+</div>
+
+{{if $data.LookupError}}
+<div class="flash error">Could not read that destination: {{$data.LookupError}}</div>
+{{end}}
+
+{{if $data.Account}}
+<div class="panel">
+  <h2 style="margin-top:0">Available backups of {{$data.Account}}</h2>
+  {{if $data.Snapshots}}
+  <form method="post" action="?p=restore/start">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="account" value="{{$data.Account}}">
+    <input type="hidden" name="repository" value="{{$data.RepositoryID}}">
+
+    <table>
+      <tr><th>&nbsp;</th><th>Taken</th><th>Size</th><th>Id</th></tr>
+      {{range $index, $snapshot := $data.Snapshots}}
+      <tr>
+        <td><input type="radio" name="snapshot" value="{{$snapshot.ID}}" {{if eq $index 0}}checked{{end}}></td>
+        <td>{{stamp $snapshot.Time}}</td>
+        <td>{{bytes $snapshot.Summary.TotalBytesProcessed}}</td>
+        <td class="mono">{{short $snapshot.ID}}</td>
+      </tr>
+      {{end}}
+    </table>
+
+    <h2>What to restore</h2>
+    <label for="paths">Specific files (one path per line)</label>
+    <textarea id="paths" name="paths" placeholder="/home/{{$data.Account}}/public_html/index.php"></textarea>
+    <small class="help">Leave empty to rebuild the whole account.</small>
+
+    <label for="target">Put recovered files in</label>
+    <input type="text" id="target" name="target" placeholder="/root/recovered">
+    <small class="help">Only used when restoring specific files. They keep their original paths inside it.</small>
+
+    <h2>Whole-account restore</h2>
+    <p class="hint">By default the account archive is rebuilt and left on this server for you
+    to inspect. Nothing is overwritten.</p>
+    <label class="check"><input type="checkbox" name="apply" value="1">
+      <span><strong>Overwrite the live account</strong>
+      <small class="help">Hands the rebuilt archive to cPanel's restorepkg. The account's
+      current files, databases and settings are replaced. There is no undo.</small></span></label>
+
+    <div class="actions">
+      <button class="primary" type="submit">Start restore</button>
+    </div>
+  </form>
+  {{else if not $data.LookupError}}
+  <p class="hint">No backups of {{$data.Account}} in this destination yet.</p>
+  {{end}}
+</div>
+{{end}}
+
+<div class="panel">
+  <h2 style="margin-top:0">Recent restores</h2>
+  {{if $data.Restores}}
+  <table>
+    <tr><th>When</th><th>Account</th><th>Kind</th><th>Result</th><th>Where it went</th></tr>
+    {{range $data.Restores}}
+    <tr {{if not .Status.Terminal}}data-running="1"{{end}}>
+      <td>{{stamp .QueuedAt}}</td>
+      <td>{{.Account}}</td>
+      <td>{{.Kind}}{{if .Applied}} <span class="pill warn">applied</span>{{end}}</td>
+      <td>
+        {{$s := printf "%s" .Status}}
+        {{if eq $s "success"}}<span class="pill ok">success</span>
+        {{else if eq $s "failed"}}<span class="pill error">failed</span>
+        {{else}}<span class="pill">{{$s}}</span>{{end}}
+      </td>
+      <td class="mono">{{if .ArchivePath}}{{.ArchivePath}}{{else if .RestoredTo}}{{.RestoredTo}}{{else}}{{.Error}}{{end}}</td>
+    </tr>
+    {{end}}
+  </table>
+  <p class="hint">A rebuilt archive stays here until the next restore of that account,
+  or until the service restarts. Collect it before then.</p>
+  {{else}}<p class="hint">No restores yet.</p>{{end}}
+</div>
+{{end}}

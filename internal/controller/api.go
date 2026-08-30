@@ -54,6 +54,7 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("POST "+protocol.PathEnrol, a.authenticated(a.handleEnrol))
 	mux.Handle("GET "+protocol.PathNextJob, a.authenticated(a.handleNextJob))
 	mux.Handle("POST "+protocol.PathReport, a.authenticated(a.handleReport))
+	mux.Handle("POST "+protocol.PathRestoreReport, a.authenticated(a.handleRestoreReport))
 	return mux
 }
 
@@ -133,12 +134,10 @@ func (a *API) handleNextJob(w http.ResponseWriter, r *http.Request, server store
 	defer cancel()
 
 	for {
-		assignment, err := a.service.NextJob(ctx, server.ID)
+		assignment, err := a.service.NextWork(ctx, server.ID)
 		switch {
 		case err == nil:
-			a.log.Info("job dispatched",
-				"server_id", server.ID, "job_id", assignment.JobID,
-				"account", assignment.CPanelUser, "targets", len(assignment.Targets))
+			a.logDispatch(server, assignment)
 			writeJSON(w, http.StatusOK, assignment)
 			return
 		case errors.Is(err, store.ErrNoWork):
@@ -159,6 +158,36 @@ func (a *API) handleNextJob(w http.ResponseWriter, r *http.Request, server store
 		case <-time.After(a.PollBackoff):
 		}
 	}
+}
+
+func (a *API) logDispatch(server store.Server, assignment protocol.Assignment) {
+	switch {
+	case assignment.Backup != nil:
+		a.log.Info("backup dispatched",
+			"server_id", server.ID, "job_id", assignment.Backup.JobID,
+			"account", assignment.Backup.CPanelUser,
+			"targets", len(assignment.Backup.Targets))
+	case assignment.Restore != nil:
+		a.log.Info("restore dispatched",
+			"server_id", server.ID, "job_id", assignment.Restore.JobID,
+			"account", assignment.Restore.CPanelUser,
+			"snapshot", assignment.Restore.SnapshotID,
+			"kind", assignment.Restore.Kind, "apply", assignment.Restore.Apply)
+	}
+}
+
+func (a *API) handleRestoreReport(w http.ResponseWriter, r *http.Request, server store.Server) {
+	var report protocol.RestoreReport
+	if !decodeBody(w, r, &report) {
+		return
+	}
+	if err := a.service.ReportRestore(r.Context(), server.ID, report); err != nil {
+		a.log.Error("apply restore report",
+			"server_id", server.ID, "job_id", report.JobID, "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": report.Status})
 }
 
 func (a *API) handleReport(w http.ResponseWriter, r *http.Request, server store.Server) {

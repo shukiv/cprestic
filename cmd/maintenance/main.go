@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/shuki/cprest/internal/maintenance"
@@ -30,12 +31,14 @@ func main() {
 	masterKeyPath := flag.String("master-key", os.Getenv("CPREST_MASTER_KEY"),
 		"vault master key file")
 	kind := flag.String("kind", "provision",
-		"work to perform: provision, forget, check")
+		"work to perform: provision, forget, check, drill")
 	repositoryID := flag.String("repository", "",
 		"repository to act on; empty means every eligible repository")
 	readDataSubset := flag.Int("read-data-subset", 5,
 		"percent of pack data to verify during check")
 	prune := flag.Bool("prune", true, "remove unreferenced data after forget")
+	account := flag.String("account", "",
+		"cPanel account to rehearse for -kind drill; empty picks the newest snapshot")
 	resticBinary := flag.String("restic", "restic", "path to the restic binary")
 	runtimeDir := flag.String("runtime-dir", os.TempDir(),
 		"directory for the transient restic password file")
@@ -52,7 +55,7 @@ func main() {
 		databaseURL: *databaseURL, masterKeyPath: *masterKeyPath, kind: *kind,
 		repositoryID: *repositoryID, readDataSubset: *readDataSubset, prune: *prune,
 		resticBinary: *resticBinary, runtimeDir: *runtimeDir, cacheDir: *cacheDir,
-		caCert: *caCert, logLevel: *logLevel,
+		caCert: *caCert, account: *account, logLevel: *logLevel,
 	}); err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintf(os.Stderr, "cprest-maintenance: %v\n", err)
 		os.Exit(1)
@@ -70,12 +73,14 @@ type runConfig struct {
 	runtimeDir     string
 	cacheDir       string
 	caCert         string
+	account        string
 	logLevel       string
 }
 
 func run(ctx context.Context, cfg runConfig) error {
 	switch cfg.kind {
-	case maintenance.KindProvision, maintenance.KindForget, maintenance.KindCheck:
+	case maintenance.KindProvision, maintenance.KindForget,
+		maintenance.KindCheck, maintenance.KindDrill:
 	default:
 		return fmt.Errorf("unknown -kind %q", cfg.kind)
 	}
@@ -120,6 +125,8 @@ func run(ctx context.Context, cfg runConfig) error {
 		return provision(ctx, db, runner, cfg.repositoryID)
 	case maintenance.KindForget:
 		return forget(ctx, db, runner, cfg.repositoryID, cfg.prune)
+	case maintenance.KindDrill:
+		return drill(ctx, db, runner, cfg.repositoryID, cfg.account)
 	default:
 		return check(ctx, db, runner, cfg.repositoryID, cfg.readDataSubset)
 	}
@@ -188,6 +195,34 @@ func check(ctx context.Context, db *store.Store, runner *maintenance.Runner,
 		return fmt.Errorf("%d of %d repositories failed the check", failures, len(repositories))
 	}
 	fmt.Printf("checked %d repositories\n", len(repositories))
+	return nil
+}
+
+// drill rehearses a restore. An untested backup is not a backup.
+func drill(ctx context.Context, db *store.Store, runner *maintenance.Runner,
+	repositoryID, account string) error {
+
+	repositories, err := targetRepositories(ctx, db, repositoryID)
+	if err != nil {
+		return err
+	}
+	var failures int
+	for _, id := range repositories {
+		result, err := runner.Drill(ctx, maintenance.DrillRequest{
+			RepositoryID: id, Account: account,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "repository %s: %v\n", id, err)
+			failures++
+			continue
+		}
+		fmt.Printf("repository %s: restored %s from %s (%s) - %s\n",
+			id, result.Account, result.SnapshotID[:min(12, len(result.SnapshotID))],
+			result.Mode, strings.Join(result.Checks, "; "))
+	}
+	if failures > 0 {
+		return fmt.Errorf("%d of %d drills failed", failures, len(repositories))
+	}
 	return nil
 }
 

@@ -1,0 +1,102 @@
+/* Deliberately small and hand-written: this ships inside a 7 MB binary that
+   installs on servers with no build tooling. */
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --ink: #1c2024;
+  --muted: #5f6773;
+  --line: #dfe3e8;
+  --accent: #1f6feb;
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --error: #b42318;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+header.bar {
+  display: flex; align-items: center; gap: 1.5rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+}
+header.bar .brand { font-weight: 600; letter-spacing: 0.02em; }
+header.bar nav { display: flex; gap: 1rem; flex-wrap: wrap; }
+header.bar nav a { color: var(--muted); text-decoration: none; padding: 0.2rem 0; }
+header.bar nav a:hover { color: var(--ink); }
+header.bar nav a.on { color: var(--accent); border-bottom: 2px solid var(--accent); }
+
+main { max-width: 1040px; margin: 1.5rem auto; padding: 0 1.25rem 4rem; }
+h1 { font-size: 1.35rem; margin: 0 0 1rem; }
+h2 { font-size: 1.05rem; margin: 1.75rem 0 0.75rem; }
+p.hint { color: var(--muted); margin: 0.35rem 0 1rem; }
+
+.panel {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 1rem 1.15rem; margin-bottom: 1.25rem;
+}
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 0.55rem 0.5rem; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.03em; }
+tr:last-child td { border-bottom: none; }
+td.right, th.right { text-align: right; }
+
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.4rem; }
+.dot.ok { background: var(--ok); }
+.dot.warn { background: var(--warn); }
+.dot.error { background: var(--error); }
+.dot.idle { background: var(--muted); }
+
+.pill { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.78rem; border: 1px solid var(--line); color: var(--muted); }
+.pill.ok { color: var(--ok); border-color: #b7e0c1; background: #eaf6ed; }
+.pill.warn { color: var(--warn); border-color: #ecd28a; background: #fdf6e3; }
+.pill.error { color: var(--error); border-color: #f1c3bd; background: #fdeceb; }
+
+form.inline { display: inline; }
+label { display: block; margin: 0.7rem 0 0.2rem; font-weight: 500; }
+label.check { font-weight: 400; display: flex; align-items: flex-start; gap: 0.5rem; }
+label.check input { margin-top: 0.25rem; }
+input[type=text], input[type=password], input[type=number], select, textarea {
+  width: 100%; padding: 0.45rem 0.55rem; border: 1px solid var(--line);
+  border-radius: 6px; font: inherit; background: #fff;
+}
+textarea { min-height: 5rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+small.help { color: var(--muted); display: block; margin-top: 0.2rem; }
+
+button {
+  font: inherit; padding: 0.45rem 0.9rem; border-radius: 6px;
+  border: 1px solid var(--line); background: #fff; cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { filter: brightness(1.06); }
+button.danger { color: var(--error); border-color: #f1c3bd; }
+button.link { border: none; background: none; color: var(--accent); padding: 0.2rem; }
+
+.flash { padding: 0.7rem 0.9rem; border-radius: 6px; margin-bottom: 1rem; border: 1px solid; }
+.flash.ok { background: #eaf6ed; border-color: #b7e0c1; color: var(--ok); }
+.flash.warn { background: #fdf6e3; border-color: #ecd28a; color: var(--warn); }
+.flash.error { background: #fdeceb; border-color: #f1c3bd; color: var(--error); }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1.25rem; }
+.actions { margin-top: 1.1rem; display: flex; gap: 0.6rem; align-items: center; }
+.muted { color: var(--muted); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.86rem; }
+details.keybox { margin-top: 0.9rem; border-top: 1px solid var(--line); padding-top: 0.7rem; }
+details.keybox summary { cursor: pointer; color: var(--accent); }
+details.keybox textarea { margin-top: 0.5rem; font-size: 0.8rem; }
+details summary { cursor: pointer; }
+
+.warnbox { border-left: 3px solid var(--warn); padding-left: 0.8rem; margin: 0.5rem 0; }
+
+@media (max-width: 720px) {
+  .grid2 { grid-template-columns: 1fr; }
+  header.bar { flex-wrap: wrap; gap: 0.75rem; }
+}

@@ -1,0 +1,194 @@
+{{define "content"}}
+{{$data := .Data}}
+<div class="panel">
+  <h2 style="margin-top:0">Configured destinations</h2>
+  {{if $data.Destinations}}
+  <table>
+    <tr><th>Name</th><th>Endpoint</th><th>Repository</th><th>Status</th><th class="right">&nbsp;</th></tr>
+    {{range $data.Destinations}}
+    <tr>
+      <td>{{.Name}}{{if .AppendOnly}}<br><span class="pill">append-only</span>{{end}}</td>
+      <td class="mono">{{.Endpoint}}</td>
+      <td class="mono">{{.Repository.Path}}
+        {{if .Repository.InitialisedAt}}<br><span class="muted">created {{stampPtr .Repository.InitialisedAt}}</span>
+        {{else}}<br><span class="pill warn">not created yet</span>{{end}}</td>
+      <td>
+        {{if eq .Status "ok"}}<span class="dot ok"></span>reachable {{ago .LastCheckedAt}}
+        {{else if eq .Status "error"}}<span class="dot error"></span>{{.LastCheckError}}
+        {{else}}<span class="dot idle"></span>not checked{{end}}
+      </td>
+      <td class="right">
+        <form method="post" action="?p=destinations/test" class="inline">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <button>Test</button>
+        </form>
+        <form method="post" action="?p=destinations/delete" class="inline"
+              data-confirm="Remove this destination from cprest? The backups already stored there are left alone.">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <button class="danger">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+  </table>
+
+  {{range $data.Destinations}}
+    {{if .PublicKey}}
+    <details class="keybox">
+      <summary>Public key for {{.Name}}</summary>
+      <p class="hint">If backups to this destination fail to authenticate, add this line to
+      <span class="mono">{{.RemoteTarget}}:~/.ssh/authorized_keys</span> on the remote
+      server. cprest holds the matching private key; nothing else can use it.</p>
+      <textarea readonly rows="3" onclick="this.select()">{{.PublicKey}}</textarea>
+    </details>
+    {{end}}
+  {{end}}
+
+  {{if gt (len $data.Destinations) 1}}
+  <p class="hint">Every destination after the first copies the first one's chunker
+     parameters. That is fixed when a repository is created and cannot be changed,
+     so it is done for you.</p>
+  {{end}}
+  {{else}}
+  <p class="hint">None yet. Add one below.</p>
+  {{end}}
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0">Add a destination</h2>
+  <form method="post" action="?p=destinations/add">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <div class="grid2">
+      <div>
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" placeholder="Backup server, Wasabi, …" required>
+      </div>
+      <div>
+        <label for="type">Type</label>
+        <select id="type" name="type" data-destination-type>
+          <option value="rest">Backup server (restic REST)</option>
+          <option value="sftp">Another Linux server (SFTP)</option>
+          <option value="s3">S3 or S3-compatible</option>
+          <option value="local">Local disk or mounted NAS</option>
+        </select>
+      </div>
+    </div>
+
+    <div data-for-type="rest">
+      <label for="base_url">Server address</label>
+      <input type="text" id="base_url" name="base_url" placeholder="https://backup.example.com">
+      <small class="help">Must be https. Point it at a rest-server instance.</small>
+
+      <div class="grid2">
+        <div>
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username">
+        </div>
+        <div>
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password">
+        </div>
+      </div>
+
+      <label class="check"><input type="checkbox" name="append_only" value="1">
+        <span>The server runs with <span class="mono">--append-only</span>
+        <small class="help">Recommended: this server can then add backups but never delete
+        them, so ransomware here cannot destroy your history. It also means retention
+        cannot run through this address — give the second one below.</small></span></label>
+
+      <label for="maintenance_base_url">Address that may delete (optional)</label>
+      <input type="text" id="maintenance_base_url" name="maintenance_base_url"
+             placeholder="https://backup.internal:8000">
+      <small class="help">A second rest-server over the same storage with append-only off.
+      Without it, nothing can ever prune old backups.</small>
+
+      <label for="ca_bundle">CA bundle file (optional)</label>
+      <input type="text" id="ca_bundle" name="ca_bundle" placeholder="/etc/cprest/backup-ca.pem">
+      <small class="help">Only if the backup server uses a private certificate authority.</small>
+    </div>
+
+    <div data-for-type="sftp" hidden>
+      <div class="grid2">
+        <div>
+          <label for="host">Host</label>
+          <input type="text" id="host" name="host" placeholder="backup.example.com">
+        </div>
+        <div>
+          <label for="port">Port</label>
+          <input type="number" id="port" name="port" value="22">
+        </div>
+        <div>
+          <label for="user">SSH user</label>
+          <input type="text" id="user" name="user" placeholder="cpbackup">
+        </div>
+        <div>
+          <label for="root">Remote directory</label>
+          <input type="text" id="root" name="root" placeholder="/home/cpbackup/backups">
+        </div>
+      </div>
+
+      <label for="password">Remote password <span class="muted">(optional)</span></label>
+      <input type="password" id="password" name="password" autocomplete="new-password">
+      <small class="help">Give it once and cprest installs its own key on that server for
+      you, then checks the key works. The password is used for that and nothing else — it
+      is never stored. Leave it empty and you will be shown the public key to add yourself.</small>
+
+      <p class="hint">cprest generates its own SSH key for this destination, and learns the
+      server's host key when it first connects. You do not need to run ssh-keygen or write
+      a known_hosts file.</p>
+
+      <details>
+        <summary class="muted">Use a key I already have instead</summary>
+        <label for="identity_file">Private key on this server</label>
+        <input type="text" id="identity_file" name="identity_file"
+               placeholder="/root/.ssh/id_ed25519">
+        <small class="help">Leave empty to have cprest generate one.</small>
+      </details>
+    </div>
+
+    <div data-for-type="s3" hidden>
+      <div class="grid2">
+        <div>
+          <label for="bucket">Bucket</label>
+          <input type="text" id="bucket" name="bucket">
+        </div>
+        <div>
+          <label for="region">Region</label>
+          <input type="text" id="region" name="region" placeholder="us-east-1">
+        </div>
+      </div>
+      <label for="endpoint">Endpoint (leave empty for Amazon S3)</label>
+      <input type="text" id="endpoint" name="endpoint" placeholder="s3.us-east-1.wasabisys.com">
+      <small class="help">Wasabi, Cloudflare R2, MinIO, Backblaze B2 and Ceph all work here.</small>
+      <div class="grid2">
+        <div>
+          <label for="access_key_id">Access key</label>
+          <input type="text" id="access_key_id" name="access_key_id">
+        </div>
+        <div>
+          <label for="secret_access_key">Secret key</label>
+          <input type="password" id="secret_access_key" name="secret_access_key">
+        </div>
+      </div>
+    </div>
+
+    <div data-for-type="local" hidden>
+      <label for="local_root">Directory</label>
+      <input type="text" id="local_root" name="root" placeholder="/mnt/backups">
+      <small class="help">A disk on this machine protects against a lost file, not a lost
+      server. Pair it with something remote.</small>
+    </div>
+
+    <label for="repo_path">Folder inside the destination</label>
+    <input type="text" id="repo_path" name="repo_path" value="{{$data.Hostname}}">
+    <small class="help">Keeps this server's backups separate from any other server's.</small>
+
+    <div class="actions">
+      <button class="primary" type="submit">Add and test</button>
+      <span class="muted">Credentials are encrypted before they are written to disk.</span>
+    </div>
+  </form>
+</div>
+{{end}}

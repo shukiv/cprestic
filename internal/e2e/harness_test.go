@@ -249,7 +249,7 @@ func (h *harness) buildAgent(t *testing.T, workDir string) {
 
 	h.provider = &cpanel.Fake{
 		Root:      filepath.Join(workDir, "cpanel"),
-		Accounts:  map[string][]string{"customer1": {"customer1_wp", "customer1_shop"}},
+		Databases: map[string][]string{"customer1": {"customer1_wp", "customer1_shop"}},
 		FileCount: 8,
 		FileSize:  8192,
 	}

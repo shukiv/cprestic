@@ -47,6 +47,12 @@ type Payload struct {
 	Mode    Mode
 	Account string
 	Parts   []Part
+	// DumpPaths is where each database dump is written. They live inside
+	// the database part's directory, which is what restic is pointed at:
+	// naming the directory rather than each file keeps a snapshot's paths
+	// identical when an account gains or loses a database, and paths that
+	// change would put every run in its own retention group.
+	DumpPaths map[string]string
 	// Degraded is set when the payload had to be built in a way that
 	// deduplicates poorly, with Reason explaining why. The controller
 	// surfaces this rather than letting storage cost silently balloon.
@@ -149,11 +155,13 @@ func planSplit(req PlanRequest) (Payload, error) {
 		Path: filepath.Join(req.StagingDir, "metadata"),
 	})
 	payload.Parts = append(payload.Parts, Part{Kind: PartHomedir, Path: req.HomeDir})
-	for _, db := range req.Databases {
-		payload.Parts = append(payload.Parts, Part{
-			Kind: PartDatabase,
-			Path: filepath.Join(req.StagingDir, "databases", db+".sql"),
-		})
+	if len(req.Databases) > 0 {
+		databaseDir := filepath.Join(req.StagingDir, "databases")
+		payload.Parts = append(payload.Parts, Part{Kind: PartDatabase, Path: databaseDir})
+		payload.DumpPaths = make(map[string]string, len(req.Databases))
+		for _, db := range req.Databases {
+			payload.DumpPaths[db] = filepath.Join(databaseDir, db+".sql")
+		}
 	}
 	if req.Caps.SkipHomedirFlag == "" {
 		// Without a skip flag the metadata archive re-includes the home

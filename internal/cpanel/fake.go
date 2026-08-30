@@ -1,11 +1,13 @@
 package cpanel
 
 import (
+	"archive/tar"
 	"context"
 	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/shuki/cprest/internal/pkgacct"
@@ -24,11 +26,13 @@ type Fake struct {
 	// Caps controls which pkgacct flags the fake host claims to support,
 	// so degraded-mode behaviour can be exercised too.
 	Caps pkgacct.Capabilities
-	// Accounts maps a user to its databases.
-	Accounts map[string][]string
+	// Databases maps a user to the databases that account owns.
+	Databases map[string][]string
 	// FileCount and FileSize shape the generated home directory.
 	FileCount int
 	FileSize  int
+	// Applied records the archives Apply was called with.
+	Applied []string
 }
 
 var _ Provider = (*Fake)(nil)
@@ -45,6 +49,27 @@ func (f *Fake) Capabilities(context.Context) (pkgacct.Capabilities, error) {
 		return DefaultFakeCaps, nil
 	}
 	return f.Caps, nil
+}
+
+// Accounts lists the synthetic accounts, creating their home directories on
+// first sight. Like the real provider it reports names and home directories
+// only; sizes and databases cost too much to gather for a listing.
+func (f *Fake) Accounts(_ context.Context) ([]AccountInfo, error) {
+	names := make([]string, 0, len(f.Databases))
+	for user := range f.Databases {
+		names = append(names, user)
+	}
+	sort.Strings(names)
+
+	accounts := make([]AccountInfo, 0, len(names))
+	for _, user := range names {
+		home := filepath.Join(f.Root, "home", user)
+		if err := f.populateHome(home, user); err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, AccountInfo{User: user, HomeDir: home})
+	}
+	return accounts, nil
 }
 
 // Account creates the account's home directory if it does not exist yet and
@@ -64,7 +89,7 @@ func (f *Fake) Account(_ context.Context, user string) (AccountInfo, error) {
 	return AccountInfo{
 		User:      user,
 		HomeDir:   home,
-		Databases: f.Accounts[user],
+		Databases: f.Databases[user],
 		SizeBytes: size,
 	}, nil
 }
@@ -93,21 +118,139 @@ func (f *Fake) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 		case pkgacct.PartHomedir:
 			// Already on disk.
 		case pkgacct.PartMetadata:
-			if err := writeFile(part.Path, metadataFor(req.Account)); err != nil {
+			// pkgacct writes an archive into the directory it is given, so
+			// the fake does too: restore has to find and unpack it.
+			if err := writeMetadataArchive(part.Path, req.Account.User); err != nil {
 				return pkgacct.Payload{}, err
 			}
 		case pkgacct.PartDatabase:
-			name := strings.TrimSuffix(filepath.Base(part.Path), ".sql")
-			if err := writeFile(part.Path, sqlDumpFor(name)); err != nil {
-				return pkgacct.Payload{}, err
+			if err := os.MkdirAll(part.Path, 0o700); err != nil {
+				return pkgacct.Payload{}, fmt.Errorf("cpanel: create %s: %w", part.Path, err)
+			}
+			for name, path := range payload.DumpPaths {
+				if err := writeFile(path, sqlDumpFor(name)); err != nil {
+					return pkgacct.Payload{}, err
+				}
 			}
 		case pkgacct.PartArchive:
-			if err := writeFile(part.Path, metadataFor(req.Account)); err != nil {
+			if err := writeMonolithicArchive(part.Path, req.Account.User); err != nil {
 				return pkgacct.Payload{}, err
 			}
 		}
 	}
 	return payload, nil
+}
+
+// Apply records that an archive would have been handed to cPanel.
+//
+// The fake cannot restore an account, so it verifies the archive exists and
+// writes a marker the caller can assert on. A test that needs to know
+// restorepkg was invoked checks Applied.
+func (f *Fake) Apply(_ context.Context, archivePath string) error {
+	info, err := os.Stat(archivePath)
+	if err != nil {
+		return fmt.Errorf("cpanel: restore archive: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("cpanel: restore archive %s is a directory", archivePath)
+	}
+	f.Applied = append(f.Applied, archivePath)
+	return nil
+}
+
+// cpmoveRoot is the top-level directory name inside a cPanel account
+// archive. Reassembly discovers this name rather than assuming it; the
+// fake picks cPanel's conventional one so the discovery is exercised.
+func cpmoveRoot(account string) string { return "cpmove-" + account }
+
+// writeMetadataArchive produces what pkgacct leaves in its output
+// directory when the home directory and databases are excluded: one
+// archive holding the account's configuration.
+func writeMetadataArchive(dir, account string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("cpanel: create %s: %w", dir, err)
+	}
+	root := cpmoveRoot(account)
+	return writeTar(filepath.Join(dir, root+".tar"), map[string][]byte{
+		root + "/version":             []byte("6\n"),
+		root + "/meta/user":           []byte(account + "\n"),
+		root + "/cp/" + account:       []byte("DNS=" + account + ".example\nUSER=" + account + "\n"),
+		root + "/userdata/main":       []byte("main_domain: " + account + ".example\n"),
+		root + "/dnszones/" + account: []byte("; fake zone for " + account + "\n"),
+	})
+}
+
+// writeMonolithicArchive produces the single-archive payload: the same
+// configuration plus the home directory, the way pkgacct would.
+func writeMonolithicArchive(path, account string) error {
+	root := cpmoveRoot(account)
+	return writeTar(path, map[string][]byte{
+		root + "/version":                        []byte("6\n"),
+		root + "/meta/user":                      []byte(account + "\n"),
+		root + "/cp/" + account:                  []byte("USER=" + account + "\n"),
+		root + "/homedir/public_html/index.html": []byte("<h1>" + account + "</h1>\n"),
+	})
+}
+
+// writeTar writes an uncompressed archive with the given contents, creating
+// the directory entries each path implies.
+func writeTar(path string, files map[string][]byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("cpanel: create %s: %w", filepath.Dir(path), err)
+	}
+	out, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("cpanel: create %s: %w", path, err)
+	}
+	defer out.Close()
+
+	writer := tar.NewWriter(out)
+	for _, dir := range tarDirectories(files) {
+		if err := writer.WriteHeader(&tar.Header{
+			Name: dir + "/", Typeflag: tar.TypeDir, Mode: 0o755,
+		}); err != nil {
+			return fmt.Errorf("cpanel: write %s: %w", dir, err)
+		}
+	}
+
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		body := files[name]
+		if err := writer.WriteHeader(&tar.Header{
+			Name: name, Typeflag: tar.TypeReg, Mode: 0o644, Size: int64(len(body)),
+		}); err != nil {
+			return fmt.Errorf("cpanel: write %s: %w", name, err)
+		}
+		if _, err := writer.Write(body); err != nil {
+			return fmt.Errorf("cpanel: write %s: %w", name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("cpanel: finish %s: %w", path, err)
+	}
+	return nil
+}
+
+// tarDirectories returns every directory the file paths imply, parents
+// first, so the archive is well-formed.
+func tarDirectories(files map[string][]byte) []string {
+	seen := map[string]bool{}
+	for name := range files {
+		parts := strings.Split(name, "/")
+		for i := 1; i < len(parts); i++ {
+			seen[strings.Join(parts[:i], "/")] = true
+		}
+	}
+	dirs := make([]string, 0, len(seen))
+	for dir := range seen {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+	return dirs
 }
 
 // populateHome creates a deterministic-per-user tree the first time an
@@ -143,17 +286,6 @@ func (f *Fake) populateHome(home, user string) error {
 		}
 	}
 	return nil
-}
-
-func metadataFor(account AccountInfo) []byte {
-	var builder strings.Builder
-	builder.WriteString("# cprest fake pkgacct metadata\n")
-	fmt.Fprintf(&builder, "user: %s\n", account.User)
-	fmt.Fprintf(&builder, "homedir: %s\n", account.HomeDir)
-	for _, db := range account.Databases {
-		fmt.Fprintf(&builder, "database: %s\n", db)
-	}
-	return []byte(builder.String())
 }
 
 func sqlDumpFor(name string) []byte {

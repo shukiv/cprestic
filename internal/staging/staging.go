@@ -125,6 +125,29 @@ func (m *Manager) List() ([]Dir, error) {
 	return dirs, nil
 }
 
+// Reclaim removes a leftover staging directory for a key, if one exists,
+// and reports whether it did.
+//
+// Allocate deliberately refuses a directory that is already there, so
+// anything that legitimately supersedes a previous run — a second restore
+// of the same account, whose rebuilt archive replaces the last one — calls
+// this first rather than failing.
+func (m *Manager) Reclaim(key string) (bool, error) {
+	if err := validateKey(key); err != nil {
+		return false, err
+	}
+	path := filepath.Join(m.Root, dirPrefix+key)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("staging: stat %s: %w", path, err)
+	}
+	if err := m.Release(&Dir{Path: path, Key: key}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // Release removes a staging directory. It is called only once every target
 // of the job has reached a terminal state, so that a retry against a slow
 // destination does not have to re-run pkgacct.

@@ -5,10 +5,12 @@ PKGS := ./...
 # repository instead.
 E2E_TMPDIR := $(CURDIR)/.tmp
 
+# Most cPanel servers are x86-64; override for an ARM host.
+PLUGIN_ARCH         := amd64
 RESTIC_VERSION      := v0.19.1
 REST_SERVER_VERSION := v0.14.0
 
-.PHONY: all build test cover e2e vet fmt tools clean
+.PHONY: all build plugin test cover e2e vet fmt tools clean
 
 all: fmt vet test build
 
@@ -16,6 +18,23 @@ build:
 	go build -o $(BIN)/cprest-agent       ./cmd/agent
 	go build -o $(BIN)/cprest-controller  ./cmd/controller
 	go build -o $(BIN)/cprest-maintenance ./cmd/maintenance
+	go build -o $(BIN)/cprest.cgi         ./cmd/whmcgi
+
+# The WHM plugin tarball: statically linked so it runs on any cPanel server
+# without matching libc versions, and stripped because it ships over ssh.
+plugin:
+	mkdir -p $(BIN)/cprest-plugin
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(PLUGIN_ARCH) go build -trimpath -ldflags="-s -w" \
+		-o $(BIN)/cprest-plugin/cprest-agent ./cmd/agent
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(PLUGIN_ARCH) go build -trimpath -ldflags="-s -w" \
+		-o $(BIN)/cprest-plugin/cprest.cgi ./cmd/whmcgi
+	cp packaging/whm/install.sh packaging/whm/uninstall.sh $(BIN)/cprest-plugin/
+	chmod +x $(BIN)/cprest-plugin/install.sh $(BIN)/cprest-plugin/uninstall.sh
+	tar -C $(BIN) -czf $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz cprest-plugin
+	@echo
+	@echo "built $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz"
+	@echo "copy it to the cPanel server, then:"
+	@echo "  tar xzf cprest-plugin-$(PLUGIN_ARCH).tar.gz && sudo cprest-plugin/install.sh"
 
 # Unit and integration tests. The store suite starts a throwaway PostgreSQL
 # and skips itself when none is installed, so this stays runnable anywhere.

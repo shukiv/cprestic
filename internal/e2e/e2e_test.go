@@ -251,7 +251,7 @@ func TestUnregisteredCertificateIsRejected(t *testing.T) {
 	ctx, cancel := context.WithTimeout(h.ctx, 15*time.Second)
 	defer cancel()
 
-	_, err := h.unauthenticatedClient.NextJob(ctx)
+	_, err := h.unauthenticatedClient.NextWork(ctx)
 	if err == nil {
 		t.Fatal("a client with no certificate was served")
 	}
@@ -359,10 +359,14 @@ func runOneJob(t *testing.T, h *harness, wantJobID string) protocol.JobReport {
 	ctx, cancel := context.WithTimeout(h.ctx, 3*time.Minute)
 	defer cancel()
 
-	assignment, err := h.agentClient.NextJob(ctx)
+	work, err := h.agentClient.NextWork(ctx)
 	if err != nil {
-		t.Fatalf("poll for job: %v", err)
+		t.Fatalf("poll for work: %v", err)
 	}
+	if work.Kind != protocol.KindBackup {
+		t.Fatalf("received %s work, want a backup", work.Kind)
+	}
+	assignment := *work.Backup
 	if wantJobID != "" && assignment.JobID != wantJobID {
 		t.Fatalf("received job %s, want %s", assignment.JobID, wantJobID)
 	}

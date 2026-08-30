@@ -432,3 +432,156 @@ func TestOnlyOneRunningJobPerAccount(t *testing.T) {
 		t.Errorf("the queued job should run once the first finishes: %v", err)
 	}
 }
+
+func TestRestoreLifecycle(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	// A restore needs a provisioned repository to read from.
+	if err := f.db.MarkRepositoryInitialised(ctx, f.repoA.ID); err != nil {
+		t.Fatalf("MarkRepositoryInitialised: %v", err)
+	}
+
+	jobID, err := f.db.CreateRestore(ctx, store.RestoreRequest{
+		AccountID:  f.accountID,
+		SnapshotID: "40dc15203b1cf9",
+	})
+	if err != nil {
+		t.Fatalf("CreateRestore: %v", err)
+	}
+
+	claimed, err := f.db.ClaimNextRestore(ctx, f.serverID, time.Minute)
+	if err != nil {
+		t.Fatalf("ClaimNextRestore: %v", err)
+	}
+	if claimed.JobID != jobID {
+		t.Errorf("claimed %q, want %q", claimed.JobID, jobID)
+	}
+	if claimed.Account.CPanelUser != "customer1" {
+		t.Errorf("account = %+v", claimed.Account)
+	}
+	// The controller picks the source; the agent is told which repository.
+	if claimed.Source.RepositoryID != f.repoA.ID {
+		t.Errorf("source = %q, want the provisioned repository %q",
+			claimed.Source.RepositoryID, f.repoA.ID)
+	}
+	if len(claimed.Source.RepoPasswordSealed) == 0 {
+		t.Error("source is missing its sealed repository password")
+	}
+	if claimed.Apply {
+		t.Error("apply should default to false: a restore must not overwrite an account unasked")
+	}
+
+	if _, err := f.db.ClaimNextRestore(ctx, f.serverID, time.Minute); !errors.Is(err, store.ErrNoWork) {
+		t.Errorf("second claim gave %v, want ErrNoWork", err)
+	}
+
+	if err := f.db.ApplyRestoreReport(ctx, jobID, store.RestoreOutcome{
+		Status: job.StatusSuccess, BytesRestored: 4096,
+		ArchivePath: "/var/lib/cprest/staging/stage-restore-customer1/cpmove-customer1.tar",
+	}); err != nil {
+		t.Fatalf("ApplyRestoreReport: %v", err)
+	}
+	restore, err := f.db.RestoreByID(ctx, jobID)
+	if err != nil {
+		t.Fatalf("RestoreByID: %v", err)
+	}
+	if restore.Status != job.StatusSuccess || restore.BytesRestored != 4096 {
+		t.Errorf("restore = %+v", restore)
+	}
+	if restore.ArchivePath == "" {
+		t.Error("the archive path should be recorded so an operator can find it")
+	}
+}
+
+func TestRestoreWaitsForARunningBackup(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	if err := f.db.MarkRepositoryInitialised(ctx, f.repoA.ID); err != nil {
+		t.Fatalf("MarkRepositoryInitialised: %v", err)
+	}
+	backupID, err := f.db.CreateJob(ctx, f.accountID, f.policyID)
+	if err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+	if _, err := f.db.ClaimNextJob(ctx, f.serverID, time.Minute); err != nil {
+		t.Fatalf("ClaimNextJob: %v", err)
+	}
+	if _, err := f.db.CreateRestore(ctx, store.RestoreRequest{
+		AccountID: f.accountID, SnapshotID: "40dc15203b1cf9",
+	}); err != nil {
+		t.Fatalf("CreateRestore: %v", err)
+	}
+
+	// Backup and restore both stage under the account's name, so running
+	// them at once would have them writing over each other.
+	if _, err := f.db.ClaimNextRestore(ctx, f.serverID, time.Minute); !errors.Is(err, store.ErrNoWork) {
+		t.Fatalf("restore claim during a backup gave %v, want ErrNoWork", err)
+	}
+
+	if _, err := f.db.ApplyReport(ctx, backupID, []store.TargetReport{
+		{RepositoryID: f.repoA.ID, Status: job.TargetSuccess, SnapshotID: "aaa"},
+		{RepositoryID: f.repoB.ID, Status: job.TargetSuccess, SnapshotID: "bbb"},
+	}, ""); err != nil {
+		t.Fatalf("ApplyReport: %v", err)
+	}
+	if _, err := f.db.ClaimNextRestore(ctx, f.serverID, time.Minute); err != nil {
+		t.Errorf("restore should run once the backup finishes: %v", err)
+	}
+}
+
+func TestCreateRestoreRejectsFilesWithoutPaths(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	if err := f.db.MarkRepositoryInitialised(ctx, f.repoA.ID); err != nil {
+		t.Fatalf("MarkRepositoryInitialised: %v", err)
+	}
+	// A files restore with no paths would silently restore nothing.
+	if _, err := f.db.CreateRestore(ctx, store.RestoreRequest{
+		AccountID: f.accountID, SnapshotID: "40dc15203b1cf9", Kind: "files",
+	}); err == nil {
+		t.Error("a files restore with no paths should be refused")
+	}
+	// restorepkg takes a whole account archive, so applying a partial
+	// restore is meaningless.
+	if _, err := f.db.CreateRestore(ctx, store.RestoreRequest{
+		AccountID: f.accountID, SnapshotID: "40dc15203b1cf9", Kind: "files",
+		IncludePaths: []string{"/home/customer1/public_html/index.html"}, Apply: true,
+	}); err == nil {
+		t.Error("applying a files restore should be refused")
+	}
+}
+
+func TestReclaimExpiredRestoreLeases(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	if err := f.db.MarkRepositoryInitialised(ctx, f.repoA.ID); err != nil {
+		t.Fatalf("MarkRepositoryInitialised: %v", err)
+	}
+	if _, err := f.db.CreateRestore(ctx, store.RestoreRequest{
+		AccountID: f.accountID, SnapshotID: "40dc15203b1cf9",
+	}); err != nil {
+		t.Fatalf("CreateRestore: %v", err)
+	}
+	if _, err := f.db.ClaimNextRestore(ctx, f.serverID, -time.Minute); err != nil {
+		t.Fatalf("ClaimNextRestore: %v", err)
+	}
+
+	reclaimed, err := f.db.ReclaimExpiredRestoreLeases(ctx)
+	if err != nil {
+		t.Fatalf("ReclaimExpiredRestoreLeases: %v", err)
+	}
+	if reclaimed != 1 {
+		t.Fatalf("reclaimed %d, want 1", reclaimed)
+	}
+	claimed, err := f.db.ClaimNextRestore(ctx, f.serverID, time.Minute)
+	if err != nil {
+		t.Fatalf("reclaimed restore should be claimable: %v", err)
+	}
+	if claimed.JobID == "" {
+		t.Error("no job id on the reclaimed restore")
+	}
+}

@@ -59,8 +59,90 @@ func (s *Service) Enrol(ctx context.Context, serverID string, req protocol.Enrol
 	return protocol.EnrolResponse{ServerID: serverID, PollInterval: s.PollInterval}, nil
 }
 
-// NextJob leases a job for a server and builds the assignment, decrypting
-// only the credentials that job actually needs.
+// NextWork leases whatever this server should do next.
+//
+// Restores are offered before backups: someone is usually waiting for a
+// restore, while a backup can start a minute later without anyone noticing.
+func (s *Service) NextWork(ctx context.Context, serverID string) (protocol.Assignment, error) {
+	restore, err := s.NextRestore(ctx, serverID)
+	switch {
+	case err == nil:
+		return protocol.Assignment{Kind: protocol.KindRestore, Restore: &restore}, nil
+	case !errors.Is(err, store.ErrNoWork):
+		return protocol.Assignment{}, err
+	}
+
+	backup, err := s.NextJob(ctx, serverID)
+	if err != nil {
+		return protocol.Assignment{}, err
+	}
+	return protocol.Assignment{Kind: protocol.KindBackup, Backup: &backup}, nil
+}
+
+// NextRestore leases a restore and resolves its source repository.
+func (s *Service) NextRestore(ctx context.Context, serverID string) (protocol.RestoreAssignment, error) {
+	claimed, err := s.store.ClaimNextRestore(ctx, serverID, s.LeaseDuration)
+	if err != nil {
+		return protocol.RestoreAssignment{}, err
+	}
+
+	source, err := s.buildTarget(claimed.Source)
+	if err != nil {
+		return protocol.RestoreAssignment{}, fmt.Errorf(
+			"controller: build restore source %s: %w", claimed.Source.RepositoryID, err)
+	}
+
+	return protocol.RestoreAssignment{
+		JobID:        claimed.JobID,
+		AccountID:    claimed.Account.ID,
+		CPanelUser:   claimed.Account.CPanelUser,
+		SnapshotID:   claimed.SnapshotID,
+		Kind:         claimed.Kind,
+		IncludePaths: claimed.IncludePaths,
+		TargetDir:    claimed.TargetDir,
+		Apply:        claimed.Apply,
+		Source:       source,
+		// A restore writes roughly what the account occupies, so the
+		// backup estimate is the right input to the space preflight.
+		SizeEstimate:   uint64(claimed.Account.SizeEstimate),
+		LeaseExpiresAt: claimed.LeaseExpiresAt,
+	}, nil
+}
+
+// ReportRestore records a restore's outcome.
+func (s *Service) ReportRestore(ctx context.Context, serverID string, report protocol.RestoreReport) error {
+	if report.JobID == "" {
+		return errors.New("controller: restore report is missing a job id")
+	}
+	status := job.Status(report.Status)
+	switch status {
+	case job.StatusSuccess, job.StatusFailed:
+	default:
+		return fmt.Errorf("controller: restore report has invalid status %q", report.Status)
+	}
+
+	if err := s.store.ApplyRestoreReport(ctx, report.JobID, store.RestoreOutcome{
+		Status:        status,
+		BytesRestored: report.BytesRestored,
+		ArchivePath:   report.ArchivePath,
+		Error:         report.Error,
+	}); err != nil {
+		return err
+	}
+
+	level := slog.LevelInfo
+	if status == job.StatusFailed {
+		level = slog.LevelError
+	}
+	s.log.Log(ctx, level, "restore reported",
+		"server_id", serverID, "job_id", report.JobID, "status", status,
+		"bytes_restored", report.BytesRestored, "applied", report.Applied,
+		"archive_path", report.ArchivePath, "error", report.Error)
+	return nil
+}
+
+// NextJob leases a backup job for a server and builds the assignment,
+// decrypting only the credentials that job actually needs.
 func (s *Service) NextJob(ctx context.Context, serverID string) (protocol.JobAssignment, error) {
 	claimed, err := s.store.ClaimNextJob(ctx, serverID, s.LeaseDuration)
 	if err != nil {
@@ -160,14 +242,19 @@ func (s *Service) Report(ctx context.Context, serverID string, report protocol.J
 	return status, nil
 }
 
-// ReclaimLeases returns jobs whose agent stopped reporting to the queue.
+// ReclaimLeases returns work whose agent stopped reporting to the queue.
 func (s *Service) ReclaimLeases(ctx context.Context) (int, error) {
-	count, err := s.store.ReclaimExpiredLeases(ctx)
+	backups, err := s.store.ReclaimExpiredLeases(ctx)
 	if err != nil {
 		return 0, err
 	}
-	if count > 0 {
-		s.log.Warn("reclaimed expired job leases", "count", count)
+	restores, err := s.store.ReclaimExpiredRestoreLeases(ctx)
+	if err != nil {
+		return backups, err
 	}
-	return count, nil
+	if total := backups + restores; total > 0 {
+		s.log.Warn("reclaimed expired leases", "backups", backups, "restores", restores)
+		return total, nil
+	}
+	return 0, nil
 }

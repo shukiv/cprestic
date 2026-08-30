@@ -1,9 +1,7 @@
 package resticrun
 
 import (
-	"bufio"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -46,33 +44,9 @@ var ErrNoSummary = errors.New("resticrun: no summary message in restic output")
 // progress line restic garbled under a narrow terminal must not lose us the
 // snapshot ID.
 func ParseBackupSummary(stdout []byte) (BackupSummary, error) {
-	scanner := bufio.NewScanner(bytes.NewReader(stdout))
-	// Status lines carry file paths and can be long.
-	scanner.Buffer(make([]byte, 0, 64*1024), 8<<20)
-
-	var summary BackupSummary
-	found := false
-	for scanner.Scan() {
-		line := bytes.TrimSpace(scanner.Bytes())
-		if len(line) == 0 || line[0] != '{' {
-			continue
-		}
-		var probe struct {
-			MessageType string `json:"message_type"`
-		}
-		if err := json.Unmarshal(line, &probe); err != nil {
-			continue
-		}
-		if probe.MessageType != "summary" {
-			continue
-		}
-		if err := json.Unmarshal(line, &summary); err != nil {
-			return BackupSummary{}, fmt.Errorf("resticrun: decode summary: %w", err)
-		}
-		found = true
-	}
-	if err := scanner.Err(); err != nil {
-		return BackupSummary{}, fmt.Errorf("resticrun: read restic output: %w", err)
+	summary, found, err := lastMessage[BackupSummary](stdout, "summary")
+	if err != nil {
+		return BackupSummary{}, err
 	}
 	if !found {
 		return BackupSummary{}, ErrNoSummary

@@ -12,12 +12,19 @@ import (
 )
 
 // AccountInfo is what the provider knows about an account.
+//
+// Accounts fills in only User and HomeDir, because measuring a size means
+// walking a home directory and listing databases means a MySQL round trip.
+// Account fills in everything, and is called when a backup is about to run.
 type AccountInfo struct {
 	User      string
 	HomeDir   string
 	Databases []string
-	// SizeBytes is used for the staging space preflight.
+	// SizeBytes drives the staging space preflight. Zero means it has not
+	// been measured, not that the account is empty.
 	SizeBytes uint64
+	// PrimaryDomain is shown in listings where it is known.
+	PrimaryDomain string
 }
 
 // StageRequest asks a provider to materialise one account's payload.
@@ -32,6 +39,11 @@ type Provider interface {
 	// Capabilities reports which pkgacct flags this host supports.
 	Capabilities(ctx context.Context) (pkgacct.Capabilities, error)
 
+	// Accounts lists every cPanel account on the host. Standalone mode
+	// uses it to resolve a policy that covers "all accounts" at run time,
+	// so accounts added later are picked up without an edit.
+	Accounts(ctx context.Context) ([]AccountInfo, error)
+
 	// Account looks up an account's home directory and databases.
 	Account(ctx context.Context, user string) (AccountInfo, error)
 
@@ -39,4 +51,9 @@ type Provider interface {
 	// produced. The returned payload reports Degraded when the host
 	// forced a layout that deduplicates poorly.
 	Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, error)
+
+	// Apply hands a rebuilt account archive to cPanel, overwriting the
+	// live account. Callers must only reach this when an operator has
+	// explicitly asked for it.
+	Apply(ctx context.Context, archivePath string) error
 }

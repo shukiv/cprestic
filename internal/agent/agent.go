@@ -139,7 +139,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			return err
 		}
 
-		assignment, err := a.client.NextJob(ctx)
+		assignment, err := a.client.NextWork(ctx)
 		switch {
 		case errors.Is(err, ErrNoWork):
 		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
@@ -147,18 +147,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		case err != nil:
 			a.log.Error("poll for work", "error", err)
 		default:
-			report := a.RunJob(ctx, assignment)
-			// Reporting gets its own deadline. A job that consumed its
-			// whole budget must still be able to say what happened,
-			// otherwise the lease expires and the work is repeated.
-			reportCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
-			err := a.client.Report(reportCtx, report)
-			cancel()
-			if err != nil {
-				// The job's lease will expire and the controller will
-				// re-queue it; restic tolerates the partial write.
-				a.log.Error("report job", "job_id", assignment.JobID, "error", err)
-			}
+			a.execute(ctx, assignment)
 			continue
 		}
 
@@ -167,6 +156,33 @@ func (a *Agent) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-time.After(a.PollInterval):
 		}
+	}
+}
+
+// execute performs one assignment and reports it.
+//
+// Reporting gets its own deadline. Work that consumed its whole budget must
+// still be able to say what happened, otherwise the lease expires and it is
+// all repeated.
+func (a *Agent) execute(ctx context.Context, assignment protocol.Assignment) {
+	reportCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+	defer cancel()
+
+	switch assignment.Kind {
+	case protocol.KindBackup:
+		report := a.RunJob(ctx, *assignment.Backup)
+		if err := a.client.Report(reportCtx, report); err != nil {
+			// The lease will expire and the controller will re-queue it;
+			// restic tolerates the partial write.
+			a.log.Error("report backup", "job_id", report.JobID, "error", err)
+		}
+	case protocol.KindRestore:
+		report := a.RunRestore(ctx, *assignment.Restore)
+		if err := a.client.ReportRestore(reportCtx, report); err != nil {
+			a.log.Error("report restore", "job_id", report.JobID, "error", err)
+		}
+	default:
+		a.log.Error("unknown work kind", "kind", assignment.Kind)
 	}
 }
 

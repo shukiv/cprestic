@@ -37,6 +37,9 @@ func main() {
 		{"add-repository", "create a repository record inside a destination", runAddRepository},
 		{"add-policy", "create a schedule with retention settings", runAddPolicy},
 		{"attach", "connect a policy to a repository or an account", runAttach},
+		{"snapshots", "list an account's snapshots in a repository", runSnapshots},
+		{"restore", "queue a restore of an account, or of named files", runRestore},
+		{"restore-status", "show a restore's progress and result", runRestoreStatus},
 		{"status", "show servers, repositories and recent jobs", runStatus},
 	}
 

@@ -1,0 +1,101 @@
+{{define "content"}}
+{{$data := .Data}}
+<div class="panel">
+  <h2 style="margin-top:0">Schedules</h2>
+  {{if $data.Policies}}
+  <table>
+    <tr><th>Name</th><th>Runs</th><th>Covers</th><th>Keeps</th><th>Last fired</th><th class="right">&nbsp;</th></tr>
+    {{range $data.Policies}}
+    <tr>
+      <td>{{.Name}} {{if not .Enabled}}<span class="pill">paused</span>{{end}}</td>
+      <td class="mono">{{.ScheduleCron}}</td>
+      <td>{{if .AllAccounts}}every account{{else}}{{join .Accounts ", "}}{{end}}</td>
+      <td class="muted">{{.Retention.KeepDaily}} daily, {{.Retention.KeepWeekly}} weekly, {{.Retention.KeepMonthly}} monthly</td>
+      <td>{{ago .LastRunAt}}</td>
+      <td class="right">
+        <form method="post" action="?p=schedule/delete" class="inline"
+              data-confirm="Delete this schedule? Backups already taken are kept.">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <button class="danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}
+  <p class="hint">No schedule yet. Nothing will be backed up automatically until you add one.</p>
+  {{end}}
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0">Add a schedule</h2>
+  {{if not $data.Destinations}}
+  <p class="hint">Add a destination first — a schedule has to have somewhere to write.</p>
+  {{else}}
+  <form method="post" action="?p=schedule/save" data-scope-toggle>
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <div class="grid2">
+      <div>
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" placeholder="Nightly" required>
+      </div>
+      <div>
+        <label for="cron">When (cron)</label>
+        <input type="text" id="cron" name="cron" value="0 2 * * *" required>
+        <small class="help">Five fields, server local time. <span class="mono">0 2 * * *</span> is 02:00 every day.</small>
+      </div>
+    </div>
+
+    <label>Send backups to</label>
+    {{range $data.Destinations}}
+      {{if .Repository.ID}}
+      <label class="check"><input type="checkbox" name="repository" value="{{.Repository.ID}}" checked>
+        <span>{{.Name}} <span class="muted mono">{{.Endpoint}}</span></span></label>
+      {{end}}
+    {{end}}
+    <small class="help">Pick more than one and each backup is uploaded to each of them.
+    If one is unreachable the others still succeed.</small>
+
+    <label>Which accounts</label>
+    <label class="check"><input type="radio" name="scope" value="all" checked>
+      <span>Every account on this server <small class="help">Accounts added later are included automatically.</small></span></label>
+    <label class="check"><input type="radio" name="scope" value="selected">
+      <span>Only the ones I choose</span></label>
+    <div data-account-picker hidden>
+      {{range $data.Accounts}}
+      <label class="check"><input type="checkbox" name="account" value="{{.User}}"><span>{{.User}}</span></label>
+      {{end}}
+    </div>
+
+    <div class="grid2">
+      <div>
+        <label for="keep_daily">Keep daily</label>
+        <input type="number" id="keep_daily" name="keep_daily" value="7" min="0">
+      </div>
+      <div>
+        <label for="keep_weekly">Keep weekly</label>
+        <input type="number" id="keep_weekly" name="keep_weekly" value="4" min="0">
+      </div>
+      <div>
+        <label for="keep_monthly">Keep monthly</label>
+        <input type="number" id="keep_monthly" name="keep_monthly" value="6" min="0">
+      </div>
+      <div>
+        <label for="mode">Payload</label>
+        <select id="mode" name="mode">
+          <option value="split">Split (recommended)</option>
+          <option value="monolithic">Single archive</option>
+        </select>
+        <small class="help">Split stores the home directory and each database separately,
+        so an unchanged account costs almost nothing to back up again.</small>
+      </div>
+    </div>
+
+    <label class="check"><input type="checkbox" name="enabled" value="1" checked><span>Enabled</span></label>
+
+    <div class="actions"><button class="primary" type="submit">Save schedule</button></div>
+  </form>
+  {{end}}
+</div>
+{{end}}

@@ -2,10 +2,12 @@ package cpanel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/shuki/cprest/internal/pkgacct"
@@ -21,8 +23,14 @@ type Real struct {
 	PkgacctPath string
 	// MysqldumpPath is the dump utility. Empty means "mysqldump" on PATH.
 	MysqldumpPath string
+	// RestorepkgPath applies an account archive. Empty means the standard
+	// location.
+	RestorepkgPath string
 	// HomeRoot is where account home directories live.
 	HomeRoot string
+	// UsersDir holds one file per cPanel account. Empty means the standard
+	// location.
+	UsersDir string
 }
 
 var _ Provider = (*Real)(nil)
@@ -61,6 +69,51 @@ func (r *Real) Capabilities(ctx context.Context) (pkgacct.Capabilities, error) {
 	return pkgacct.ProbeCapabilities(string(output)), nil
 }
 
+// Accounts lists the cPanel accounts on this host.
+//
+// This is deliberately cheap: it reads the account names and their home
+// directories and nothing else. Measuring sizes means walking every home
+// directory, and listing databases means a MySQL round trip per account —
+// on a real server with twenty accounts that was nineteen seconds, for a
+// page that only needed the names.
+//
+// It also never drops an account because some subsystem is unhappy. An
+// account whose databases cannot be listed is still an account, and hiding
+// it would tell an operator they have nothing to back up.
+func (r *Real) Accounts(_ context.Context) ([]AccountInfo, error) {
+	entries, err := os.ReadDir(r.usersDir())
+	if err != nil {
+		return nil, fmt.Errorf("cpanel: list accounts: %w", err)
+	}
+
+	var accounts []AccountInfo
+	for _, entry := range entries {
+		user := entry.Name()
+		if entry.IsDir() || strings.HasPrefix(user, ".") || user == "system" {
+			continue
+		}
+		if err := validateUser(user); err != nil {
+			continue
+		}
+		home := filepath.Join(r.homeRoot(), user)
+		if info, err := os.Stat(home); err != nil || !info.IsDir() {
+			// No home directory means no account to back up, as opposed
+			// to an account we merely failed to measure.
+			continue
+		}
+		accounts = append(accounts, AccountInfo{User: user, HomeDir: home})
+	}
+	sort.Slice(accounts, func(i, j int) bool { return accounts[i].User < accounts[j].User })
+	return accounts, nil
+}
+
+func (r *Real) usersDir() string {
+	if r.UsersDir != "" {
+		return r.UsersDir
+	}
+	return "/var/cpanel/users"
+}
+
 // Account reads an account's home directory and database list.
 func (r *Real) Account(ctx context.Context, user string) (AccountInfo, error) {
 	if err := validateUser(user); err != nil {
@@ -88,12 +141,23 @@ func (r *Real) Account(ctx context.Context, user string) (AccountInfo, error) {
 
 // databases lists the account's MySQL databases by the cPanel convention
 // that they are prefixed with the account name.
+//
+// A failure here is returned rather than swallowed. Backing an account up
+// while quietly omitting its databases would produce a backup that looks
+// fine and restores a site with no content.
 func (r *Real) databases(ctx context.Context, user string) ([]string, error) {
 	cmd := exec.CommandContext(ctx, "mysql", "--batch", "--skip-column-names",
 		"-e", "SHOW DATABASES")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("cpanel: list databases: %w", err)
+		detail := ""
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			detail = ": " + lastLine(exitErr.Stderr)
+		}
+		return nil, fmt.Errorf(
+			"cpanel: list databases for %s%s (root's MySQL credentials come from "+
+				"~/.my.cnf, so the service needs HOME set): %w", user, detail, err)
 	}
 	var databases []string
 	for _, line := range strings.Split(string(output), "\n") {
@@ -139,18 +203,17 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 }
 
 func (r *Real) dumpDatabases(ctx context.Context, req StageRequest, payload pkgacct.Payload) error {
+	if len(payload.DumpPaths) == 0 {
+		return nil
+	}
 	dir := filepath.Join(req.StagingDir, "databases")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("cpanel: create database staging: %w", err)
 	}
-	for _, part := range payload.Parts {
-		if part.Kind != pkgacct.PartDatabase {
-			continue
-		}
-		name := strings.TrimSuffix(filepath.Base(part.Path), ".sql")
-		file, err := os.OpenFile(part.Path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	for name, path := range payload.DumpPaths {
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 		if err != nil {
-			return fmt.Errorf("cpanel: create dump %s: %w", part.Path, err)
+			return fmt.Errorf("cpanel: create dump %s: %w", path, err)
 		}
 		// Dumps are written uncompressed on purpose: restic deduplicates
 		// plain SQL between nights, and cannot deduplicate gzip at all.
@@ -163,8 +226,37 @@ func (r *Real) dumpDatabases(ctx context.Context, req StageRequest, payload pkga
 			return fmt.Errorf("cpanel: mysqldump %s: %w", name, err)
 		}
 		if closeErr != nil {
-			return fmt.Errorf("cpanel: close dump %s: %w", part.Path, closeErr)
+			return fmt.Errorf("cpanel: close dump %s: %w", path, closeErr)
 		}
+	}
+	return nil
+}
+
+// restorepkg returns the script that applies an account archive.
+func (r *Real) restorepkg() string {
+	if r.RestorepkgPath != "" {
+		return r.RestorepkgPath
+	}
+	return "/scripts/restorepkg"
+}
+
+// Apply hands a rebuilt archive to cPanel.
+//
+// This overwrites the live account, so the agent only reaches it when an
+// operator set apply on the restore job. Like the rest of this file it has
+// never been run against a cPanel host.
+func (r *Real) Apply(ctx context.Context, archivePath string) error {
+	info, err := os.Stat(archivePath)
+	if err != nil {
+		return fmt.Errorf("cpanel: restore archive: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("cpanel: restore archive %s is a directory", archivePath)
+	}
+
+	cmd := exec.CommandContext(ctx, r.restorepkg(), archivePath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("cpanel: restorepkg failed: %w: %s", err, lastLine(output))
 	}
 	return nil
 }
