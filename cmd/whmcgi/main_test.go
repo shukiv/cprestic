@@ -100,29 +100,7 @@ func TestProxiesToTheSocket(t *testing.T) {
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "ui.sock")
 
-	source, err := os.ReadFile("main.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	patched := strings.Replace(string(source),
-		`const socketPath = "/var/run/cprest/ui.sock"`,
-		`const socketPath = "`+socket+`"`, 1)
-	if patched == string(source) {
-		t.Fatal("could not point the plugin at a test socket")
-	}
-
-	buildDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(buildDir, "main.go"), []byte(patched), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	writeModule(t, buildDir)
-
-	binary := filepath.Join(buildDir, "cprest.cgi")
-	build := exec.Command("go", "build", "-o", binary, ".")
-	build.Dir = buildDir
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Skipf("could not build the patched plugin here: %v\n%s", err, output)
-	}
+	binary := buildPatchedCGI(t, socket)
 
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
@@ -162,6 +140,38 @@ func TestProxiesToTheSocket(t *testing.T) {
 	}
 }
 
+// buildPatchedCGI compiles the plugin pointed at a test socket. The real
+// socket path is a compile-time constant so a writable config cannot
+// redirect the plugin, which is why this rewrites the source.
+func buildPatchedCGI(t *testing.T, socket string) string {
+	t.Helper()
+
+	source, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	patched := strings.Replace(string(source),
+		`const socketPath = "/var/run/cprest/ui.sock"`,
+		`const socketPath = "`+socket+`"`, 1)
+	if patched == string(source) {
+		t.Fatal("could not point the plugin at a test socket")
+	}
+
+	buildDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(buildDir, "main.go"), []byte(patched), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeModule(t, buildDir)
+
+	binary := filepath.Join(buildDir, "cprest.cgi")
+	build := exec.Command("go", "build", "-o", binary, ".")
+	build.Dir = buildDir
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Skipf("could not build the patched plugin here: %v\n%s", err, output)
+	}
+	return binary
+}
+
 func writeModule(t *testing.T, dir string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"),
@@ -185,5 +195,42 @@ func TestRejectsARouteThatIsNotOurs(t *testing.T) {
 		if !strings.Contains(output, "400") {
 			t.Errorf("route %q was accepted:\n%s", route, output)
 		}
+	}
+}
+
+func TestRewritesAnAbsoluteRedirect(t *testing.T) {
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "ui.sock")
+	binary := buildPatchedCGI(t, socket)
+
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	server := &http.Server{Handler: http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			// Whatever the interface emits, an absolute path would drop
+			// WHM's /cpsessNNN token and land the operator on a 401.
+			w.Header().Set("Location", "/destinations?kind=ok&msg=saved")
+			w.WriteHeader(http.StatusSeeOther)
+		})}
+	go func() { _ = server.Serve(listener) }()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = server.Shutdown(ctx)
+	}()
+
+	output := runCGI(t, binary, map[string]string{"REMOTE_USER": "root"})
+	if !strings.Contains(output, "Location: ?") {
+		t.Errorf("the redirect was not made relative:\n%s", output)
+	}
+	if strings.Contains(output, "Location: /destinations") {
+		t.Errorf("the absolute path survived:\n%s", output)
+	}
+	if !strings.Contains(output, "p=destinations") {
+		t.Errorf("the route was lost:\n%s", output)
 	}
 }

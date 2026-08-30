@@ -77,7 +77,12 @@ func (s *Server) redirect(w http.ResponseWriter, r *http.Request, path, kind, me
 	query.Set("kind", kind)
 	query.Set("msg", message)
 
-	http.Redirect(w, r, "?"+query.Encode(), http.StatusSeeOther)
+	// Written directly rather than through http.Redirect, which resolves a
+	// query-only reference against the request path and emits an absolute
+	// one. WHM serves the plugin behind a /cpsessNNN token in the path, so
+	// an absolute path drops the token and the browser lands on a 401.
+	w.Header().Set("Location", "?"+query.Encode())
+	w.WriteHeader(http.StatusSeeOther)
 }
 
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, status int, err error) {

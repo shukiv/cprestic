@@ -135,3 +135,53 @@ func TestShellQuote(t *testing.T) {
 		t.Errorf("got %q, want it fully quoted", got)
 	}
 }
+
+func TestInstallScriptToleratesUnchangeablePermissions(t *testing.T) {
+	// The script is built inside InstallAuthorizedKey, so this checks the
+	// shape it depends on: chmod must not be able to fail the install.
+	// A cPanel account's ~/.ssh is often already there owned by something
+	// else, and "Operation not permitted" from chmod says nothing about
+	// whether the key can be added.
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh; skipping")
+	}
+
+	home := t.TempDir()
+	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 cprest@example"
+	quoted := shellQuote(key)
+	script := "set -eu\n" +
+		"umask 077\n" +
+		`[ -d "$HOME/.ssh" ] || mkdir -p "$HOME/.ssh"` + "\n" +
+		// Stand in for a chmod that cannot succeed.
+		"chmod 700 /proc 2>/dev/null || true\n" +
+		`[ -f "$HOME/.ssh/authorized_keys" ] || : > "$HOME/.ssh/authorized_keys"` + "\n" +
+		"grep -qxF " + quoted + ` "$HOME/.ssh/authorized_keys" || printf '%s\n' ` + quoted +
+		` >> "$HOME/.ssh/authorized_keys"` + "\n" +
+		"grep -qxF " + quoted + ` "$HOME/.ssh/authorized_keys"`
+
+	cmd := exec.Command(sh, "-c", script)
+	cmd.Env = append(os.Environ(), "HOME="+home)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("a failing chmod broke the install: %v\n%s", err, output)
+	}
+
+	body, err := os.ReadFile(filepath.Join(home, ".ssh", "authorized_keys"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(body)) != key {
+		t.Errorf("authorized_keys = %q, want the key", body)
+	}
+
+	// And running it again must not add the key twice.
+	again := exec.Command(sh, "-c", script)
+	again.Env = append(os.Environ(), "HOME="+home)
+	if output, err := again.CombinedOutput(); err != nil {
+		t.Fatalf("second run failed: %v\n%s", err, output)
+	}
+	body, _ = os.ReadFile(filepath.Join(home, ".ssh", "authorized_keys"))
+	if strings.Count(string(body), key) != 1 {
+		t.Errorf("the key was added %d times", strings.Count(string(body), key))
+	}
+}

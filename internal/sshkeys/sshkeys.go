@@ -199,23 +199,60 @@ func InstallAuthorizedKey(address, user, password string, host HostKey, authoriz
 	}
 	defer session.Close()
 
-	// Appending only when absent keeps this safe to run again, and the
-	// permissions are the ones sshd insists on before it will read the
-	// file at all.
-	script := fmt.Sprintf(
-		`set -e
-mkdir -p ~/.ssh
-chmod 700 ~/.ssh
-touch ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
-grep -qxF %s ~/.ssh/authorized_keys || printf '%%s\n' %s >> ~/.ssh/authorized_keys`,
-		shellQuote(authorizedKey), shellQuote(authorizedKey))
+	// Every permission change is best effort. A cPanel account's ~/.ssh
+	// often already exists owned by something else, and chmod then fails
+	// with "Operation not permitted" — which says nothing about whether
+	// the key can be installed. What matters is that the line ends up in
+	// authorized_keys, so that is what the script asserts, and whether
+	// sshd will accept it, which VerifyKeyLogin answers directly.
+	quoted := shellQuote(authorizedKey)
+	script := fmt.Sprintf(`set -eu
+umask 077
+[ -d "$HOME/.ssh" ] || mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh" 2>/dev/null || true
+[ -f "$HOME/.ssh/authorized_keys" ] || : > "$HOME/.ssh/authorized_keys"
+chmod 600 "$HOME/.ssh/authorized_keys" 2>/dev/null || true
+grep -qxF %s "$HOME/.ssh/authorized_keys" || printf '%%s\n' %s >> "$HOME/.ssh/authorized_keys"
+grep -qxF %s "$HOME/.ssh/authorized_keys"`, quoted, quoted, quoted)
 
 	if output, err := session.CombinedOutput(script); err != nil {
-		return fmt.Errorf("sshkeys: install key on %s: %w: %s",
-			address, err, strings.TrimSpace(string(output)))
+		return fmt.Errorf("sshkeys: could not add the key to %s@%s's authorized_keys: %w: %s",
+			user, address, err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+// Diagnose describes the remote account's SSH setup, for when a key was
+// installed but logging in with it still fails. That is almost always
+// ownership or permissions on ~/.ssh, which sshd refuses silently.
+func Diagnose(address, user, password string, host HostKey, timeout time.Duration) string {
+	expected, _, _, _, err := ssh.ParseAuthorizedKey([]byte(stripHostPattern(host.Line)))
+	if err != nil {
+		return ""
+	}
+	client, err := ssh.Dial("tcp", address, &ssh.ClientConfig{
+		User:            user,
+		Auth:            []ssh.AuthMethod{ssh.Password(password)},
+		Timeout:         timeout,
+		HostKeyCallback: ssh.FixedHostKey(expected),
+	})
+	if err != nil {
+		return ""
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return ""
+	}
+	defer session.Close()
+
+	output, err := session.CombinedOutput(
+		`id; ls -ld "$HOME" "$HOME/.ssh" "$HOME/.ssh/authorized_keys" 2>&1`)
+	if err != nil && len(output) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
 }
 
 // VerifyKeyLogin checks that the key we installed actually works, so a

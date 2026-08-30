@@ -53,6 +53,25 @@ func main() {
 			},
 			ResponseHeaderTimeout: 5 * time.Minute,
 		},
+		// The interface emits query-only redirects so WHM's session token
+		// survives. Anything that still comes back as an absolute path is
+		// rewritten here, because such a path would drop the token.
+		ModifyResponse: func(resp *http.Response) error {
+			location := resp.Header.Get("Location")
+			if location == "" || strings.HasPrefix(location, "?") {
+				return nil
+			}
+			parsed, err := url.Parse(location)
+			if err != nil || parsed.Scheme != "" || parsed.Host != "" {
+				return nil
+			}
+			query := parsed.Query()
+			if route := strings.TrimPrefix(parsed.Path, "/"); route != "" {
+				query.Set("p", route)
+			}
+			resp.Header.Set("Location", "?"+query.Encode())
+			return nil
+		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusBadGateway)

@@ -3,6 +3,7 @@ package node
 import (
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -67,6 +68,15 @@ func (e *Engine) AddSFTPDestination(req SFTPRequest) (SFTPResult, error) {
 	settings := e.settings
 	destinationID := nodestore.NewID()
 
+	// Anything written before the destination is stored is litter if this
+	// fails, and an operator retrying a typo should not accumulate keys.
+	var litter []string
+	defer func() {
+		for _, path := range litter {
+			_ = os.Remove(path)
+		}
+	}()
+
 	// 1. The server's identity, read before we send it anything. This
 	//    needs no credentials: the host proves itself first.
 	hostKey, err := sshkeys.FetchHostKey(address, sshTimeout)
@@ -78,6 +88,7 @@ func (e *Engine) AddSFTPDestination(req SFTPRequest) (SFTPResult, error) {
 	if err := sshkeys.WriteKnownHosts(knownHostsPath, hostKey); err != nil {
 		return SFTPResult{}, err
 	}
+	litter = append(litter, knownHostsPath)
 
 	result := SFTPResult{
 		HostFingerprint: hostKey.Fingerprint,
@@ -100,6 +111,7 @@ func (e *Engine) AddSFTPDestination(req SFTPRequest) (SFTPResult, error) {
 		privatePEM = pair.PrivatePEM
 		result.AuthorizedKey = pair.AuthorizedKey
 		result.KeyFingerprint = pair.Fingerprint
+		litter = append(litter, identityPath)
 	}
 
 	// 3. Install it, if we were trusted with the password.
@@ -112,6 +124,17 @@ func (e *Engine) AddSFTPDestination(req SFTPRequest) (SFTPResult, error) {
 		result.Installed = true
 
 		if err := sshkeys.VerifyKeyLogin(address, req.User, privatePEM, hostKey, sshTimeout); err != nil {
+			// sshd refuses a key silently when ~/.ssh or authorized_keys
+			// are writable by anyone but their owner, so say what is
+			// actually there rather than leaving the operator guessing.
+			detail := sshkeys.Diagnose(address, req.User, req.Password, hostKey, sshTimeout)
+			if detail != "" {
+				return SFTPResult{}, fmt.Errorf(
+					"node: the key was added to %s@%s but logging in with it failed: %w. "+
+						"sshd ignores authorized_keys when the home directory or ~/.ssh is "+
+						"writable by others. On that server: %s",
+					req.User, req.Host, err, strings.ReplaceAll(detail, "\n", " | "))
+			}
 			return SFTPResult{}, fmt.Errorf(
 				"node: the key was installed but logging in with it failed: %w", err)
 		}
@@ -157,6 +180,8 @@ func (e *Engine) AddSFTPDestination(req SFTPRequest) (SFTPResult, error) {
 	if err != nil {
 		return SFTPResult{}, err
 	}
+	// The destination owns these files now.
+	litter = nil
 	result.Destination = stored
 
 	repository, err := e.newRepository(stored.ID, req.RepositoryPath)

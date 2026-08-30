@@ -343,3 +343,27 @@ func TestSFTPFormAsksForNeitherAKeyNorKnownHosts(t *testing.T) {
 		t.Error("the form does not say that a key will be generated")
 	}
 }
+
+func TestRedirectsStayRelativeSoWHMKeepsItsToken(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	_, page := get(t, client, "/destinations")
+	resp, err := client.PostForm("http://ui/destinations/add", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {""}, "type": {"local"},
+	})
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// WHM serves the plugin behind a /cpsessNNN token in the path. An
+	// absolute-path redirect drops it and the browser lands on a 401, so
+	// every redirect has to be a bare query string.
+	location := resp.Header.Get("Location")
+	if !strings.HasPrefix(location, "?") {
+		t.Errorf("Location = %q, want it to start with ?", location)
+	}
+	if strings.Contains(location, "/destinations") {
+		t.Errorf("Location = %q, want no path component", location)
+	}
+}
