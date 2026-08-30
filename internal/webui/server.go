@@ -24,6 +24,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/shuki/cprest/internal/node"
@@ -146,7 +147,55 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /settings", s.handleSettings)
 	mux.HandleFunc("POST /settings/save", s.guard(s.handleSaveSettings))
 
-	return s.recoverPanics(mux)
+	return s.recoverPanics(s.route(mux))
+}
+
+// route turns the "p" query parameter into a request path.
+//
+// cpsrvd will not route anything after a CGI's name — both
+// ".../cprest.cgi/" and ".../cprest.cgi/accounts" are 404s, verified
+// against cPanel 136 — so every route travels in a query parameter. It is
+// translated here rather than in the plugin so the rule is one thing, in
+// the language the rest of this package is written in, and can be tested.
+// See docs/adr/0008.
+func (s *Server) route(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		if _, given := query["p"]; !given {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		route := strings.TrimPrefix(query.Get("p"), "/")
+		query.Del("p")
+		if !safeRoute(route) {
+			s.fail(w, r, http.StatusBadRequest, errors.New("that address is not part of cprest"))
+			return
+		}
+
+		r.URL.Path = "/" + route
+		r.URL.RawQuery = query.Encode()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// safeRoute accepts only the shapes this interface serves, so a crafted "p"
+// cannot be used to reach somewhere else.
+func safeRoute(route string) bool {
+	if route == "" {
+		return true
+	}
+	if strings.Contains(route, "..") || strings.Contains(route, "//") {
+		return false
+	}
+	for _, r := range route {
+		isAllowed := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '/' || r == '-' || r == '_' || r == '.'
+		if !isAllowed {
+			return false
+		}
+	}
+	return true
 }
 
 // Listen serves the interface on a unix socket.

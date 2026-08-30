@@ -132,12 +132,16 @@ func TestEveryPageRenders(t *testing.T) {
 			t.Errorf("GET %s = %d", path, status)
 			continue
 		}
-		if !strings.Contains(body, "cprest backups") {
+		// The page is a fragment: WHM's own interface supplies the
+		// document around it, so there is no <html> of our own.
+		if !strings.Contains(body, `<div class="cprest">`) {
 			t.Errorf("GET %s did not render the layout", path)
 		}
-		// A template that fails halfway must not leave a partial page.
-		if !strings.Contains(body, "</html>") {
+		if !strings.Contains(body, "</main>") {
 			t.Errorf("GET %s produced a truncated page", path)
+		}
+		if strings.Contains(body, "<html") {
+			t.Errorf("GET %s emitted a whole document; WHM supplies that", path)
 		}
 	}
 }
@@ -991,4 +995,64 @@ func TestOverviewLeadsWithCoverage(t *testing.T) {
 		t.Error("the overview does not say that an account has no backup")
 	}
 	_ = engine
+}
+
+func TestRoutesTravelInTheQueryParameter(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	// cpsrvd will not route a path after the CGI's name, so the plugin
+	// forwards the route as "p" and the service turns it back.
+	status, body := get(t, client, "/?p=accounts")
+	if status != http.StatusOK {
+		t.Fatalf("GET ?p=accounts = %d", status)
+	}
+	if !strings.Contains(body, "Back up, verify or recover") {
+		t.Error("?p=accounts did not reach the accounts page")
+	}
+
+	// Other parameters survive the translation.
+	status, body = get(t, client, "/?p=account&user=customer1")
+	if status != http.StatusOK {
+		t.Fatalf("GET ?p=account = %d", status)
+	}
+	if !strings.Contains(body, "customer1") {
+		t.Error("?p=account&user=… did not reach the account page")
+	}
+
+	// No route is the overview.
+	if _, body := get(t, client, "/"); !strings.Contains(body, "Protection") {
+		t.Error("the bare address did not reach the overview")
+	}
+}
+
+func TestRejectsARouteThatIsNotOurs(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	for _, route := range []string{"../../etc/passwd", "a//b", "a%20b", "%2e%2e%2fetc"} {
+		resp, err := client.Get("http://ui/?p=" + route)
+		if err != nil {
+			t.Fatalf("GET %q: %v", route, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("route %q = %d, want 400", route, resp.StatusCode)
+		}
+	}
+}
+
+func TestPostRoutesThroughTheQueryParameter(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	// A form posts to "?p=destinations/add"; without a token the service
+	// must still be the thing that refuses it.
+	resp, err := client.PostForm("http://ui/?p=destinations/add", map[string][]string{
+		"name": {"sneaky"}, "type": {"local"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("POST ?p=destinations/add = %d, want 403", resp.StatusCode)
+	}
 }

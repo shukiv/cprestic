@@ -4,6 +4,11 @@
  * proxies back and sets nosniff, so a stylesheet fetched as its own request
  * arrives with no type and is ignored. See docs/adr/0008.
  *
+ * Every rule is scoped under .cprest because the page is a fragment inside
+ * WHM's own interface, whose stylesheet styles the same elements — tables,
+ * buttons, inputs — and would otherwise fight this one. Only the tokens on
+ * :root sit outside, so colour-scheme reaches the document.
+ *
  * Cool-biased neutrals so the plugin sits inside WHM's chrome rather than
  * fighting it. Semantic colour (good / warning / critical) is deliberately
  * separate from the accent, so state never depends on the accent hue.
@@ -43,194 +48,260 @@
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 1px 8px rgba(0,0,0,.25);
 }
 
-* { box-sizing:border-box; }
-body {
+.cprest * { box-sizing:border-box; }
+.cprest {
   margin:0; background:var(--ground); color:var(--ink);
   font:15px/1.5 "Fira Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing:antialiased;
 }
-.mono { font-family:"Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.85em; }
-.num { font-variant-numeric:tabular-nums; }
+.cprest .mono { font-family:"Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.85em; }
+.cprest .num { font-variant-numeric:tabular-nums; }
 
 /* ---- host context ---- */
-.host {
+.cprest .host {
   background:var(--surface-2); border-bottom:1px solid var(--line);
   padding:var(--s2) var(--s5); font-size:12px; color:var(--faint);
   display:flex; gap:var(--s2); align-items:center; letter-spacing:.02em;
 }
-.host b { color:var(--muted); font-weight:500; }
+.cprest .host b { color:var(--muted); font-weight:500; }
 
 /* ---- app bar ---- */
-.bar {
+.cprest .bar {
   background:var(--surface); border-bottom:1px solid var(--line);
   padding:0 var(--s5); display:flex; align-items:center; gap:var(--s6);
   position:sticky; top:0; z-index:20;
 }
-.brand { font-weight:700; letter-spacing:-.01em; padding:var(--s4) 0; white-space:nowrap; }
-.brand span { color:var(--muted); font-weight:400; }
-nav { display:flex; gap:var(--s5); overflow-x:auto; }
-nav a {
-  text-decoration:none; color:var(--muted); padding:var(--s4) 0 calc(var(--s4) - 2px);
+.cprest .brand { font-weight:700; letter-spacing:-.01em; padding:var(--s4) 0; white-space:nowrap; }
+.cprest .brand span { color:var(--muted); font-weight:400; }
+.cprest nav { display:flex; gap:var(--s5); overflow-x:auto; }
+.cprest nav button {
+  appearance:none; background:none; border:0; cursor:pointer; font:inherit;
+  color:var(--muted); padding:var(--s4) 0 calc(var(--s4) - 2px);
   border-bottom:2px solid transparent; white-space:nowrap;
   transition:color .18s ease, border-color .18s ease;
 }
-nav a:hover { color:var(--ink); }
-nav a[aria-current="page"] { color:var(--ink); font-weight:600; border-bottom-color:var(--accent); }
-nav a:focus-visible, .btn:focus-visible, .link:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
+.cprest nav button:hover { color:var(--ink); }
+.cprest nav button[aria-current="page"] { color:var(--ink); font-weight:600; border-bottom-color:var(--accent); }
+.cprest nav button:focus-visible, .cprest .btn:focus-visible, .cprest .link:focus-visible, .cprest input:focus-visible, .cprest select:focus-visible {
   outline:2px solid var(--accent); outline-offset:2px; border-radius:2px;
 }
 
-main { max-width:1180px; margin:0 auto; padding:var(--s5) var(--s5) 96px; display:flex; flex-direction:column; gap:var(--s5); }
+.cprest main { max-width:1180px; margin:0 auto; padding:var(--s5) var(--s5) 96px; }
+.cprest .screen[hidden] { display:none; }
 
-textarea {
-  width:100%; font-family:"Fira Code", ui-monospace, monospace; font-size:12px;
-  padding:var(--s3); border-radius:var(--r); border:1px solid var(--line-strong);
-  background:var(--surface-2); color:var(--ink); min-height:5rem; line-height:1.6;
-}
-label.check { display:flex; gap:var(--s2); align-items:flex-start; font-size:14px; margin:var(--s3) 0; font-weight:400; }
-label.check input { margin-top:4px; flex:none; }
-.muted { color:var(--muted); }
-.warnbox { border-left:3px solid var(--warn); padding-left:var(--s3); margin:var(--s3) 0; font-size:14px; }
-form.inline { display:inline; }
+.cprest h1 { font-size:22px; margin:0 0 var(--s1); letter-spacing:-.01em; text-wrap:balance; }
+.cprest .sub { color:var(--muted); margin:0 0 var(--s5); font-size:14px; }
+.cprest h2 { font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin:0 0 var(--s3); font-weight:600; }
 
-h1 { font-size:22px; margin:0 0 var(--s1); letter-spacing:-.01em; text-wrap:balance; }
-.sub { color:var(--muted); margin:0 0 var(--s5); font-size:14px; }
-h2 { font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin:0 0 var(--s3); font-weight:600; }
-
-.card { background:var(--surface); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow); }
-.pad { padding:var(--s4) var(--s5); }
-.stack { display:flex; flex-direction:column; gap:var(--s5); }
-.row { display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap; }
-.spread { display:flex; justify-content:space-between; align-items:baseline; gap:var(--s3); }
-.grid3 { display:grid; grid-template-columns:2fr 1fr 1fr; gap:var(--s4); }
-.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:var(--s4); }
+.cprest .card { background:var(--surface); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow); }
+.cprest .pad { padding:var(--s4) var(--s5); }
+.cprest .stack { display:flex; flex-direction:column; gap:var(--s5); }
+.cprest .row { display:flex; gap:var(--s3); align-items:center; flex-wrap:wrap; }
+.cprest .spread { display:flex; justify-content:space-between; align-items:baseline; gap:var(--s3); }
+.cprest .grid3 { display:grid; grid-template-columns:2fr 1fr 1fr; gap:var(--s4); }
+.cprest .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:var(--s4); }
 
 /* ---- coverage ---- */
-.cov-figure { font-size:34px; font-weight:700; letter-spacing:-.02em; line-height:1.1; }
-.cov-figure small { font-size:15px; font-weight:400; color:var(--muted); letter-spacing:0; }
-.meter { display:flex; height:10px; border-radius:99px; overflow:hidden; background:var(--line); margin:var(--s3) 0 var(--s2); }
-.meter i { display:block; }
-.meter .ok { background:var(--good); }
-.meter .stale { background:var(--warn); }
-.meter .none { background:var(--bad); }
-.legend { display:flex; gap:var(--s4); font-size:13px; color:var(--muted); flex-wrap:wrap; }
-.legend b { color:var(--ink); font-weight:600; }
-.key { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:6px; vertical-align:baseline; }
+.cprest .cov-figure { font-size:34px; font-weight:700; letter-spacing:-.02em; line-height:1.1; }
+.cprest .cov-figure small { font-size:15px; font-weight:400; color:var(--muted); letter-spacing:0; }
+.cprest .meter { display:flex; height:10px; border-radius:99px; overflow:hidden; background:var(--line); margin:var(--s3) 0 var(--s2); }
+.cprest .meter i { display:block; }
+.cprest .meter .ok { background:var(--good); }
+.cprest .meter .stale { background:var(--warn); }
+.cprest .meter .none { background:var(--bad); }
+.cprest .legend { display:flex; gap:var(--s4); font-size:13px; color:var(--muted); flex-wrap:wrap; }
+.cprest .legend b { color:var(--ink); font-weight:600; }
+.cprest .key { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:6px; vertical-align:baseline; }
 
-.stat { font-size:24px; font-weight:600; letter-spacing:-.01em; }
-.stat.warnish { color:var(--warn); }
-.statlabel { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--faint); margin-bottom:var(--s1); }
-.hint { font-size:13px; color:var(--muted); margin:var(--s2) 0 0; }
+.cprest .stat { font-size:24px; font-weight:600; letter-spacing:-.01em; }
+.cprest .stat.warnish { color:var(--warn); }
+.cprest .statlabel { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--faint); margin-bottom:var(--s1); }
+.cprest .hint { font-size:13px; color:var(--muted); margin:var(--s2) 0 0; }
 
 /* ---- pills ---- */
-.pill {
+.cprest .pill {
   display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:500;
   padding:2px 8px; border-radius:99px; border:1px solid transparent; white-space:nowrap;
 }
-.pill.ok   { color:var(--good); background:var(--good-soft); border-color:color-mix(in srgb, var(--good) 25%, transparent); }
-.pill.warn { color:var(--warn); background:var(--warn-soft); border-color:color-mix(in srgb, var(--warn) 25%, transparent); }
-.pill.bad  { color:var(--bad);  background:var(--bad-soft);  border-color:color-mix(in srgb, var(--bad) 25%, transparent); }
-.pill.idle { color:var(--muted); background:var(--surface-2); border-color:var(--line); }
-.dot { width:6px; height:6px; border-radius:50%; background:currentColor; flex:none; }
+.cprest .pill.ok { color:var(--good); background:var(--good-soft); border-color:color-mix(in srgb, var(--good) 25%, transparent); }
+.cprest .pill.warn { color:var(--warn); background:var(--warn-soft); border-color:color-mix(in srgb, var(--warn) 25%, transparent); }
+.cprest .pill.bad { color:var(--bad);  background:var(--bad-soft);  border-color:color-mix(in srgb, var(--bad) 25%, transparent); }
+.cprest .pill.idle { color:var(--muted); background:var(--surface-2); border-color:var(--line); }
+.cprest .dot { width:6px; height:6px; border-radius:50%; background:currentColor; flex:none; }
 
 /* ---- tables ---- */
-.tablewrap { overflow-x:auto; }
-table { width:100%; border-collapse:collapse; font-size:14px; }
-th {
+.cprest .tablewrap { overflow-x:auto; }
+.cprest table { width:100%; border-collapse:collapse; font-size:14px; }
+.cprest th {
   text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.07em;
   color:var(--faint); font-weight:600; padding:var(--s2) var(--s3);
   border-bottom:1px solid var(--line); white-space:nowrap;
 }
-td { padding:var(--s3); border-bottom:1px solid var(--line); vertical-align:middle; }
-tbody tr:last-child td { border-bottom:0; }
-tbody tr { transition:background .15s ease; }
-tbody tr:hover { background:var(--surface-2); }
-td.right, th.right { text-align:right; }
-.acct { font-weight:600; }
-.acct .link { display:block; }
-.sublabel { color:var(--faint); font-size:12px; margin-top:1px; }
+.cprest td { padding:var(--s3); border-bottom:1px solid var(--line); vertical-align:middle; }
+.cprest tbody tr:last-child td { border-bottom:0; }
+.cprest tbody tr { transition:background .15s ease; }
+.cprest tbody tr:hover { background:var(--surface-2); }
+.cprest td.right, .cprest th.right { text-align:right; }
+.cprest .acct { font-weight:600; }
+.cprest .acct .link { display:block; }
+.cprest .sublabel { color:var(--faint); font-size:12px; margin-top:1px; }
 
 /* severity stripe: state readable without colour alone */
-tr.state td:first-child { border-left:3px solid transparent; padding-left:calc(var(--s3) - 3px); }
-tr.s-ok td:first-child   { border-left-color:var(--good); }
-tr.s-warn td:first-child { border-left-color:var(--warn); }
-tr.s-bad td:first-child  { border-left-color:var(--bad); }
+.cprest tr.state td:first-child { border-left:3px solid transparent; padding-left:calc(var(--s3) - 3px); }
+.cprest tr.s-ok td:first-child { border-left-color:var(--good); }
+.cprest tr.s-warn td:first-child { border-left-color:var(--warn); }
+.cprest tr.s-bad td:first-child { border-left-color:var(--bad); }
 
 /* ---- controls ---- */
-.btn {
+.cprest .btn {
   appearance:none; font:inherit; font-size:13px; cursor:pointer;
   padding:6px 12px; min-height:32px; border-radius:var(--r);
   border:1px solid var(--line-strong); background:var(--surface); color:var(--ink);
   transition:background .18s ease, border-color .18s ease, color .18s ease;
   white-space:nowrap;
 }
-.btn:hover { background:var(--surface-2); border-color:var(--muted); }
-.btn.primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:500; }
-.btn.primary:hover { filter:brightness(1.08); }
-.btn.quiet { border-color:transparent; color:var(--muted); }
-.btn.quiet:hover { color:var(--ink); background:var(--surface-2); }
-.btn.danger { color:var(--bad); border-color:color-mix(in srgb, var(--bad) 35%, transparent); }
-.btn.danger:hover { background:var(--bad-soft); }
-.btn[disabled] { opacity:.45; cursor:not-allowed; }
-.actions { display:flex; gap:var(--s2); justify-content:flex-end; }
+.cprest .btn:hover { background:var(--surface-2); border-color:var(--muted); }
+.cprest .btn.primary { background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:500; }
+.cprest .btn.primary:hover { filter:brightness(1.08); }
+.cprest .btn.quiet { border-color:transparent; color:var(--muted); }
+.cprest .btn.quiet:hover { color:var(--ink); background:var(--surface-2); }
+.cprest .btn.danger { color:var(--bad); border-color:color-mix(in srgb, var(--bad) 35%, transparent); }
+.cprest .btn.danger:hover { background:var(--bad-soft); }
+.cprest .btn[disabled] { opacity:.45; cursor:not-allowed; }
+.cprest .actions { display:flex; gap:var(--s2); justify-content:flex-end; }
 
-.search {
+.cprest .search {
   display:flex; align-items:center; gap:var(--s2); background:var(--surface);
   border:1px solid var(--line-strong); border-radius:var(--r); padding:0 var(--s3); min-height:34px;
 }
-.search input { border:0; background:none; font:inherit; font-size:14px; color:var(--ink); padding:6px 0; width:200px; }
-.search input:focus { outline:none; }
-.chips { display:flex; gap:var(--s2); flex-wrap:wrap; }
-.chip {
+.cprest .search input { border:0; background:none; font:inherit; font-size:14px; color:var(--ink); padding:6px 0; width:200px; }
+.cprest .search input:focus { outline:none; }
+.cprest .chips { display:flex; gap:var(--s2); flex-wrap:wrap; }
+.cprest .chip {
   appearance:none; font:inherit; font-size:13px; cursor:pointer; padding:5px 11px; min-height:32px;
   border-radius:99px; border:1px solid var(--line-strong); background:var(--surface); color:var(--muted);
   transition:background .18s ease, color .18s ease, border-color .18s ease;
 }
-.chip:hover { color:var(--ink); }
-.chip[aria-pressed="true"] { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); font-weight:500; }
+.cprest .chip:hover { color:var(--ink); }
+.cprest .chip[aria-pressed="true"] { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); font-weight:500; }
 
-.link { color:var(--accent); text-decoration:none; border-bottom:1px solid transparent; cursor:pointer; background:none; border-x:0; border-top:0; font:inherit; padding:0; }
-.link:hover { border-bottom-color:currentColor; }
+.cprest .link { color:var(--accent); text-decoration:none; border-bottom:1px solid transparent; cursor:pointer; background:none; border-x:0; border-top:0; font:inherit; padding:0; }
+.cprest .link:hover { border-bottom-color:currentColor; }
 
 /* ---- banners ---- */
-.banner { border-radius:var(--r); padding:var(--s3) var(--s4); font-size:14px; display:flex; gap:var(--s3); align-items:flex-start; border:1px solid; }
-.banner.ok   { background:var(--good-soft); border-color:color-mix(in srgb, var(--good) 30%, transparent); color:var(--good); }
-.banner.warn { background:var(--warn-soft); border-color:color-mix(in srgb, var(--warn) 30%, transparent); color:var(--warn); }
-.banner.bad  { background:var(--bad-soft);  border-color:color-mix(in srgb, var(--bad) 30%, transparent);  color:var(--bad); }
-.banner b { font-weight:600; }
-.banner .body { color:var(--ink); }
-.banner .body b { color:inherit; }
+.cprest .banner { border-radius:var(--r); padding:var(--s3) var(--s4); font-size:14px; display:flex; gap:var(--s3); align-items:flex-start; border:1px solid; }
+.cprest .banner.warn { background:var(--warn-soft); border-color:color-mix(in srgb, var(--warn) 30%, transparent); color:var(--warn); }
+.cprest .banner.bad { background:var(--bad-soft);  border-color:color-mix(in srgb, var(--bad) 30%, transparent);  color:var(--bad); }
+.cprest .banner b { font-weight:600; }
+.cprest .banner .body { color:var(--ink); }
+.cprest .banner .body b { color:inherit; }
 
 /* ---- empty state ---- */
-.empty { text-align:center; padding:var(--s6) var(--s5); color:var(--muted); }
-.empty p { margin:0 0 var(--s4); }
+.cprest .empty { text-align:center; padding:var(--s6) var(--s5); color:var(--muted); }
+.cprest .empty p { margin:0 0 var(--s4); }
 
 /* ---- detail ---- */
-.crumb { font-size:13px; color:var(--muted); margin-bottom:var(--s2); display:flex; gap:6px; align-items:center; }
-.facts { display:grid; grid-template-columns:repeat(4, 1fr); gap:var(--s4); }
-.log {
+.cprest .crumb { font-size:13px; color:var(--muted); margin-bottom:var(--s2); display:flex; gap:6px; align-items:center; }
+.cprest .facts { display:grid; grid-template-columns:repeat(4, 1fr); gap:var(--s4); }
+.cprest .log {
   background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r);
   padding:var(--s3); font-family:"Fira Code", ui-monospace, monospace; font-size:12px;
   line-height:1.6; white-space:pre-wrap; word-break:break-word; max-height:200px; overflow:auto; color:var(--muted);
 }
-details > summary { cursor:pointer; color:var(--accent); font-size:13px; padding:var(--s2) 0; }
-details > summary::marker { color:var(--faint); }
+.cprest details > summary { cursor:pointer; color:var(--accent); font-size:13px; padding:var(--s2) 0; }
+.cprest details > summary::marker { color:var(--faint); }
 
 /* ---- destructive zone ---- */
-.danger-zone { border:1px solid color-mix(in srgb, var(--bad) 35%, transparent); border-radius:var(--r); background:var(--bad-soft); padding:var(--s4) var(--s5); }
-.danger-zone h3 { margin:0 0 var(--s1); font-size:14px; color:var(--bad); }
-.danger-zone p { margin:0 0 var(--s3); font-size:13px; color:var(--ink); max-width:62ch; }
+.cprest .danger-zone { border:1px solid color-mix(in srgb, var(--bad) 35%, transparent); border-radius:var(--r); background:var(--bad-soft); padding:var(--s4) var(--s5); }
+.cprest .danger-zone h3 { margin:0 0 var(--s1); font-size:14px; color:var(--bad); }
+.cprest .danger-zone p { margin:0 0 var(--s3); font-size:13px; color:var(--ink); max-width:62ch; }
 
-.note { font-size:12px; color:var(--faint); margin-top:var(--s4); }
-label.field { display:block; font-size:13px; font-weight:500; margin-bottom:var(--s1); }
-input[type=text], select {
+.cprest .note { font-size:12px; color:var(--faint); margin-top:var(--s4); }
+.cprest label.field { display:block; font-size:13px; font-weight:500; margin-bottom:var(--s1); }
+.cprest input[type=text], .cprest select {
   width:100%; font:inherit; font-size:14px; padding:7px 10px; border-radius:var(--r);
   border:1px solid var(--line-strong); background:var(--surface); color:var(--ink);
 }
-.help { font-size:12px; color:var(--muted); margin-top:var(--s1); }
+.cprest .help { font-size:12px; color:var(--muted); margin-top:var(--s1); }
 
 @media (max-width:900px) {
-  .grid3, .grid2, .facts { grid-template-columns:1fr; }
-  nav { gap:var(--s4); }
+  .cprest .grid3, .cprest .grid2, .cprest .facts { grid-template-columns:1fr; }
+  .cprest nav { gap:var(--s4); }
 }
 @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+
+/* --- additions since the mockup ------------------------------------- */
+
+/* Native controls — inputs, selects, scrollbars — follow this. Without it
+   they stay light against a dark panel. */
+:root { color-scheme: light; }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { color-scheme: dark; }
+}
+
+/* The page is a fragment inside WHM's interface, so it lays itself out
+   rather than owning the document. */
+.cprest { padding:var(--s5) var(--s5) 64px; }
+.cprest main {
+  max-width:1180px; margin:0 auto; padding:0;
+  display:flex; flex-direction:column; gap:var(--s5);
+}
+.cprest .bar {
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
+  padding:0 var(--s4); margin-bottom:var(--s5);
+  display:flex; align-items:center; gap:var(--s5); position:static; box-shadow:var(--shadow);
+}
+.cprest nav { display:flex; gap:var(--s5); overflow-x:auto; }
+.cprest nav a {
+  text-decoration:none; color:var(--muted); padding:var(--s3) 0 calc(var(--s3) - 2px);
+  border-bottom:2px solid transparent; white-space:nowrap;
+  transition:color .18s ease, border-color .18s ease;
+}
+.cprest nav a:hover { color:var(--ink); }
+.cprest nav a[aria-current="page"] { color:var(--ink); font-weight:600; border-bottom-color:var(--accent); }
+.cprest nav a:focus-visible, .cprest a:focus-visible, .cprest textarea:focus-visible,
+.cprest summary:focus-visible {
+  outline:2px solid var(--accent); outline-offset:2px; border-radius:2px;
+}
+
+/* Theme control. WHM does not tell a plugin which theme it is wearing, so
+   the operator gets the final say; the default follows the system. */
+.cprest .theme {
+  display:flex; gap:2px; margin-left:auto; background:var(--surface-2);
+  border:1px solid var(--line); border-radius:99px; padding:2px; flex:none;
+}
+.cprest .theme button {
+  appearance:none; border:0; background:none; font:inherit; font-size:12px; cursor:pointer;
+  color:var(--muted); padding:4px 10px; min-height:28px; border-radius:99px; line-height:1;
+  transition:background .18s ease, color .18s ease;
+}
+.cprest .theme button:hover { color:var(--ink); }
+.cprest .theme button[aria-pressed="true"] {
+  background:var(--surface); color:var(--ink); font-weight:500; box-shadow:var(--shadow);
+}
+.cprest .theme svg { display:block; }
+
+.cprest .visually-hidden {
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+}
+
+.cprest .banner.ok {
+  background:var(--good-soft); border-color:color-mix(in srgb, var(--good) 30%, transparent); color:var(--good);
+}
+.cprest textarea {
+  width:100%; font-family:"Fira Code", ui-monospace, monospace; font-size:12px;
+  padding:var(--s3); border-radius:var(--r); border:1px solid var(--line-strong);
+  background:var(--surface-2); color:var(--ink); min-height:5rem; line-height:1.6;
+}
+.cprest label.check { display:flex; gap:var(--s2); align-items:flex-start; font-size:14px; margin:var(--s3) 0; font-weight:400; }
+.cprest label.check input { margin-top:4px; flex:none; }
+.cprest .muted { color:var(--muted); }
+.cprest .warnbox { border-left:3px solid var(--warn); padding-left:var(--s3); margin:var(--s3) 0; font-size:14px; }
+.cprest form.inline { display:inline; }
+.cprest tr.detailrow td { padding-top:0; }
+.cprest tr.detailrow summary { color:var(--accent); font-size:13px; }
+.cprest details.keybox { margin-top:var(--s3); border-top:1px solid var(--line); padding-top:var(--s3); }
+.cprest details.keybox summary { color:var(--accent); }

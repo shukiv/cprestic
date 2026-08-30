@@ -96,3 +96,38 @@
     window.setTimeout(function () { window.location.reload(); }, 10000);
   }
 })();
+
+// Theme control. WHM does not tell a plugin which theme it is wearing, so
+// the operator gets the final say; "system" follows prefers-color-scheme.
+// The choice lives in this browser only — it is a viewing preference, not
+// server state.
+(function () {
+  "use strict";
+  var group = document.getElementById("theme");
+  if (!group) { return; }
+
+  function stored() {
+    try { return localStorage.getItem("cprest.theme") || "system"; } catch (e) { return "system"; }
+  }
+
+  function apply(choice) {
+    if (choice === "light" || choice === "dark") {
+      document.documentElement.setAttribute("data-theme", choice);
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+    Array.prototype.forEach.call(group.querySelectorAll("button"), function (button) {
+      button.setAttribute("aria-pressed", String(button.dataset.themeChoice === choice));
+    });
+    try { localStorage.setItem("cprest.theme", choice); } catch (e) {}
+  }
+
+  // Only offered when it can actually work.
+  group.hidden = false;
+  apply(stored());
+
+  group.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-theme-choice]");
+    if (button) { apply(button.dataset.themeChoice); }
+  });
+})();

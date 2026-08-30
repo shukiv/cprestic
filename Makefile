@@ -18,7 +18,6 @@ build:
 	go build -o $(BIN)/cprest-agent       ./cmd/agent
 	go build -o $(BIN)/cprest-controller  ./cmd/controller
 	go build -o $(BIN)/cprest-maintenance ./cmd/maintenance
-	go build -o $(BIN)/cprest.cgi         ./cmd/whmcgi
 
 # The WHM plugin tarball: statically linked so it runs on any cPanel server
 # without matching libc versions, and stripped because it ships over ssh.
@@ -26,10 +25,8 @@ plugin:
 	mkdir -p $(BIN)/cprest-plugin
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(PLUGIN_ARCH) go build -trimpath -ldflags="-s -w" \
 		-o $(BIN)/cprest-plugin/cprest-agent ./cmd/agent
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(PLUGIN_ARCH) go build -trimpath -ldflags="-s -w" \
-		-o $(BIN)/cprest-plugin/cprest.cgi ./cmd/whmcgi
-	cp packaging/whm/install.sh packaging/whm/uninstall.sh $(BIN)/cprest-plugin/
-	chmod +x $(BIN)/cprest-plugin/install.sh $(BIN)/cprest-plugin/uninstall.sh
+	cp packaging/whm/cprest.cgi packaging/whm/install.sh packaging/whm/uninstall.sh $(BIN)/cprest-plugin/
+	chmod +x $(BIN)/cprest-plugin/install.sh $(BIN)/cprest-plugin/uninstall.sh $(BIN)/cprest-plugin/cprest.cgi
 	tar -C $(BIN) -czf $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz cprest-plugin
 	@echo
 	@echo "built $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz"
