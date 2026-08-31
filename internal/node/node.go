@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -605,6 +606,21 @@ type RecoveryCard struct {
 	URI         string
 	Password    string
 	Hostname    string
+	// ResticOptions is what restic needs to reach the destination as this
+	// server does — for SFTP, the key and the pinned host key. Empty when
+	// the destination needs nothing beyond its URI.
+	ResticOptions string
+	// SSHIdentityPath and SSHKnownHostsPath are where those files live on
+	// this server, for a restore run from here.
+	SSHIdentityPath   string
+	SSHKnownHostsPath string
+	// SSHPrivateKey and SSHHostKey are their contents, for a restore run
+	// from a machine that has never seen this one. Empty for destinations
+	// that are not reached over SSH.
+	SSHPrivateKey string
+	SSHHostKey    string
+	SSHUser       string
+	SSHHost       string
 }
 
 // Recovery assembles what an operator has to keep somewhere else.
@@ -629,11 +645,32 @@ func (e *Engine) Recovery(repositoryID string) (RecoveryCard, error) {
 	if err != nil {
 		return RecoveryCard{}, err
 	}
-	return RecoveryCard{
+	card := RecoveryCard{
 		Destination: dest.Name,
 		Repository:  repo.Path,
 		URI:         uri,
 		Password:    password,
 		Hostname:    e.settings.Hostname,
-	}, nil
+	}
+
+	// An SFTP destination is reached with the key this server generated
+	// for it, and with the host key it pinned when it first connected.
+	// Recovery instructions that leave those out do not work.
+	if options, err := opened.Dest.Options(); err == nil {
+		card.ResticOptions = options["sftp.args"]
+	}
+	card.SSHIdentityPath = dest.Config["identity_file"]
+	card.SSHKnownHostsPath = dest.Config["known_hosts_file"]
+	card.SSHUser, card.SSHHost = dest.Config["user"], dest.Config["host"]
+	if card.SSHIdentityPath != "" {
+		if key, err := os.ReadFile(card.SSHIdentityPath); err == nil {
+			card.SSHPrivateKey = strings.TrimSpace(string(key))
+		}
+	}
+	if card.SSHKnownHostsPath != "" {
+		if hosts, err := os.ReadFile(card.SSHKnownHostsPath); err == nil {
+			card.SSHHostKey = strings.TrimSpace(string(hosts))
+		}
+	}
+	return card, nil
 }

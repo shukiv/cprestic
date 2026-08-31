@@ -15,11 +15,19 @@
     server. If {{.Hostname}} is lost and this is not written down somewhere else, the backups it
     made cannot be read by anyone — including cprest.</p>
     <div class="cpr-log" style="font-size:14px; user-select:all">{{.Password}}</div>
-    <p class="cpr-hint">To restore without cprest, on any machine with restic:</p>
+    <p class="cpr-hint">To read this repository from this server:</p>
     <div class="cpr-log">export RESTIC_REPOSITORY='{{.URI}}'
 export RESTIC_PASSWORD='&lt;the key above&gt;'
-restic snapshots
-restic restore &lt;snapshot-id&gt; --target /somewhere</div>
+{{if .ResticOptions}}restic -o sftp.args="{{.ResticOptions}}" snapshots
+restic -o sftp.args="{{.ResticOptions}}" restore &lt;snapshot-id&gt; --target /somewhere{{else}}restic snapshots
+restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
+    {{if .SSHPrivateKey}}
+    <p class="cpr-hint">Those options point at this server's own SSH key
+    (<span class="cpr-mono">{{.SSHIdentityPath}}</span>) and the host key it pinned. A machine
+    that has never seen this one needs both: they are in the file below, with the commands that
+    use them. Failing that, any account with SSH access to
+    <span class="cpr-mono">{{.SSHUser}}@{{.SSHHost}}</span> works with a password.</p>
+    {{end}}
     <div class="cpr-row" style="margin-top:var(--s4)">
       <form method="post" action="?p=destinations/recovery/card" class="cpr-inline">
         <input type="hidden" name="csrf" value="{{$.CSRF}}">

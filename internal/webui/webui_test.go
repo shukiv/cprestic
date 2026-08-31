@@ -1877,3 +1877,54 @@ func TestBrowsingStartsAtTheDestinations(t *testing.T) {
 		t.Error("the destination list is reading repositories nobody opened")
 	}
 }
+
+// Recovery instructions that leave out the SSH key do not work: reaching
+// an SFTP destination needs the key this server made for it and the host
+// key it pinned, and a machine that has never seen this one has neither.
+func TestTheRecoveryCardCarriesWhatIsNeededToReachTheDestination(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	// A destination reached over SSH, with the files cprest writes for it.
+	dir := t.TempDir()
+	identity := filepath.Join(dir, "id_ed25519")
+	knownHosts := filepath.Join(dir, "known_hosts")
+	if err := os.WriteFile(identity, []byte("-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(knownHosts, []byte("backup.example.com ssh-ed25519 AAAA\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := engine.AddDestination(nodestore.Destination{
+		Name: "Backup server", Type: "sftp",
+		Config: map[string]string{
+			"host": "backup.example.com", "user": "cpbackup", "root": "/backups",
+			"identity_file": identity, "known_hosts_file": knownHosts,
+		},
+	}, nil, "cp01"); err != nil {
+		t.Fatal(err)
+	}
+	repos, _ := engine.Store().Repositories()
+
+	_, page := get(t, client, "/destinations")
+	card, err := client.PostForm("http://ui/destinations/recovery/card", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "repository": {repos[0].ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(card.Body)
+	card.Body.Close()
+	written := string(body)
+
+	for _, want := range []string{
+		"-i " + identity,                      // the key this server uses
+		"BEGIN OPENSSH PRIVATE KEY",           // and the key itself, for elsewhere
+		"backup.example.com ssh-ed25519 AAAA", // with the host key it pinned
+		"let ssh ask for a\npassword",         // and what to do when the key is gone
+		"cpbackup@backup.example.com",         //
+	} {
+		if !strings.Contains(written, want) {
+			t.Errorf("the recovery card does not carry %q", want)
+		}
+	}
+}

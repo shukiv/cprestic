@@ -348,7 +348,8 @@ func (s *Server) handleRecoveryCard(w http.ResponseWriter, r *http.Request) {
 		s.redirect(w, r, "/destinations", "error", err.Error())
 		return
 	}
-	body := fmt.Sprintf(`cprest recovery key
+	var body strings.Builder
+	fmt.Fprintf(&body, `cprest recovery key
 ===================
 
 Server        %s
@@ -365,27 +366,73 @@ lives on %s. If that server is lost and this password is not written down
 somewhere else, the backups it made cannot be read by anyone, including
 cprest.
 
-To restore without cprest, on any machine with restic installed:
+`, card.Hostname, card.Destination, card.Repository, card.URI,
+		card.Password, card.Hostname)
+
+	switch {
+	case card.SSHPrivateKey != "":
+		// Reaching an SFTP destination needs the key this server made for
+		// it and the host key it pinned. A restore run anywhere else needs
+		// both of those as well as the password.
+		fmt.Fprintf(&body, `Reaching it from %s
+------------------------------------------------------------------
+    export RESTIC_REPOSITORY='%s'
+    export RESTIC_PASSWORD='<the password above>'
+
+    restic -o sftp.args="%s" snapshots
+    restic -o sftp.args="%s" restore <snapshot-id> --target /somewhere
+
+Reaching it from anywhere else
+------------------------------------------------------------------
+That server's own SSH key is below. Write it to a file, make it readable
+only by you, and point restic at it:
+
+    install -m 600 /dev/null /root/cprest-key
+    cat > /root/cprest-key <<'KEY'
+%s
+KEY
+    printf '%%s\n' '%s' > /root/cprest-known-hosts
 
     export RESTIC_REPOSITORY='%s'
-    export RESTIC_PASSWORD='%s'
+    export RESTIC_PASSWORD='<the password above>'
+    restic -o sftp.args="-i /root/cprest-key -o UserKnownHostsFile=/root/cprest-known-hosts -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes" snapshots
+
+If that key no longer works — the account was removed, or its
+authorized_keys was rebuilt — any account with SSH access to
+%s@%s will do. Drop the -o sftp.args and let ssh ask for a
+password:
+
+    export RESTIC_REPOSITORY='%s'
+    restic snapshots
+
+`, card.Hostname, card.URI, card.ResticOptions, card.ResticOptions,
+			card.SSHPrivateKey, card.SSHHostKey, card.URI,
+			card.SSHUser, card.SSHHost, card.URI)
+
+	default:
+		fmt.Fprintf(&body, `To restore without cprest, on any machine with restic installed:
+
+    export RESTIC_REPOSITORY='%s'
+    export RESTIC_PASSWORD='<the password above>'
 
     restic snapshots
     restic restore <snapshot-id> --target /somewhere
 
-Keep this file somewhere that survives the loss of %s.
+`, card.URI)
+	}
+
+	fmt.Fprintf(&body, `Keep this file somewhere that survives the loss of %s. It carries
+everything needed to read those backups, which is the point of it and
+also the reason it belongs in a password manager rather than on a disk.
 Written %s
-`,
-		card.Hostname, card.Destination, card.Repository, card.URI,
-		card.Password, card.Hostname, card.URI, card.Password,
-		card.Hostname, time.Now().UTC().Format("2006-01-02 15:04 MST"))
+`, card.Hostname, time.Now().UTC().Format("2006-01-02 15:04 MST"))
 
 	filename := fmt.Sprintf("cprest-recovery-%s-%s.txt", card.Hostname, card.Repository)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.Header().Set("Content-Length", strconv.Itoa(body.Len()))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	_, _ = w.Write([]byte(body))
+	_, _ = w.Write([]byte(body.String()))
 }
 
 // destinationsView is the destinations page.
