@@ -21,6 +21,7 @@ import (
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/node"
 	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shuki/cprest/internal/pkgacct"
 	"github.com/shuki/cprest/internal/protocol"
 	"github.com/shuki/cprest/internal/reassemble"
 	"github.com/shuki/cprest/internal/resticrun"
@@ -1573,13 +1574,31 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		held += output.Bytes
 	}
 
+	// What a backup contains depends on the payload mode the schedules
+	// use, so the page states it rather than describing the default.
+	policies, err := s.engine.Store().Policies()
+	if err != nil {
+		s.fail(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	split, monolithic := 0, 0
+	for _, policy := range policies {
+		if policy.PayloadMode == string(pkgacct.ModeMonolithic) {
+			monolithic++
+			continue
+		}
+		split++
+	}
+
 	s.render(w, r, "settings.html", "Settings", "settings", struct {
 		Settings    nodestore.Settings
 		StagingFree uint64
 		Outputs     []staging.Output
 		OutputBytes uint64
 		KeepDays    int
-	}{settings, free, outputs, held, keepDays(settings)})
+		Split       int
+		Monolithic  int
+	}{settings, free, outputs, held, keepDays(settings), split, monolithic})
 }
 
 // keepDays is the retention shown in the form, with the default spelt out

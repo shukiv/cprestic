@@ -99,26 +99,65 @@
 
 <div class="cpr-card">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
-    <h2 style="margin:0">What this server's pkgacct can do</h2>
-  </div>
-  {{if $data.Settings.PkgacctFlags}}
-  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
-    <p class="cpr-hint" style="margin:0">Flag names move between cPanel releases, so they are
-    probed when the service starts rather than assumed. Every one of these makes a backup
-    smaller or more deduplicable — none of them leaves anything out of it.</p>
+    <h2 style="margin:0">What a backup contains</h2>
   </div>
   <div class="cpr-tablewrap"><table>
-    <thead><tr><th>Capability</th><th>Flag</th><th>What it means</th></tr></thead>
+    <thead><tr><th>Part of the account</th><th>How it is stored</th></tr></thead>
     <tbody>
-    {{range $name, $flag := $data.Settings.PkgacctFlags}}
-    <tr>
-      <td class="cpr-acct">{{$name}}</td>
-      <td class="cpr-mono">{{$flag}}</td>
-      <td style="font-size:13px; color:var(--muted)">{{pkgacctMeaning $name}}</td>
-    </tr>
-    {{end}}
+      <tr>
+        <td class="cpr-acct">Home directory</td>
+        <td>Backed up as files, in place — every site, every mailbox.
+          <div class="cpr-sublabel">So a night that changed one file stores one file.</div></td>
+      </tr>
+      <tr>
+        <td class="cpr-acct">Databases</td>
+        <td>One plain <span class="cpr-mono">.sql</span> dump per database.
+          <div class="cpr-sublabel">Dumped by cprest, not packed inside cPanel's archive: plain
+          SQL deduplicates between nights, a compressed archive does not.</div></td>
+      </tr>
+      <tr>
+        <td class="cpr-acct">Settings, DNS, SSL, mail configuration</td>
+        <td>cPanel's own account archive, with the home directory and databases left out of it.
+          <div class="cpr-sublabel">The same <span class="cpr-mono">cpmove</span> format
+          restorepkg reads, so a whole-account restore is a rebuild of it.</div></td>
+      </tr>
     </tbody>
   </table></div>
+  <div class="cpr-pad" style="border-top:1px solid var(--line)">
+    {{if $data.Monolithic}}
+    <div class="cpr-banner cpr-warn"><div class="cpr-body">
+      {{$data.Monolithic}} schedule{{if ne $data.Monolithic 1}}s{{end}} use the single-archive
+      payload, which stores a full copy of the account every night. Split is the default and
+      costs a fraction of it.
+    </div></div>
+    {{else}}
+    <p class="cpr-hint" style="margin:0">Nothing is left out: the three rows above are the whole
+    account. What differs between payload modes is how it is cut up, not what is kept.</p>
+    {{end}}
+  </div>
+
+  {{if $data.Settings.PkgacctFlags}}
+  <div class="cpr-pad" style="border-top:1px solid var(--line)">
+    <details>
+      <summary>How cprest gets pkgacct to do that</summary>
+      <p class="cpr-hint" style="margin-top:var(--s2)">Flag names have moved between cPanel
+      releases, so they are probed when the service starts rather than assumed. Each one asks
+      pkgacct to leave a part out of <em>its</em> archive, because cprest is storing that part
+      itself, in a form restic can deduplicate.</p>
+      <div class="cpr-tablewrap" style="margin-top:var(--s3)"><table>
+        <thead><tr><th>Capability</th><th>Flag</th><th>What it means</th></tr></thead>
+        <tbody>
+        {{range $name, $flag := $data.Settings.PkgacctFlags}}
+        <tr>
+          <td class="cpr-acct">{{$name}}</td>
+          <td class="cpr-mono">{{$flag}}</td>
+          <td style="font-size:13px; color:var(--muted)">{{pkgacctMeaning $name}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table></div>
+    </details>
+  </div>
   {{if not (index $data.Settings.PkgacctFlags "nocompress")}}
   <div class="cpr-pad" style="border-top:1px solid var(--line)">
     <div class="cpr-warnbox" style="margin:0">This cPanel version cannot produce an uncompressed
@@ -127,7 +166,10 @@
   </div>
   {{end}}
   {{else}}
-  <div class="cpr-pad"><p class="cpr-hint">Not probed yet. It is checked when the service starts.</p></div>
+  <div class="cpr-pad" style="border-top:1px solid var(--line)">
+    <p class="cpr-hint" style="margin:0">pkgacct has not been probed yet. It is checked when the
+    service starts.</p>
+  </div>
   {{end}}
 </div>
 {{end}}
