@@ -1762,3 +1762,80 @@ func TestTheServersOwnSettingsCanBeScheduledAndRestored(t *testing.T) {
 		t.Error("the restore page does not offer the server's settings")
 	}
 }
+
+// A replacement server starts here: it knows nothing, and is given where
+// the backups are and the key that reads them.
+func TestRecoverAsksForWhereTheBackupsAreAndTheKey(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	status, page := get(t, client, "/recover")
+	if status != http.StatusOK {
+		t.Fatalf("GET /recover = %d", status)
+	}
+	for _, want := range []string{
+		"Recovery key", "Folder inside the destination", "Read the backups",
+		"Nothing is written until they can be read",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the recovery page does not ask for %q", want)
+		}
+	}
+}
+
+// Attaching reads the repository before it writes anything down: a
+// repository this server cannot read is a typo, and saving it would leave
+// an operator in a disaster believing they had their backups back.
+func TestAttachingWritesNothingUntilTheBackupsCanBeRead(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	_, page := get(t, client, "/recover")
+	before, err := engine.Store().Destinations()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	refused, err := client.PostForm("http://ui/recover/attach", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "type": {"local"}, "root": {t.TempDir()},
+		"repo_path": {"oldserver"}, "recovery_key": {"not the key"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(refused.Body)
+	refused.Body.Close()
+	if !strings.Contains(string(body), "could not read that repository") {
+		t.Errorf("a repository that cannot be read was not reported as one: %s",
+			firstError(string(body)))
+	}
+
+	after, err := engine.Store().Destinations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != len(before) {
+		t.Error("a destination was saved for a repository that could not be read")
+	}
+	if secrets, _ := engine.Store().Repositories(); len(secrets) != 0 {
+		t.Error("a repository was recorded for backups nobody could read")
+	}
+}
+
+// firstError pulls the banner text out of a rendered page, for a test that
+// needs to say why the page it got was not the page it wanted.
+func firstError(page string) string {
+	start := strings.Index(page, `cpr-banner cpr-bad`)
+	if start < 0 {
+		return "no error banner"
+	}
+	rest := page[start:]
+	open := strings.Index(rest, `<div class="cpr-body">`)
+	if open < 0 {
+		return "no body"
+	}
+	rest = rest[open+len(`<div class="cpr-body">`):]
+	end := strings.Index(rest, "</div>")
+	if end < 0 {
+		return rest
+	}
+	return strings.TrimSpace(rest[:end])
+}

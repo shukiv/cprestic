@@ -1,0 +1,194 @@
+{{define "content"}}
+{{$data := .Data}}
+<div>
+  <h1>Recover a server</h1>
+  <p class="cpr-sub">Point this server at backups another one made, and put them back.</p>
+</div>
+
+{{with $data.Error}}
+<div class="cpr-banner cpr-bad"><div class="cpr-body">{{.}}</div></div>
+{{end}}
+
+<div class="cpr-card">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
+    <h2 style="margin:0">{{if $data.Repositories}}Attach another set of backups{{else}}Where are the old backups?{{end}}</h2>
+  </div>
+  <div class="cpr-pad">
+    <p class="cpr-hint" style="margin-top:0">This needs two things: how to reach the destination
+    the old server wrote to, and that server's recovery key. Without the key nothing here can
+    read them — that is what the encryption is for.</p>
+
+    <form method="post" action="?p=recover/attach">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <div class="cpr-grid2">
+        <div>
+          <label for="name">Call it</label>
+          <input type="text" id="name" name="name" placeholder="Recovered backups">
+        </div>
+        <div>
+          <label for="type">Where they are</label>
+          <select id="type" name="type" data-destination-type>
+            <option value="sftp">Another Linux server (SFTP)</option>
+            <option value="rest">Backup server (restic REST)</option>
+            <option value="s3">S3 or S3-compatible</option>
+            <option value="local">Local disk or mounted NAS</option>
+          </select>
+        </div>
+      </div>
+
+      <div data-for-type="sftp">
+        <div class="cpr-grid2">
+          <div>
+            <label for="host">Host</label>
+            <input type="text" id="host" name="host" placeholder="backup.example.com">
+          </div>
+          <div>
+            <label for="port">Port</label>
+            <input type="number" id="port" name="port" value="22">
+          </div>
+          <div>
+            <label for="user">SSH user</label>
+            <input type="text" id="user" name="user" placeholder="cpbackup">
+          </div>
+          <div>
+            <label for="root">Remote directory</label>
+            <input type="text" id="root" name="root" placeholder="/home/cpbackup/backups">
+          </div>
+        </div>
+        <label for="identity_file">Private key on this server</label>
+        <input type="text" id="identity_file" name="identity_file" placeholder="/root/.ssh/id_ed25519">
+        <small class="cpr-help">The old server's key is gone with it, so this needs a key that
+        can log in — one you add to that account now.</small>
+        <label for="known_hosts_file">known_hosts file</label>
+        <input type="text" id="known_hosts_file" name="known_hosts_file" placeholder="/root/.ssh/known_hosts">
+      </div>
+
+      <div data-for-type="rest" hidden>
+        <label for="base_url">Server address</label>
+        <input type="text" id="base_url" name="base_url" placeholder="https://backup.example.com">
+        <div class="cpr-grid2">
+          <div>
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username">
+          </div>
+          <div>
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password">
+          </div>
+        </div>
+      </div>
+
+      <div data-for-type="s3" hidden>
+        <div class="cpr-grid2">
+          <div>
+            <label for="bucket">Bucket</label>
+            <input type="text" id="bucket" name="bucket">
+          </div>
+          <div>
+            <label for="region">Region</label>
+            <input type="text" id="region" name="region" placeholder="us-east-1">
+          </div>
+        </div>
+        <label for="endpoint">Endpoint (leave empty for Amazon S3)</label>
+        <input type="text" id="endpoint" name="endpoint" placeholder="s3.us-east-1.wasabisys.com">
+        <div class="cpr-grid2">
+          <div>
+            <label for="access_key_id">Access key</label>
+            <input type="text" id="access_key_id" name="access_key_id">
+          </div>
+          <div>
+            <label for="secret_access_key">Secret key</label>
+            <input type="password" id="secret_access_key" name="secret_access_key">
+          </div>
+        </div>
+      </div>
+
+      <div data-for-type="local" hidden>
+        <label for="local_root">Directory</label>
+        <input type="text" id="local_root" name="root" placeholder="/mnt/backups">
+      </div>
+
+      <label for="repo_path">Folder inside the destination</label>
+      <input type="text" id="repo_path" name="repo_path" placeholder="the old server's hostname" required>
+      <small class="cpr-help">What the old server called itself. It is on the recovery card.</small>
+
+      <label for="recovery_key">Recovery key</label>
+      <input type="password" id="recovery_key" name="recovery_key" required autocomplete="off">
+      <small class="cpr-help">The repository password from the old server. Nothing can read those
+      backups without it — not this program, not the machine holding them.</small>
+
+      <div class="cpr-row" style="margin-top:var(--s4)">
+        <button class="cpr-btn cpr-primary" type="submit">Read the backups</button>
+        <span class="cpr-hint" style="margin:0">Nothing is written until they can be read.</span>
+      </div>
+    </form>
+  </div>
+</div>
+
+{{range $data.Repositories}}
+<div class="cpr-card">
+  <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
+    <h2 style="margin:0">{{.Name}} · {{.Path}}</h2>
+    <span class="cpr-hint" style="margin:0">{{.Contents.Snapshots}} backups</span>
+  </div>
+
+  {{if .Err}}
+  <div class="cpr-pad"><div class="cpr-banner cpr-bad"><div class="cpr-body">{{.Err}}</div></div></div>
+  {{else}}
+
+  {{if .Contents.System}}
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
+    <div class="cpr-row">
+      <span class="cpr-pill cpr-ok"><span class="cpr-dot"></span>Server settings</span>
+      <span class="cpr-hint" style="margin:0">taken {{ago .Contents.SystemAt}} — EasyApache,
+      packages, tweak settings and the rest. Restore these first: an account restored onto a
+      server that has not been set up lands somewhere that cannot serve it.</span>
+      <span style="flex:1"></span>
+      <a class="cpr-btn" href="?p=restore&amp;account=%40system&amp;repository={{.ID}}&amp;item=system">Restore the settings</a>
+    </div>
+  </div>
+  {{end}}
+
+  {{if .Contents.Accounts}}
+  {{$repo := .ID}}
+  <div class="cpr-tablewrap"><table>
+    <thead><tr><th>Account</th><th>Backups</th><th>Most recent</th><th class="cpr-right">&nbsp;</th></tr></thead>
+    <tbody>
+      {{range .Contents.Accounts}}
+      <tr>
+        <td class="cpr-acct">{{.Account}}</td>
+        <td class="cpr-num">{{.Snapshots}}</td>
+        <td>{{stamp .Latest}}<div class="cpr-sublabel">{{ago .Latest}}</div></td>
+        <td class="cpr-right"><div class="cpr-actions">
+          <form method="post" action="?p=recover/account" class="cpr-inline">
+            <input type="hidden" name="csrf" value="{{$.CSRF}}">
+            <input type="hidden" name="repository" value="{{$repo}}">
+            <input type="hidden" name="account" value="{{.Account}}">
+            <button class="cpr-btn">Rebuild the archive</button>
+          </form>
+          <form method="post" action="?p=recover/account" class="cpr-inline"
+                data-confirm="Restore {{.Account}} onto this server with cPanel's own restore? An account of that name here would be replaced.">
+            <input type="hidden" name="csrf" value="{{$.CSRF}}">
+            <input type="hidden" name="repository" value="{{$repo}}">
+            <input type="hidden" name="account" value="{{.Account}}">
+            <input type="hidden" name="apply" value="1">
+            <button class="cpr-btn cpr-danger">Restore onto this server</button>
+          </form>
+        </div></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table></div>
+  <div class="cpr-pad" style="border-top:1px solid var(--line)">
+    <p class="cpr-hint" style="margin:0"><b>Rebuild the archive</b> puts the account back together
+    and leaves it here to inspect. <b>Restore onto this server</b> hands that archive to cPanel's
+    own restore, which creates the account — one at a time, so the staging volume is not asked
+    for more than it has.</p>
+  </div>
+  {{else}}
+  <div class="cpr-empty"><p>No account backups in this repository.</p></div>
+  {{end}}
+  {{end}}
+</div>
+{{end}}
+{{end}}

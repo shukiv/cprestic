@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -2347,4 +2348,145 @@ func (s *Server) handleFont(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	_, _ = w.Write(body)
+}
+
+// --- disaster recovery ---
+
+// recoverView is the page a replacement server starts from.
+type recoverView struct {
+	// Destinations already attached, so an operator who has done this can
+	// see what is in them without doing it again.
+	Repositories []recoverRepository
+	Hostname     string
+	Error        string
+}
+
+// recoverRepository is one attached repository and what it holds.
+type recoverRepository struct {
+	ID       string
+	Name     string
+	Path     string
+	Contents node.Contents
+	Err      string
+}
+
+func (s *Server) handleRecover(w http.ResponseWriter, r *http.Request) {
+	s.render(w, r, "recover.html", "Recover a server", "recover",
+		s.recoverContents(r.Context(), ""))
+}
+
+// recoverContents reads every attached repository so the page can say what
+// is actually in them, rather than what this server remembers.
+func (s *Server) recoverContents(ctx context.Context, failure string) recoverView {
+	view := recoverView{Hostname: s.engine.Settings().Hostname, Error: failure}
+	destinations, err := s.destinationViews()
+	if err != nil {
+		view.Error = err.Error()
+		return view
+	}
+	for _, dest := range destinations {
+		if dest.Repository.ID == "" {
+			continue
+		}
+		row := recoverRepository{
+			ID:   dest.Repository.ID,
+			Name: dest.Name,
+			Path: dest.Repository.Path,
+		}
+		contents, err := s.engine.Contents(ctx, dest.Repository.ID)
+		if err != nil {
+			row.Err = err.Error()
+		} else {
+			row.Contents = contents
+		}
+		view.Repositories = append(view.Repositories, row)
+	}
+	return view
+}
+
+// handleAttach points this server at backups that already exist.
+func (s *Server) handleAttach(w http.ResponseWriter, r *http.Request) {
+	config := map[string]string{}
+	secrets := map[string]string{}
+	kind := destination.Type(r.PostFormValue("type"))
+
+	switch kind {
+	case destination.TypeSFTP:
+		config["host"] = strings.TrimSpace(r.PostFormValue("host"))
+		config["user"] = strings.TrimSpace(r.PostFormValue("user"))
+		config["root"] = strings.TrimSpace(r.PostFormValue("root"))
+		config["identity_file"] = strings.TrimSpace(r.PostFormValue("identity_file"))
+		config["known_hosts_file"] = strings.TrimSpace(r.PostFormValue("known_hosts_file"))
+		if port := strings.TrimSpace(r.PostFormValue("port")); port != "" && port != "22" {
+			config["port"] = port
+		}
+	case destination.TypeREST:
+		config["base_url"] = strings.TrimSpace(r.PostFormValue("base_url"))
+		secrets["username"] = strings.TrimSpace(r.PostFormValue("username"))
+		secrets["password"] = r.PostFormValue("password")
+	case destination.TypeS3:
+		config["bucket"] = strings.TrimSpace(r.PostFormValue("bucket"))
+		if endpoint := strings.TrimSpace(r.PostFormValue("endpoint")); endpoint != "" {
+			config["endpoint"] = endpoint
+		}
+		if region := strings.TrimSpace(r.PostFormValue("region")); region != "" {
+			config["region"] = region
+		}
+		secrets["access_key_id"] = strings.TrimSpace(r.PostFormValue("access_key_id"))
+		secrets["secret_access_key"] = r.PostFormValue("secret_access_key")
+	case destination.TypeLocal:
+		config["root"] = strings.TrimSpace(r.PostFormValue("root"))
+	default:
+		s.render(w, r, "recover.html", "Recover a server", "recover",
+			s.recoverContents(r.Context(), "Choose where the old backups are."))
+		return
+	}
+
+	name := strings.TrimSpace(r.PostFormValue("name"))
+	if name == "" {
+		name = "Recovered backups"
+	}
+	contents, err := s.engine.Attach(r.Context(), node.AttachRequest{
+		Destination: nodestore.Destination{
+			Name: name, Type: string(kind), Config: config,
+		},
+		Secrets:        secrets,
+		RepositoryPath: strings.TrimSpace(r.PostFormValue("repo_path")),
+		Password:       r.PostFormValue("recovery_key"),
+	})
+	if err != nil {
+		s.render(w, r, "recover.html", "Recover a server", "recover",
+			s.recoverContents(r.Context(), err.Error()))
+		return
+	}
+
+	s.redirect(w, r, "/recover", "ok", fmt.Sprintf(
+		"Attached. %d backups are readable from here, covering %d account%s.",
+		contents.Snapshots, len(contents.Accounts), plural(len(contents.Accounts))))
+}
+
+// handleRecoverAccount queues the restore of one account from an attached
+// repository, onto this server.
+func (s *Server) handleRecoverAccount(w http.ResponseWriter, r *http.Request) {
+	account := r.PostFormValue("account")
+	apply := r.PostFormValue("apply") != ""
+	queued, err := s.engine.QueueRestore(nodestore.Restore{
+		Account:      account,
+		RepositoryID: r.PostFormValue("repository"),
+		Kind:         protocol.RestoreAccount,
+		Apply:        apply,
+	})
+	if err != nil {
+		s.redirect(w, r, "/recover", "error", err.Error())
+		return
+	}
+	if queued.Apply {
+		s.redirect(w, r, "/recover", "ok", fmt.Sprintf(
+			"Restoring %s onto this server. It will be handed to cPanel's own restore when the "+
+				"archive is rebuilt.", account))
+		return
+	}
+	s.redirect(w, r, "/recover", "ok", fmt.Sprintf(
+		"Rebuilding %s. The archive will be left on this server to inspect; nothing is "+
+			"created until you ask for that.", account))
 }
