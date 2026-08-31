@@ -803,7 +803,29 @@ type accountView struct {
 	// Zero means no enabled schedule covers it: whatever backup it has is
 	// the last one it will ever get.
 	ExpectedEvery time.Duration
+	// Runs and Succeeded are this account's record: how many backups have
+	// finished, and how many of those worked. One good backup says little
+	// on its own — a run that succeeds nine times in ten is a different
+	// account to look after than one that has never failed.
+	Runs      int
+	Succeeded int
+	// Verified is when a rehearsal last proved this account's backup
+	// rebuilds, with VerifiedOK saying whether it passed.
+	Verified   *time.Time
+	VerifiedOK bool
 }
+
+// Record is the account's history in one line.
+func (a accountView) Record() string {
+	if a.Runs == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d of %d succeeded", a.Succeeded, a.Runs)
+}
+
+// Failures is how many runs did not work, for the pages that show it as
+// its own number rather than as part of a ratio.
+func (a accountView) Failures() int { return a.Runs - a.Succeeded }
 
 // Stripe is the severity colour on the row's leading edge, so state reads
 // without depending on colour alone.
@@ -961,6 +983,8 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 	latest := map[string]nodestore.Job{}
 	running := map[string]bool{}
 	progress := map[string]*nodestore.JobProgress{}
+	runs := map[string]int{}
+	succeeded := map[string]int{}
 	for _, stored := range jobs {
 		if !stored.Status.Terminal() {
 			running[stored.Account] = true
@@ -969,8 +993,36 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 			}
 			continue
 		}
+		runs[stored.Account]++
+		if stored.Status == job.StatusSuccess {
+			succeeded[stored.Account]++
+		}
 		if previous, seen := latest[stored.Account]; !seen || stored.QueuedAt.After(previous.QueuedAt) {
 			latest[stored.Account] = stored
+		}
+	}
+
+	// A rehearsal is the only thing that says a backup rebuilds, so when
+	// one last ran belongs beside the account it was run for.
+	restores, err := s.engine.Store().Restores(0)
+	if err != nil {
+		return nil, nil, err
+	}
+	type drill struct {
+		at time.Time
+		ok bool
+	}
+	verified := map[string]drill{}
+	for _, restore := range restores {
+		if restore.Kind != node.KindVerify || restore.FinishedAt == nil {
+			continue
+		}
+		if previous, seen := verified[restore.Account]; seen && previous.at.After(*restore.FinishedAt) {
+			continue
+		}
+		verified[restore.Account] = drill{
+			at: *restore.FinishedAt,
+			ok: restore.Status == job.StatusSuccess,
 		}
 	}
 
@@ -982,6 +1034,12 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 			Running:       running[account.User],
 			Progress:      progress[account.User],
 			ExpectedEvery: expected[account.User],
+			Runs:          runs[account.User],
+			Succeeded:     succeeded[account.User],
+		}
+		if drilled, seen := verified[account.User]; seen {
+			at := drilled.at
+			view.Verified, view.VerifiedOK = &at, drilled.ok
 		}
 		if last, seen := latest[account.User]; seen {
 			view.LastBackup = last.FinishedAt

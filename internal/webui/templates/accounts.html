@@ -37,7 +37,7 @@
   <div class="cpr-tablewrap">
     <table id="accounts">
       <thead>
-        <tr><th>Account</th><th>Size</th><th>Last backup</th><th>State</th><th class="cpr-right">&nbsp;</th></tr>
+        <tr><th>Account</th><th>Size</th><th>Last backup</th><th>Backups</th><th>State</th><th class="cpr-right">&nbsp;</th></tr>
       </thead>
       <tbody data-live="accounts">
         {{range $d.Accounts}}
@@ -46,6 +46,14 @@
             {{if .PrimaryDomain}}<div class="cpr-sublabel">{{.PrimaryDomain}}</div>{{end}}</td>
           <td class="cpr-mono cpr-num">{{if .SizeBytes}}{{bytes .SizeBytes}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
           <td>{{if .LastBackup}}{{ago .LastBackup}}{{else}}<span class="cpr-mono">never</span>{{end}}</td>
+          <td>
+            {{if .Record}}<span title="Backups of this account that have finished, and how many of those worked.">{{.Record}}</span>
+            {{if .Failures}}<div class="cpr-sublabel">{{.Failures}} failed</div>{{end}}
+            {{else}}<span class="cpr-muted">—</span>{{end}}
+            {{if .Verified}}<div class="cpr-sublabel"
+              title="A rehearsal rebuilt this account's backup and checked what came out. It is the only thing that shows a backup restores.">
+              {{if .VerifiedOK}}verified {{ago .Verified}}{{else}}rehearsal failed {{ago .Verified}}{{end}}</div>{{end}}
+          </td>
           <td>{{template "accountstate" .}}{{template "jobprogress" .}}</td>
           <td class="cpr-right"><div class="cpr-actions">
             <form method="post" action="?p=accounts/backup" class="cpr-inline">

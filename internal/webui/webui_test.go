@@ -1332,3 +1332,44 @@ func TestAStateSaysWhatHappenedAndWhatItMeans(t *testing.T) {
 		t.Error("the page still uses a word that promises more than it checks")
 	}
 }
+
+// One good backup says little on its own. The accounts page shows the
+// account's record — how many runs finished and how many worked — so a
+// site that fails one night in three is distinguishable from one that has
+// never failed.
+func TestTheAccountsPageShowsEachAccountsRecord(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	when := time.Now().Add(-2 * time.Hour)
+	for _, status := range []job.Status{
+		job.StatusSuccess, job.StatusSuccess, job.StatusFailed,
+	} {
+		finished := when
+		if _, err := engine.Store().PutJob(nodestore.Job{
+			Account: "customer1", Status: status,
+			QueuedAt: when, FinishedAt: &finished,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		when = when.Add(time.Minute)
+	}
+
+	drilled := time.Now().Add(-time.Hour)
+	if _, err := engine.Store().PutRestore(nodestore.Restore{
+		Account: "customer1", Kind: node.KindVerify,
+		Status: job.StatusSuccess, QueuedAt: drilled, FinishedAt: &drilled,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/accounts")
+	if !strings.Contains(page, "2 of 3 succeeded") {
+		t.Error("the page does not show how many backups of the account worked")
+	}
+	if !strings.Contains(page, "1 failed") {
+		t.Error("the page does not show that one of them failed")
+	}
+	if !strings.Contains(page, "verified ") {
+		t.Error("the page does not show when the backup was last rehearsed")
+	}
+}
