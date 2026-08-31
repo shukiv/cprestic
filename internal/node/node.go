@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -398,6 +399,10 @@ func (e *Engine) assignmentFor(j nodestore.Job, policy nodestore.Policy,
 		PayloadMode:    policy.PayloadMode,
 		Compression:    policy.Compression,
 		LimitUploadKiB: policy.LimitUploadKiB,
+		Excludes:       excludesFor(policy, account),
+		SkipHomedir:    policy.SkipHomedir,
+		SkipDatabases:  policy.SkipDatabases,
+		RetryFailed:    policy.RetryFailed,
 	}
 	for _, repositoryID := range policy.RepositoryIDs {
 		target, err := e.targetFor(repositoryID)
@@ -412,6 +417,18 @@ func (e *Engine) assignmentFor(j nodestore.Job, policy nodestore.Policy,
 		return protocol.JobAssignment{}, fmt.Errorf("node: policy %s has no repositories", policy.Name)
 	}
 	return assignment, nil
+}
+
+// excludesFor is what this job should not store: the patterns the
+// operator gave, plus the account's mail when the schedule leaves email
+// out. Mail is a path rather than a flag — pkgacct has no switch for it —
+// so leaving it out means telling restic not to read it.
+func excludesFor(policy nodestore.Policy, account cpanel.AccountInfo) []string {
+	excludes := append([]string(nil), policy.Excludes...)
+	if policy.SkipEmail && account.HomeDir != "" {
+		excludes = append(excludes, filepath.Join(account.HomeDir, "mail"))
+	}
+	return excludes
 }
 
 func (e *Engine) targetFor(repositoryID string) (protocol.Target, error) {

@@ -1520,3 +1520,86 @@ func TestAFailedAccountSaysWhyOnTheRow(t *testing.T) {
 		t.Error("the row does not say why the backup failed")
 	}
 }
+
+// A schedule can say what it leaves out, what never to store, and what to
+// do when a destination fails.
+func TestAScheduleCarriesWhatItLeavesOut(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	_, page := get(t, client, "/destinations")
+	added, err := client.PostForm("http://ui/destinations/add", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Local disk"}, "type": {"local"},
+		"root": {t.TempDir()}, "repo_path": {"cp01"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	added.Body.Close()
+	repos, err := engine.Store().Repositories()
+	if err != nil || len(repos) != 1 {
+		t.Fatalf("repositories = %+v (%v)", repos, err)
+	}
+
+	_, page = get(t, client, "/schedule")
+	saved, err := client.PostForm("http://ui/schedule/save", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Nightly"}, "cron": {"0 2 * * *"},
+		"repository": {repos[0].ID}, "scope": {"all"}, "enabled": {"1"}, "mode": {"split"},
+		"skip_email": {"1"}, "retry_failed": {"1"},
+		"excludes":             {"/home/*/tmp\n\n  /home/*/.cache  \n"},
+		"alert_no_backup_days": {"3"},
+		"alert_run_hours":      {"4"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved.Body.Close()
+
+	policies, err := engine.Store().Policies()
+	if err != nil || len(policies) != 1 {
+		t.Fatalf("policies = %+v (%v)", policies, err)
+	}
+	got := policies[0]
+	if !got.SkipEmail || got.SkipHomedir || got.SkipDatabases {
+		t.Errorf("what it leaves out = email:%v home:%v db:%v",
+			got.SkipEmail, got.SkipHomedir, got.SkipDatabases)
+	}
+	if !got.RetryFailed {
+		t.Error("the schedule does not retry a destination that failed")
+	}
+	if len(got.Excludes) != 2 || got.Excludes[0] != "/home/*/tmp" || got.Excludes[1] != "/home/*/.cache" {
+		t.Errorf("excludes = %q, want the two lines with the blanks and spaces gone", got.Excludes)
+	}
+	if got.AlertNoBackupDays != 3 || got.AlertRunHours != 4 {
+		t.Errorf("alerts = %d days, %d hours", got.AlertNoBackupDays, got.AlertRunHours)
+	}
+
+	// And the form offers the paths that are never worth storing.
+	_, page = get(t, client, "/schedule")
+	for _, want := range []string{"WordPress", "Magento", "wp-content/cache", "Leave out email"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the schedule form is missing %q", want)
+		}
+	}
+}
+
+// A run that is still going long after it should have finished is stuck
+// more often than it is slow, and nothing else on these pages says so.
+func TestALongRunIsCalledOut(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	started := time.Now().Add(-9 * time.Hour)
+	if _, err := engine.Store().PutJob(nodestore.Job{
+		Account: "customer1", Status: job.StatusRunning,
+		QueuedAt: started, StartedAt: &started,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/accounts")
+	if !strings.Contains(page, "has been running for") {
+		t.Error("a nine-hour backup is not called out anywhere")
+	}
+	if !strings.Contains(page, "usually stuck") {
+		t.Error("the warning does not say what it means")
+	}
+}

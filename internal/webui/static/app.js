@@ -76,6 +76,24 @@
     });
   }
 
+  // The recommended excludes are added to whatever is already there, and
+  // only the lines that are not there yet — pressing the same one twice
+  // should not fill the box with duplicates.
+  var excludes = document.querySelector("[data-excludes]");
+  Array.prototype.forEach.call(document.querySelectorAll("[data-exclude-preset]"), function (button) {
+    button.addEventListener("click", function () {
+      if (!excludes) { return; }
+      var have = excludes.value.split("\n").map(function (line) { return line.trim(); });
+      button.dataset.excludePreset.split("\n").forEach(function (line) {
+        if (line && have.indexOf(line) === -1) {
+          have.push(line);
+        }
+      });
+      excludes.value = have.filter(function (line) { return line !== ""; }).join("\n");
+      excludes.focus();
+    });
+  });
+
   // Show the fields that belong to the chosen destination type.
   var typeSelect = document.querySelector("[data-destination-type]");
   if (typeSelect) {

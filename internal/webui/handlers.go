@@ -654,6 +654,47 @@ func (s *Server) handleDeleteDestination(w http.ResponseWriter, r *http.Request)
 
 // --- schedules ---
 
+// excludePresets are directories that are rebuilt from what is already
+// backed up: caches, compiled templates, session files. Storing them costs
+// space every night and gives a restore nothing.
+var excludePresets = map[string][]string{
+	"Caches and temporary files": {
+		"/home/*/tmp",
+		"/home/*/.cpanel/caches",
+		"/home/*/.cphorde",
+		"/home/*/public_html/*/tmp",
+		"/home/*/.cache",
+		"**/node_modules",
+		"**/.git",
+	},
+	"WordPress": {
+		"/home/*/public_html/wp-content/cache",
+		"/home/*/public_html/wp-content/uploads/cache",
+		"/home/*/public_html/wp-content/backup*",
+		"/home/*/public_html/wp-content/updraft",
+		"/home/*/public_html/wp-content/ai1wm-backups",
+	},
+	"Magento": {
+		"/home/*/public_html/var/cache",
+		"/home/*/public_html/var/page_cache",
+		"/home/*/public_html/var/session",
+		"/home/*/public_html/generated",
+		"/home/*/public_html/pub/static",
+	},
+	"PrestaShop": {
+		"/home/*/public_html/var/cache",
+		"/home/*/public_html/cache/smarty",
+		"/home/*/public_html/img/tmp",
+	},
+	"Moodle": {
+		"/home/*/moodledata/cache",
+		"/home/*/moodledata/localcache",
+		"/home/*/moodledata/sessions",
+		"/home/*/moodledata/temp",
+		"/home/*/moodledata/trashdir",
+	},
+}
+
 // policyView is a schedule as the schedules page states it: the stored
 // policy, plus the things the page says in words rather than in cron.
 type policyView struct {
@@ -789,7 +830,14 @@ func (s *Server) handleSchedule(w http.ResponseWriter, r *http.Request) {
 		Editing      *nodestore.Policy
 		Selected     map[string]bool
 		Chosen       map[string]bool
-	}{Policies: views, Destinations: destinations, Accounts: accounts}
+		// ExcludePresets are the paths worth never storing, by the thing
+		// that puts them there. They are suggestions the operator can
+		// edit, not rules this program applies on its own.
+		ExcludePresets map[string][]string
+	}{
+		Policies: views, Destinations: destinations, Accounts: accounts,
+		ExcludePresets: excludePresets,
+	}
 
 	if id := r.URL.Query().Get("edit"); id != "" {
 		policy, err := s.engine.Store().Policy(id)
@@ -810,6 +858,18 @@ func (s *Server) handleSchedule(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "schedule.html", "Schedules", "schedule", view)
 }
 
+// linesOf reads a textarea into a list, dropping blank lines and the
+// spaces around each one.
+func linesOf(raw string) []string {
+	var lines []string
+	for _, line := range strings.Split(raw, "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			lines = append(lines, trimmed)
+		}
+	}
+	return lines
+}
+
 func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 	policy := nodestore.Policy{
 		ID:           r.PostFormValue("id"),
@@ -824,6 +884,15 @@ func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 			KeepMonthly: atoiOr(r.PostFormValue("keep_monthly"), 6),
 		},
 		RepositoryIDs: r.PostForm["repository"],
+		// A schedule that leaves something out says so here; everything
+		// it does not mention travels.
+		SkipHomedir:       r.PostFormValue("skip_homedir") != "",
+		SkipDatabases:     r.PostFormValue("skip_databases") != "",
+		SkipEmail:         r.PostFormValue("skip_email") != "",
+		RetryFailed:       r.PostFormValue("retry_failed") != "",
+		Excludes:          linesOf(r.PostFormValue("excludes")),
+		AlertNoBackupDays: atoiOr(r.PostFormValue("alert_no_backup_days"), 0),
+		AlertRunHours:     atoiOr(r.PostFormValue("alert_run_hours"), 0),
 	}
 	if policy.Name == "" || policy.ScheduleCron == "" {
 		s.redirect(w, r, "/schedule", "error", "A schedule needs a name and a time.")
@@ -908,6 +977,9 @@ type accountView struct {
 	// Zero means no enabled schedule covers it: whatever backup it has is
 	// the last one it will ever get.
 	ExpectedEvery time.Duration
+	// AlertAfter is how long without a good backup this account's
+	// schedule considers worth saying out loud.
+	AlertAfter time.Duration
 	// Runs and Succeeded are this account's record: how many backups have
 	// finished, and how many of those worked. One good backup says little
 	// on its own — a run that succeeds nine times in ten is a different
@@ -1011,8 +1083,7 @@ func (a accountView) State() State {
 	case a.ExpectedEvery == 0:
 		// It has a good copy and nothing will ever take another.
 		return StateUnscheduled
-	case time.Since(*a.LastBackup) > 2*a.ExpectedEvery:
-		// Two whole cycles missed is past anything a slow night explains.
+	case time.Since(*a.LastBackup) > a.overdueAfter():
 		return StateOutOfDate
 	default:
 		return StateProtected
@@ -1022,6 +1093,16 @@ func (a accountView) State() State {
 // Current reports whether this account has a backup worth relying on: the
 // last run succeeded, and a schedule has produced one since it was due.
 func (a accountView) Current() bool { return a.State() == StateProtected }
+
+// overdueAfter is how long without a good backup counts as out of date:
+// what the schedule covering this account asked for, or two of its own
+// runs, which is the smallest gap a slow night cannot explain.
+func (a accountView) overdueAfter() time.Duration {
+	if a.AlertAfter > 0 {
+		return a.AlertAfter
+	}
+	return 2 * a.ExpectedEvery
+}
 
 // Why explains the state in the words the operator needs, shown under the
 // pill rather than left to be inferred from a colour.
@@ -1099,18 +1180,41 @@ func cost(stored nodestore.Job) (uint64, time.Duration) {
 	return bytes, targets
 }
 
+// longRunThreshold is how long a single run may take before it is worth
+// saying so, taken from the shortest any schedule asked for.
+func (s *Server) longRunThreshold() (time.Duration, error) {
+	policies, err := s.engine.Store().Policies()
+	if err != nil {
+		return 0, err
+	}
+	threshold := 6 * time.Hour
+	for _, policy := range policies {
+		if policy.AlertRunHours > 0 {
+			if asked := time.Duration(policy.AlertRunHours) * time.Hour; asked < threshold {
+				threshold = asked
+			}
+		}
+	}
+	return threshold, nil
+}
+
 // expectedIntervals is how often each account is backed up, by the
 // shortest interval among the enabled schedules covering it.
 //
 // The interval is read off the cron expression by asking it when it fires
 // twice, rather than by interpreting the fields: the parser is the
 // authority on what an expression means.
-func (s *Server) expectedIntervals(accounts []cpanel.AccountInfo) (map[string]time.Duration, error) {
+func (s *Server) expectedIntervals(accounts []cpanel.AccountInfo) (map[string]time.Duration, map[string]time.Duration, error) {
 	policies, err := s.engine.Store().Policies()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	intervals := map[string]time.Duration{}
+	// How long without a good backup is worth saying out loud. A schedule
+	// that named a number means it; one that did not means two of its own
+	// runs, which is the smallest gap that cannot be explained by a slow
+	// night.
+	alerts := map[string]time.Duration{}
 	now := time.Now()
 	for _, policy := range policies {
 		if !policy.Enabled || len(policy.RepositoryIDs) == 0 {
@@ -1133,13 +1237,20 @@ func (s *Server) expectedIntervals(accounts []cpanel.AccountInfo) (map[string]ti
 				covered = append(covered, account.User)
 			}
 		}
+		alertAfter := 2 * interval
+		if policy.AlertNoBackupDays > 0 {
+			alertAfter = time.Duration(policy.AlertNoBackupDays) * 24 * time.Hour
+		}
 		for _, name := range covered {
 			if current, seen := intervals[name]; !seen || interval < current {
 				intervals[name] = interval
 			}
+			if current, seen := alerts[name]; !seen || alertAfter < current {
+				alerts[name] = alertAfter
+			}
 		}
 	}
-	return intervals, nil
+	return intervals, alerts, nil
 }
 
 func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) {
@@ -1153,11 +1264,16 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 	if err != nil {
 		return nil, nil, err
 	}
+	stuckAfter, err := s.longRunThreshold()
+	if err != nil {
+		return nil, nil, err
+	}
+	var warnings []string
 
 	// How often each account is due a backup, taken from the schedules
 	// that actually cover it. An account no schedule covers has no
 	// expectation to fall behind, which is its own kind of exposure.
-	expected, err := s.expectedIntervals(accounts)
+	expected, alertAfter, err := s.expectedIntervals(accounts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1172,6 +1288,14 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 			running[stored.Account] = true
 			if stored.Progress != nil {
 				progress[stored.Account] = stored.Progress
+			}
+			// A run still going long after it should have finished is
+			// stuck more often than it is slow, and nothing else here
+			// would ever say so.
+			if stored.StartedAt != nil && time.Since(*stored.StartedAt) > stuckAfter {
+				warnings = append(warnings, fmt.Sprintf(
+					"The backup of %s has been running for %s. A run that long is usually stuck.",
+					stored.Account, humanUntil(time.Since(*stored.StartedAt))))
 			}
 			continue
 		}
@@ -1239,13 +1363,13 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 	}
 
 	views := make([]accountView, 0, len(accounts))
-	var warnings []string
 	for _, account := range accounts {
 		view := accountView{
 			AccountInfo:   account,
 			Running:       running[account.User],
 			Progress:      progress[account.User],
 			ExpectedEvery: expected[account.User],
+			AlertAfter:    alertAfter[account.User],
 			Runs:          runs[account.User],
 			Succeeded:     succeeded[account.User],
 		}

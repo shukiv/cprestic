@@ -119,8 +119,62 @@
       </div>
     </div>
 
+    <h2 style="margin-top:var(--s5)">What the backup contains</h2>
+    {{$edit := $data.Editing}}
+    <label class="cpr-check">
+      <input type="checkbox" name="skip_homedir" value="1" {{with $edit}}{{if .SkipHomedir}}checked{{end}}{{end}}>
+      <span>Leave out the home directory
+      <small class="cpr-help">Every site's files and every mailbox live there. Only for an
+      account whose files are backed up by something else.</small></span></label>
+    <label class="cpr-check">
+      <input type="checkbox" name="skip_databases" value="1" {{with $edit}}{{if .SkipDatabases}}checked{{end}}{{end}}>
+      <span>Leave out databases</span></label>
+    <label class="cpr-check">
+      <input type="checkbox" name="skip_email" value="1" {{with $edit}}{{if .SkipEmail}}checked{{end}}{{end}}>
+      <span>Leave out email
+      <small class="cpr-help">Skips <span class="cpr-mono">~/mail</span>. The addresses,
+      forwarders and filters are configuration and still travel; the messages do not.</small></span></label>
+    <p class="cpr-note">The account's settings, DNS, SSL certificates and cron jobs always
+    travel. They are one archive that cPanel's own restore reads, and pkgacct has no switch
+    that takes pieces out of it.</p>
+
+    <h2 style="margin-top:var(--s5)">Directories and files to exclude</h2>
+    <label for="excludes">One path or pattern per line</label>
+    <textarea id="excludes" name="excludes" rows="4" data-excludes
+              placeholder="/home/*/public_html/wp-content/cache">{{with $edit}}{{join .Excludes "\n"}}{{end}}</textarea>
+    <small class="cpr-help">restic's exclude patterns. A cache directory backed up nightly costs
+    storage every night and is of no use in a restore.</small>
+    <div class="cpr-row" style="margin-top:var(--s2)">
+      <span class="cpr-hint" style="margin:0">Add the usual ones:</span>
+      {{range $name, $paths := $data.ExcludePresets}}
+      <button type="button" class="cpr-btn" data-exclude-preset="{{join $paths "&#10;"}}">{{$name}}</button>
+      {{end}}
+    </div>
+
+    <h2 style="margin-top:var(--s5)">When it goes wrong</h2>
+    <label class="cpr-check">
+      <input type="checkbox" name="retry_failed" value="1" {{with $edit}}{{if .RetryFailed}}checked{{end}}{{end}}>
+      <span>Retry a destination that failed
+      <small class="cpr-help">One more attempt while the account is still staged, so a retry
+      costs an upload rather than another pkgacct run.</small></span></label>
+
+    <div class="cpr-grid2">
+      <div>
+        <label for="alert_no_backup_days">Warn if an account has no backup for</label>
+        <input type="number" id="alert_no_backup_days" name="alert_no_backup_days" min="0"
+               value="{{with $edit}}{{.AlertNoBackupDays}}{{end}}" placeholder="two runs">
+        <small class="cpr-help">Days. Empty follows this schedule: two runs missed.</small>
+      </div>
+      <div>
+        <label for="alert_run_hours">Warn if a run takes longer than</label>
+        <input type="number" id="alert_run_hours" name="alert_run_hours" min="0"
+               value="{{with $edit}}{{.AlertRunHours}}{{end}}" placeholder="6">
+        <small class="cpr-help">Hours. A run still going after this is stuck more often than slow.</small>
+      </div>
+    </div>
+
     {{$enabled := true}}{{with $data.Editing}}{{$enabled = .Enabled}}{{end}}
-    <label class="cpr-check"><input type="checkbox" name="enabled" value="1" {{if $enabled}}checked{{end}}><span>Enabled</span></label>
+    <label class="cpr-check" style="margin-top:var(--s5)"><input type="checkbox" name="enabled" value="1" {{if $enabled}}checked{{end}}><span>Enabled</span></label>
 
     <div class="cpr-row" style="margin-top:var(--s4)">
       <button class="cpr-btn cpr-primary" type="submit">{{if $data.Editing}}Save changes{{else}}Save schedule{{end}}</button>

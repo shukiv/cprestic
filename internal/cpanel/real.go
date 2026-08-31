@@ -176,12 +176,14 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 		return pkgacct.Payload{}, err
 	}
 	payload, err := pkgacct.Plan(pkgacct.PlanRequest{
-		Account:    req.Account.User,
-		HomeDir:    req.Account.HomeDir,
-		Databases:  req.Account.Databases,
-		StagingDir: req.StagingDir,
-		Mode:       req.Mode,
-		Caps:       caps,
+		Account:       req.Account.User,
+		HomeDir:       req.Account.HomeDir,
+		Databases:     req.Account.Databases,
+		StagingDir:    req.StagingDir,
+		Mode:          req.Mode,
+		Caps:          caps,
+		SkipHomedir:   req.SkipHomedir,
+		SkipDatabases: req.SkipDatabases,
 	})
 	if err != nil {
 		return pkgacct.Payload{}, err

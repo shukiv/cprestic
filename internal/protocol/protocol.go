@@ -129,7 +129,15 @@ type JobAssignment struct {
 	// is refused rather than allowed to fill the volume.
 	SizeEstimate uint64 `json:"size_estimate"`
 
-	PayloadMode    string `json:"payload_mode"`
+	PayloadMode string `json:"payload_mode"`
+	// Excludes are restic exclude patterns for this job.
+	Excludes []string `json:"excludes,omitempty"`
+	// The parts of the account this job leaves out.
+	SkipHomedir   bool `json:"skip_homedir,omitempty"`
+	SkipDatabases bool `json:"skip_databases,omitempty"`
+	// RetryFailed gives a failed destination one more attempt while the
+	// payload is still staged.
+	RetryFailed    bool   `json:"retry_failed,omitempty"`
 	Compression    string `json:"compression"`
 	LimitUploadKiB int    `json:"limit_upload_kib"`
 

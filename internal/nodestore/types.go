@@ -61,10 +61,32 @@ type Policy struct {
 	// Accounts are the cPanel users on this schedule. Empty means every
 	// account the server has, resolved at run time so new accounts are
 	// picked up without an edit.
-	Accounts  []string   `json:"accounts"`
-	Enabled   bool       `json:"enabled"`
-	LastRunAt *time.Time `json:"last_run_at,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
+	Accounts []string `json:"accounts"`
+	// Excludes are restic exclude patterns: what is not worth storing.
+	// A cache directory backed up nightly costs storage every night and
+	// is of no use in a restore.
+	Excludes []string `json:"excludes,omitempty"`
+	// The parts of an account this schedule leaves out. They are Skip
+	// rather than Include so that a policy stored before they existed
+	// still means "everything", which is what it meant when it was
+	// written.
+	SkipHomedir   bool `json:"skip_homedir,omitempty"`
+	SkipDatabases bool `json:"skip_databases,omitempty"`
+	SkipEmail     bool `json:"skip_email,omitempty"`
+	// RetryFailed gives a destination that failed one more attempt before
+	// the job is called failed. The payload is still staged, so a retry
+	// costs an upload rather than another pkgacct.
+	RetryFailed bool `json:"retry_failed,omitempty"`
+	// AlertNoBackupDays raises a warning when an account this schedule
+	// covers has gone that long without a successful backup. Zero is the
+	// schedule's own interval, doubled; negative is never.
+	AlertNoBackupDays int `json:"alert_no_backup_days,omitempty"`
+	// AlertRunHours warns when a single run has been going longer than
+	// this. Zero means six hours.
+	AlertRunHours int        `json:"alert_run_hours,omitempty"`
+	Enabled       bool       `json:"enabled"`
+	LastRunAt     *time.Time `json:"last_run_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 // AllAccounts reports whether the policy covers every account on the server.

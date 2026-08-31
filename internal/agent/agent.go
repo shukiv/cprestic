@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -232,6 +233,8 @@ func (a *Agent) RunJob(ctx context.Context, assignment protocol.JobAssignment) p
 	mode := pkgacct.Mode(assignment.PayloadMode)
 	payload, err := a.provider.Stage(ctx, cpanel.StageRequest{
 		Account: account, StagingDir: dir.Path, Mode: mode,
+		SkipHomedir:   assignment.SkipHomedir,
+		SkipDatabases: assignment.SkipDatabases,
 	})
 	if err != nil {
 		log.Error("stage payload", "error", err)
@@ -254,6 +257,32 @@ func (a *Agent) RunJob(ctx context.Context, assignment protocol.JobAssignment) p
 	for _, target := range assignment.Targets {
 		report.Targets = append(report.Targets,
 			a.backupTarget(ctx, log, assignment, target, payload))
+	}
+
+	// A destination that failed gets one more attempt while the payload is
+	// still staged: an upload rather than another pkgacct. Most of what
+	// fails here is a network that was briefly not there.
+	if assignment.RetryFailed {
+		for i, result := range report.Targets {
+			if result.Status != string(job.TargetFailed) {
+				continue
+			}
+			target, found := targetFor(assignment, result.RepositoryID)
+			if !found {
+				continue
+			}
+			log.Warn("retrying a destination that failed",
+				"repository_id", result.RepositoryID, "first_error", result.Error)
+			retried := a.backupTarget(ctx, log, assignment, target, payload)
+			if retried.Status == string(job.TargetSuccess) {
+				report.Targets[i] = retried
+				continue
+			}
+			// Keep the second error, and say that both attempts failed:
+			// "it failed twice" is worth more than either message alone.
+			report.Targets[i].Error = fmt.Sprintf(
+				"failed twice: %s (and on retry: %s)", result.Error, retried.Error)
+		}
 	}
 	return report
 }
@@ -297,6 +326,16 @@ func stagingEstimate(size uint64, mode pkgacct.Mode) uint64 {
 	return share
 }
 
+// targetFor finds the destination a report line came from.
+func targetFor(assignment protocol.JobAssignment, repositoryID string) (protocol.Target, bool) {
+	for _, target := range assignment.Targets {
+		if target.RepositoryID == repositoryID {
+			return target, true
+		}
+	}
+	return protocol.Target{}, false
+}
+
 func (a *Agent) backupTarget(ctx context.Context, log *slog.Logger,
 	assignment protocol.JobAssignment, target protocol.Target,
 	payload pkgacct.Payload) protocol.TargetReport {
@@ -333,6 +372,7 @@ func (a *Agent) backupTarget(ctx context.Context, log *slog.Logger,
 			"account:" + assignment.CPanelUser,
 			"mode:" + string(payload.Mode),
 		},
+		Exclude:        assignment.Excludes,
 		LimitUploadKiB: assignment.LimitUploadKiB,
 	})
 	result.DurationSecs = time.Since(started).Seconds()

@@ -151,6 +151,10 @@ type PlanRequest struct {
 	StagingDir string
 	Mode       Mode
 	Caps       Capabilities
+	// SkipHomedir and SkipDatabases leave those parts out, for a schedule
+	// that asked for a backup of less than the whole account.
+	SkipHomedir   bool
+	SkipDatabases bool
 }
 
 // Plan works out the payload for a request, without running anything.
@@ -185,8 +189,10 @@ func planSplit(req PlanRequest) (Payload, error) {
 		Kind: PartMetadata,
 		Path: filepath.Join(req.StagingDir, "metadata"),
 	})
-	payload.Parts = append(payload.Parts, Part{Kind: PartHomedir, Path: req.HomeDir})
-	if len(req.Databases) > 0 {
+	if !req.SkipHomedir {
+		payload.Parts = append(payload.Parts, Part{Kind: PartHomedir, Path: req.HomeDir})
+	}
+	if len(req.Databases) > 0 && !req.SkipDatabases {
 		databaseDir := filepath.Join(req.StagingDir, "databases")
 		payload.Parts = append(payload.Parts, Part{Kind: PartDatabase, Path: databaseDir})
 		payload.DumpPaths = make(map[string]string, len(req.Databases))

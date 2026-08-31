@@ -32,6 +32,12 @@ type StageRequest struct {
 	Account    AccountInfo
 	StagingDir string
 	Mode       pkgacct.Mode
+	// SkipHomedir and SkipDatabases leave those parts out of the payload
+	// entirely, for a schedule that says so. The account's configuration
+	// always travels: it is one archive that restorepkg needs, and
+	// pkgacct has no switch that takes pieces out of it.
+	SkipHomedir   bool
+	SkipDatabases bool
 }
 
 // Provider produces backup payloads for cPanel accounts.
