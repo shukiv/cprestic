@@ -185,3 +185,41 @@ func TestInstallScriptToleratesUnchangeablePermissions(t *testing.T) {
 		t.Errorf("the key was added %d times", strings.Count(string(body), key))
 	}
 }
+
+// The provisioning script runs as root on a machine that is not ours,
+// built from strings an operator typed. Every one of them is quoted.
+func TestProvisionScriptQuotesWhatItWasGiven(t *testing.T) {
+	script := ProvisionScript("cpbackup; rm -rf /", "/backups' ; touch /tmp/pwned; '",
+		"ssh-ed25519 AAAA cprest@host")
+
+	for _, unquoted := range []string{
+		"user=cpbackup; rm",
+		"dir=/backups' ; touch",
+		"; rm -rf /\n",
+	} {
+		if strings.Contains(script, unquoted) {
+			t.Errorf("the script interpolates %q without quoting it:\n%s", unquoted, script)
+		}
+	}
+	// What it should contain: the values, quoted.
+	for _, want := range []string{`user='cpbackup; rm -rf /'`, `key='ssh-ed25519 AAAA cprest@host'`} {
+		if !strings.Contains(script, want) {
+			t.Errorf("the script does not carry %s:\n%s", want, script)
+		}
+	}
+}
+
+// Running it twice must change nothing the second time: an operator who
+// retries after a typo should not end up with two half-made accounts.
+func TestProvisionScriptIsSafeToRunTwice(t *testing.T) {
+	script := ProvisionScript("cpbackup", "/backups", "ssh-ed25519 AAAA cprest@host")
+	for _, want := range []string{
+		`if ! id "$user"`,   // the user is only created when missing
+		"grep -qxF",         // the key is only appended when absent
+		"install -d -m 700", // directories are made, not remade
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("the script is not written to be run twice; missing %q", want)
+		}
+	}
+}

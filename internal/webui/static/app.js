@@ -59,6 +59,16 @@
     });
   });
 
+  // The administrator to log in as only matters when cprest is being
+  // asked to create the account.
+  var createAccount = document.querySelector("[data-quick-create]");
+  var adminFields = document.querySelector("[data-quick-admin]");
+  if (createAccount && adminFields) {
+    createAccount.addEventListener("change", function () {
+      adminFields.hidden = !createAccount.checked;
+    });
+  }
+
   // Show the fields that belong to the chosen destination type.
   var typeSelect = document.querySelector("[data-destination-type]");
   if (typeSelect) {

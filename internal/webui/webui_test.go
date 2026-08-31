@@ -1358,7 +1358,7 @@ func TestTheAccountsPageShowsEachAccountsRecord(t *testing.T) {
 		if _, err := engine.Store().PutJob(nodestore.Job{
 			Account: "customer1", Status: status,
 			QueuedAt: when, StartedAt: &started, FinishedAt: &finished,
-			Targets:  []nodestore.JobTarget{target},
+			Targets: []nodestore.JobTarget{target},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -1393,5 +1393,59 @@ func TestTheAccountsPageShowsEachAccountsRecord(t *testing.T) {
 	// Where the copies went, and how many each destination took.
 	if !strings.Contains(page, "2 to ") {
 		t.Error("the page does not show how many copies each destination holds")
+	}
+}
+
+// A destination is one line in the operator's head, so it is one line on
+// the page: the type, host, user and directory are read off it.
+func TestADestinationCanBeAddedFromOneLine(t *testing.T) {
+	client, _, engine := newUI(t)
+	root := t.TempDir()
+
+	_, page := get(t, client, "/destinations")
+	added, err := client.PostForm("http://ui/destinations/quick", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "target": {root + "/backups"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	added.Body.Close()
+
+	destinations, err := engine.Store().Destinations()
+	if err != nil || len(destinations) != 1 {
+		t.Fatalf("destinations = %+v (%v)", destinations, err)
+	}
+	got := destinations[0]
+	if got.Type != "local" {
+		t.Errorf("type = %q, want local", got.Type)
+	}
+	if got.Config["root"] != root+"/backups" {
+		t.Errorf("root = %q", got.Config["root"])
+	}
+	if got.Name == "" {
+		t.Error("a destination nobody named should still be called something")
+	}
+}
+
+// A line this cannot read is refused with an explanation, rather than
+// saved as something the operator did not mean.
+func TestAnUnreadableLineIsRefused(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	_, page := get(t, client, "/destinations")
+	refused, err := client.PostForm("http://ui/destinations/quick", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "target": {"backup.example.com"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused.Body.Close()
+
+	destinations, err := engine.Store().Destinations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(destinations) != 0 {
+		t.Errorf("a line that names no path was saved as %+v", destinations)
 	}
 }

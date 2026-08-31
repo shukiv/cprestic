@@ -33,6 +33,14 @@ type SFTPRequest struct {
 	// ExistingKeyPath uses a key the operator already has instead of
 	// generating one.
 	ExistingKeyPath string
+	// AdminUser and AdminPassword, when given, are an account on the
+	// remote server that can create the backup account: usually root.
+	// cprest makes the user, its home, the backup directory and the
+	// authorized_keys entry, then locks the account's password so the key
+	// is the only way in. The password is used for that one connection
+	// and is never stored.
+	AdminUser     string
+	AdminPassword string
 }
 
 // SFTPResult reports what was set up, including the public key an operator
@@ -45,14 +53,25 @@ type SFTPResult struct {
 	HostFingerprint string
 	HostKeyType     string
 	// Installed is true when the public key was placed on the remote
-	// server, Verified when logging in with it then worked.
+	// server, Verified when logging in with it then worked, and Created
+	// when cprest made the account it logs in to.
 	Installed bool
 	Verified  bool
+	Created   bool
 	// Warning explains what still needs doing by hand.
 	Warning string
 }
 
 const sshTimeout = 20 * time.Second
+
+// detailOf appends a remote command's output to an error, when it said
+// anything worth reading.
+func detailOf(output string) string {
+	if output == "" {
+		return ""
+	}
+	return ": " + strings.ReplaceAll(output, "\n", " | ")
+}
 
 // AddSFTPDestination sets up a backup destination on another Linux server.
 //
@@ -114,8 +133,32 @@ func (e *Engine) AddSFTPDestination(req SFTPRequest) (SFTPResult, error) {
 		litter = append(litter, identityPath)
 	}
 
-	// 3. Install it, if we were trusted with the password.
+	// 3. Make the account, if we were given something that can.
+	if req.AdminPassword != "" && privatePEM != nil {
+		output, err := sshkeys.RunAsAdmin(address, req.AdminUser, req.AdminPassword, hostKey,
+			sshkeys.ProvisionScript(req.User, req.RemoteDir, result.AuthorizedKey), sshTimeout)
+		if err != nil {
+			return SFTPResult{}, fmt.Errorf(
+				"node: could not set up %s on %s as %s: %w%s",
+				req.User, req.Host, req.AdminUser, err, detailOf(output))
+		}
+		result.Created = true
+		result.Installed = true
+
+		if err := sshkeys.VerifyKeyLogin(address, req.User, privatePEM, hostKey, sshTimeout); err != nil {
+			return SFTPResult{}, fmt.Errorf(
+				"node: %s was created on %s but logging in as it with the new key failed: %w. "+
+					"Check that sshd on that server allows this account to log in with a key",
+				req.User, req.Host, err)
+		}
+		result.Verified = true
+	}
+
+	// 4. Install the key, if we were trusted with the account's password
+	//    and did not just create the account ourselves.
 	switch {
+	case result.Verified:
+		// Already done, above.
 	case req.Password != "" && privatePEM != nil:
 		if err := sshkeys.InstallAuthorizedKey(address, req.User, req.Password,
 			hostKey, result.AuthorizedKey, sshTimeout); err != nil {
@@ -151,7 +194,7 @@ func (e *Engine) AddSFTPDestination(req SFTPRequest) (SFTPResult, error) {
 			"@" + req.Host + ":~/.ssh/authorized_keys, then use Test."
 	}
 
-	// 4. Store it. The private key stays a file on disk with the
+	// 5. Store it. The private key stays a file on disk with the
 	//    permissions ssh insists on; only its path is recorded.
 	dest := nodestore.Destination{
 		ID:   destinationID,
@@ -212,6 +255,10 @@ func validateSFTP(req *SFTPRequest) error {
 	req.Host = strings.TrimSpace(req.Host)
 	req.User = strings.TrimSpace(req.User)
 	req.RemoteDir = strings.TrimSpace(req.RemoteDir)
+	req.AdminUser = strings.TrimSpace(req.AdminUser)
+	if req.AdminPassword != "" && req.AdminUser == "" {
+		req.AdminUser = "root"
+	}
 
 	switch {
 	case req.Name == "":
@@ -222,6 +269,16 @@ func validateSFTP(req *SFTPRequest) error {
 		return fmt.Errorf("node: the SSH user is required")
 	case !strings.HasPrefix(req.RemoteDir, "/"):
 		return fmt.Errorf("node: the remote directory must be an absolute path")
+	case req.AdminPassword != "" && req.AdminUser == req.User:
+		// Creating an account requires an account that already exists.
+		return fmt.Errorf(
+			"node: %s is the account to create, so it cannot also be the one that creates it. "+
+				"Give an account that can already log in, usually root", req.User)
+	case req.AdminPassword != "" && req.Password != "":
+		return fmt.Errorf(
+			"node: give either the backup account's own password or an administrator's, " +
+				"not both: the first installs a key on an account that exists, the second " +
+				"creates the account")
 	}
 	if req.Port == 0 {
 		req.Port = 22

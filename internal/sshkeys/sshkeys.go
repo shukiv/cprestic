@@ -345,3 +345,73 @@ func PublicKeyFromFile(path string) (string, error) {
 	}
 	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))), nil
 }
+
+// RunAsAdmin runs a script on the remote server as an account that can
+// administer it, usually root, using a password given once.
+//
+// It exists so cprest can create the account its backups will use rather
+// than asking an operator to do it by hand. The password is used for this
+// connection and nothing else; it is never written down.
+func RunAsAdmin(address, user, password string, host HostKey, script string,
+	timeout time.Duration) (string, error) {
+
+	expected, _, _, _, err := ssh.ParseAuthorizedKey([]byte(stripHostPattern(host.Line)))
+	if err != nil {
+		return "", fmt.Errorf("sshkeys: parse host key: %w", err)
+	}
+	client, err := ssh.Dial("tcp", address, &ssh.ClientConfig{
+		User:            user,
+		Auth:            []ssh.AuthMethod{ssh.Password(password)},
+		Timeout:         timeout,
+		HostKeyCallback: ssh.FixedHostKey(expected),
+	})
+	if err != nil {
+		return "", fmt.Errorf("sshkeys: log in to %s as %s: %w", address, user, err)
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("sshkeys: open session: %w", err)
+	}
+	defer session.Close()
+
+	output, err := session.CombinedOutput(script)
+	return strings.TrimSpace(string(output)), err
+}
+
+// ProvisionScript builds the commands that create a backup account.
+//
+// Every value is quoted rather than interpolated raw: these are strings an
+// operator typed, and this runs as root on a machine that is not ours.
+// Each step is written so that running it twice changes nothing the second
+// time, because an operator who retries after a typo should not end up
+// with two half-made accounts.
+func ProvisionScript(user, dir, authorizedKey string) string {
+	return fmt.Sprintf(`set -eu
+user=%s
+dir=%s
+key=%s
+
+if ! id "$user" >/dev/null 2>&1; then
+  useradd --create-home "$user"
+fi
+
+# No password on this account: it exists to accept one key and nothing
+# else, so there is no password to guess or to leak.
+passwd --lock "$user" >/dev/null 2>&1 || true
+
+home=$(getent passwd "$user" | cut -d: -f6)
+[ -n "$home" ] || { echo "cannot find the home directory of $user" >&2; exit 1; }
+
+install -d -m 700 -o "$user" -g "$user" "$home/.ssh"
+touch "$home/.ssh/authorized_keys"
+grep -qxF "$key" "$home/.ssh/authorized_keys" || printf '%%s\n' "$key" >> "$home/.ssh/authorized_keys"
+chmod 600 "$home/.ssh/authorized_keys"
+chown "$user":"$user" "$home/.ssh/authorized_keys"
+
+install -d -m 700 -o "$user" -g "$user" "$dir"
+
+echo "ready $user $home $dir"`,
+		shellQuote(user), shellQuote(dir), shellQuote(authorizedKey))
+}
