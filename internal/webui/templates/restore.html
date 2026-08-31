@@ -53,23 +53,74 @@
     <input type="hidden" name="repository" value="{{$data.RepositoryID}}">
 
     <div class="cpr-tablewrap"><table>
-      <thead><tr><th>&nbsp;</th><th>Taken</th><th>Size</th><th>Id</th></tr></thead>
+      <thead><tr><th>&nbsp;</th><th>Taken</th><th>Size</th><th>Id</th><th class="cpr-right">&nbsp;</th></tr></thead>
       <tbody>
+      {{$q := printf "account=%s&amp;repository=%s" $data.Account $data.RepositoryID}}
       {{range $index, $snapshot := $data.Snapshots}}
       <tr>
-        <td><input type="radio" name="snapshot" value="{{$snapshot.ID}}" {{if eq $index 0}}checked{{end}}></td>
+        <td><input type="radio" name="snapshot" value="{{$snapshot.ID}}"
+          {{if $data.FileSnapshot}}{{if eq $snapshot.ID $data.FileSnapshot}}checked{{end}}
+          {{else if eq $index 0}}checked{{end}}></td>
         <td>{{stamp $snapshot.Time}}</td>
         <td>{{bytes $snapshot.Summary.TotalBytesProcessed}}</td>
         <td class="cpr-mono">{{short $snapshot.ID}}</td>
+        <td class="cpr-right"><a class="cpr-btn cpr-quiet"
+          href="?p=restore&amp;{{$q}}&amp;files={{$snapshot.ID}}">Pick files from it</a></td>
       </tr>
       {{end}}
       </tbody>
     </table></div>
 
     <h2 style="margin-top:var(--s5)">What to restore</h2>
-    <label for="paths">Specific files (one path per line)</label>
-    <textarea id="paths" name="paths" placeholder="/home/{{$data.Account}}/public_html/index.php"></textarea>
-    <small class="cpr-help">Leave empty to rebuild the whole account.</small>
+
+    {{if $data.FileErr}}
+    <div class="cpr-banner cpr-bad"><div class="cpr-body">{{$data.FileErr}}</div></div>
+    {{end}}
+
+    {{if $data.FileEntries}}
+    {{$browse := printf "?p=restore&amp;%s&amp;files=%s" $q $data.FileSnapshot}}
+    <div class="cpr-card" style="margin:0 0 var(--s4); box-shadow:none">
+      <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
+        <span class="cpr-mono" style="font-size:13px">{{$data.FilePath}}</span>
+        <span class="cpr-hint" style="margin:0"><span data-chosen-count>0</span> chosen</span>
+      </div>
+      <div class="cpr-tablewrap" style="max-height:340px; overflow:auto"><table>
+        <thead><tr>
+          <th style="width:32px"><input type="checkbox" data-choose-all aria-label="Choose everything here"></th>
+          <th>Name</th><th>Size</th><th class="cpr-right">&nbsp;</th>
+        </tr></thead>
+        <tbody>
+          {{if $data.FileUp}}
+          <tr><td></td><td colspan="3"><a class="cpr-link"
+            href="{{$browse}}&amp;path={{$data.FileUp}}">↑ up one level</a></td></tr>
+          {{end}}
+          {{range $data.FileEntries}}
+          <tr>
+            <td><input type="checkbox" data-choose="{{.Path}}" aria-label="Choose {{.Name}}"></td>
+            <td class="cpr-acct">
+              {{if .Dir}}<a class="cpr-link" href="{{$browse}}&amp;path={{.Path}}">{{.Name}}/</a>
+              {{else}}{{.Name}}{{end}}</td>
+            <td class="cpr-mono cpr-num">{{if .Size}}{{bytes .Size}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
+            <td class="cpr-right"><span class="cpr-sublabel cpr-mono">{{.Path}}</span></td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table></div>
+      <div class="cpr-pad cpr-row" style="border-top:1px solid var(--line)">
+        <button type="button" class="cpr-btn" data-choose-add>Add the chosen ones</button>
+        <span class="cpr-hint" style="margin:0">Folders come back whole. What is picked stays
+        picked while you look in other folders.</span>
+      </div>
+    </div>
+    {{end}}
+
+    <label for="paths">Files and folders to restore{{if not $data.FileEntries}}
+      <span class="cpr-muted">(one path per line)</span>{{end}}</label>
+    <textarea id="paths" name="paths" rows="4" data-chosen-paths
+              data-chosen-key="{{$data.Account}}:{{$data.FileSnapshot}}"
+              placeholder="/home/{{$data.Account}}/public_html/index.php"></textarea>
+    <small class="cpr-help">Leave empty to rebuild the whole account.{{if not $data.FileEntries}}
+      Choose a backup above and press <b>Pick files from it</b> to browse what is in there.{{end}}</small>
 
     <label for="target">Put recovered files in</label>
     <input type="text" id="target" name="target" placeholder="/root/recovered">

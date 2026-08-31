@@ -1848,6 +1848,15 @@ type restoreView struct {
 	Restores     []restoreRow
 	LookupError  string
 
+	// The file picker for a whole-account restore: what the chosen
+	// snapshot holds at the path being looked at, so files are picked
+	// rather than typed from memory.
+	FileSnapshot string
+	FilePath     string
+	FileUp       string
+	FileEntries  []browseEntry
+	FileErr      string
+
 	// Granular restore: which part of the account is being picked, from
 	// which snapshot, and what that snapshot holds at the path being
 	// looked at. Populated only when a kind is chosen, so listing a
@@ -1926,6 +1935,15 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The picker over the chosen snapshot. It is only listed when a
+	// snapshot is chosen, and only one directory at a time.
+	if len(view.Snapshots) > 0 {
+		view.FileSnapshot = r.URL.Query().Get("files")
+		if view.FileSnapshot != "" {
+			s.fillFilePicker(r, &view)
+		}
+	}
+
 	view.Kinds = granular.Kinds
 	view.Kind = granular.Kind(r.URL.Query().Get("item"))
 	view.SnapshotID = r.URL.Query().Get("snapshot")
@@ -1936,6 +1954,56 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		s.fillPicker(r, &view)
 	}
 	s.render(w, r, "restore.html", "Restore", "restore", view)
+}
+
+// fillFilePicker lists one directory of the snapshot being restored from,
+// so specific files are picked out of what is actually in there rather
+// than typed from memory.
+func (s *Server) fillFilePicker(r *http.Request, view *restoreView) {
+	snapshot, ok := findSnapshot(view.Snapshots, view.FileSnapshot)
+	if !ok {
+		view.FileErr = "That backup is not in this destination."
+		return
+	}
+	parts, err := reassemble.Classify(snapshot.Paths)
+	if err != nil {
+		view.FileErr = err.Error()
+		return
+	}
+	root := parts.Homedir
+	if root == "" {
+		view.FileErr = "This backup has no home directory in it to pick files from."
+		return
+	}
+
+	view.FilePath = root
+	if asked := path.Clean(r.URL.Query().Get("path")); asked != "." && asked != "" {
+		if asked == root || strings.HasPrefix(asked, root+"/") {
+			view.FilePath = asked
+		}
+	}
+	view.FileUp = parentWithin(view.FilePath, root)
+
+	entries, err := s.engine.Browse(r.Context(), view.RepositoryID, snapshot.ID, view.FilePath)
+	if err != nil {
+		view.FileErr = err.Error()
+		return
+	}
+	for _, entry := range entries {
+		if entry.Path == view.FilePath {
+			continue
+		}
+		view.FileEntries = append(view.FileEntries, browseEntry{
+			Name: entry.Name, Path: entry.Path, Size: entry.Size,
+			Dir: entry.IsDir(), Item: entry.Path,
+		})
+	}
+	sort.Slice(view.FileEntries, func(i, j int) bool {
+		if view.FileEntries[i].Dir != view.FileEntries[j].Dir {
+			return view.FileEntries[i].Dir
+		}
+		return view.FileEntries[i].Name < view.FileEntries[j].Name
+	})
 }
 
 // fillPicker lists the part of the snapshot the chosen kind is picked

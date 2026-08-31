@@ -94,6 +94,68 @@
     });
   });
 
+  // Picking files to restore. The list of what is chosen has to survive
+  // walking into another folder, which is a page load, so it lives in the
+  // textarea — the same field someone can still type into — and is kept
+  // across those loads in this tab's own storage.
+  var chosen = document.querySelector("[data-chosen-paths]");
+  if (chosen) {
+    var key = "cprest.chosen." + (chosen.dataset.chosenKey || "");
+
+    var remember = function () {
+      try { window.sessionStorage.setItem(key, chosen.value); } catch (e) {}
+      var count = chosen.value.split("\n").filter(function (line) {
+        return line.trim() !== "";
+      }).length;
+      Array.prototype.forEach.call(document.querySelectorAll("[data-chosen-count]"), function (node) {
+        node.textContent = String(count);
+      });
+    };
+
+    try {
+      var kept = window.sessionStorage.getItem(key);
+      if (kept && chosen.value === "") { chosen.value = kept; }
+    } catch (e) {}
+    remember();
+    chosen.addEventListener("input", remember);
+
+    var boxes = function () {
+      return Array.prototype.slice.call(document.querySelectorAll("[data-choose]"));
+    };
+
+    var all = document.querySelector("[data-choose-all]");
+    if (all) {
+      all.addEventListener("change", function () {
+        boxes().forEach(function (box) { box.checked = all.checked; });
+      });
+    }
+
+    var add = document.querySelector("[data-choose-add]");
+    if (add) {
+      add.addEventListener("click", function () {
+        var lines = chosen.value.split("\n").map(function (line) { return line.trim(); });
+        boxes().forEach(function (box) {
+          if (box.checked && lines.indexOf(box.dataset.choose) === -1) {
+            lines.push(box.dataset.choose);
+            box.checked = false;
+          }
+        });
+        if (all) { all.checked = false; }
+        chosen.value = lines.filter(function (line) { return line !== ""; }).join("\n");
+        remember();
+      });
+    }
+
+    // Once the restore is queued the list has served its purpose; leaving
+    // it would repopulate the next one with the last one's paths.
+    var form = chosen.form;
+    if (form) {
+      form.addEventListener("submit", function () {
+        try { window.sessionStorage.removeItem(key); } catch (e) {}
+      });
+    }
+  }
+
   // Show the fields that belong to the chosen destination type.
   var typeSelect = document.querySelector("[data-destination-type]");
   if (typeSelect) {

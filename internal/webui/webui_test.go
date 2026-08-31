@@ -1953,3 +1953,21 @@ func TestADestinationCanBeBrowsedFromItsRow(t *testing.T) {
 		t.Error("the destination cannot be browsed from its own row")
 	}
 }
+
+// Specific files were typed from memory into a textarea. They are picked
+// out of what the backup actually holds now, a directory at a time.
+//
+// The picker itself needs a readable repository, which this suite has no
+// restic to talk to; what is asserted here is that the page still says
+// how to reach it. The picker is exercised against a real repository.
+func TestTheRestorePageExplainsHowToPickFiles(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	_, page := get(t, client, "/restore")
+	if !strings.Contains(page, "Choose a backup") {
+		t.Error("the restore page does not start by choosing a backup")
+	}
+	if strings.Contains(page, "Specific files (one path per line)") {
+		t.Error("the page still asks for paths to be typed from memory")
+	}
+}
