@@ -67,6 +67,7 @@
   </div>
   <div class="cpr-pad" style="border-top:1px solid var(--line); color:var(--muted); font-size:13px">
     <span data-count-for="#accounts">{{len $d.Accounts}}</span> account{{if ne (len $d.Accounts) 1}}s{{end}}
+    · <b>Protected</b> means the last backup succeeded and a schedule has kept it current since
   </div>
 </div>
 {{else}}

@@ -799,6 +799,10 @@ type accountView struct {
 	// Progress is how far the running backup of this account has got,
 	// nil when nothing is running for it.
 	Progress *nodestore.JobProgress
+	// ExpectedEvery is how often the schedules covering this account fire.
+	// Zero means no enabled schedule covers it: whatever backup it has is
+	// the last one it will ever get.
+	ExpectedEvery time.Duration
 }
 
 // Stripe is the severity colour on the row's leading edge, so state reads
@@ -818,18 +822,120 @@ func (a accountView) Stripe() string {
 
 // Filter is the value the client-side state filter matches on.
 func (a accountView) Filter() string {
-	if a.LastBackup == nil {
-		return "bad"
-	}
-	if a.LastStatus == job.StatusSuccess {
+	switch a.State() {
+	case StateProtected:
 		return "ok"
+	case StateNever:
+		return "bad"
+	default:
+		return "warn"
 	}
-	return "warn"
 }
 
-// Protected reports whether this account has a backup that worked.
-func (a accountView) Protected() bool {
-	return a.LastBackup != nil && a.LastStatus == job.StatusSuccess
+// State is what this account's backups amount to right now.
+//
+// "Protected" has to mean something an operator can rely on, so it is not
+// merely "a backup once worked". A copy that succeeded six months ago and
+// is refreshed by nothing protects a site that has changed every day
+// since; a copy nothing will refresh again is worth saying out loud.
+type State string
+
+const (
+	StateWorking     State = "working"
+	StateProtected   State = "protected"
+	StateOutOfDate   State = "out-of-date"
+	StateUnscheduled State = "unscheduled"
+	StatePartial     State = "partial"
+	StateFailed      State = "failed"
+	StateNever       State = "never"
+)
+
+func (a accountView) State() State {
+	switch {
+	case a.Running:
+		return StateWorking
+	case a.LastBackup == nil:
+		return StateNever
+	case a.LastStatus == job.StatusFailed:
+		return StateFailed
+	case a.LastStatus == job.StatusPartialSuccess:
+		return StatePartial
+	case a.ExpectedEvery == 0:
+		// It has a good copy and nothing will ever take another.
+		return StateUnscheduled
+	case time.Since(*a.LastBackup) > 2*a.ExpectedEvery:
+		// Two whole cycles missed is past anything a slow night explains.
+		return StateOutOfDate
+	default:
+		return StateProtected
+	}
+}
+
+// Protected reports whether this account has a backup worth relying on: a
+// successful one, recent enough for the schedule that covers it.
+func (a accountView) Protected() bool { return a.State() == StateProtected }
+
+// Why explains the state in the words the operator needs, shown under the
+// pill rather than left to be inferred from a colour.
+func (a accountView) Why() string {
+	switch a.State() {
+	case StateProtected:
+		return ""
+	case StateOutOfDate:
+		return "the schedule has not produced one since"
+	case StateUnscheduled:
+		return "no schedule covers it, so it will not be taken again"
+	case StatePartial:
+		return "some files could not be read"
+	case StateFailed:
+		return "the last run failed"
+	case StateNever:
+		return "nothing has ever been backed up"
+	}
+	return ""
+}
+
+// expectedIntervals is how often each account is backed up, by the
+// shortest interval among the enabled schedules covering it.
+//
+// The interval is read off the cron expression by asking it when it fires
+// twice, rather than by interpreting the fields: the parser is the
+// authority on what an expression means.
+func (s *Server) expectedIntervals(accounts []cpanel.AccountInfo) (map[string]time.Duration, error) {
+	policies, err := s.engine.Store().Policies()
+	if err != nil {
+		return nil, err
+	}
+	intervals := map[string]time.Duration{}
+	now := time.Now()
+	for _, policy := range policies {
+		if !policy.Enabled || len(policy.RepositoryIDs) == 0 {
+			continue
+		}
+		schedule, err := cron.ParseStandard(policy.ScheduleCron)
+		if err != nil {
+			continue
+		}
+		first := schedule.Next(now)
+		interval := schedule.Next(first).Sub(first)
+		if interval <= 0 {
+			continue
+		}
+
+		covered := policy.Accounts
+		if policy.AllAccounts() {
+			covered = nil
+			for _, account := range accounts {
+				covered = append(covered, account.User)
+			}
+		}
+		for _, name := range covered {
+			if current, seen := intervals[name]; !seen || interval < current {
+				intervals[name] = interval
+			}
+		}
+	}
+	return intervals, nil
 }
 
 func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) {
@@ -840,6 +946,14 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 		return nil, []string{"Could not list cPanel accounts: " + err.Error()}, nil
 	}
 	jobs, err := s.engine.Store().Jobs(0)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// How often each account is due a backup, taken from the schedules
+	// that actually cover it. An account no schedule covers has no
+	// expectation to fall behind, which is its own kind of exposure.
+	expected, err := s.expectedIntervals(accounts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -864,9 +978,10 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 	var warnings []string
 	for _, account := range accounts {
 		view := accountView{
-			AccountInfo: account,
-			Running:     running[account.User],
-			Progress:    progress[account.User],
+			AccountInfo:   account,
+			Running:       running[account.User],
+			Progress:      progress[account.User],
+			ExpectedEvery: expected[account.User],
 		}
 		if last, seen := latest[account.User]; seen {
 			view.LastBackup = last.FinishedAt

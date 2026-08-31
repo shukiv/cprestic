@@ -36,14 +36,14 @@
   <div class="cpr-card cpr-pad">
     <div class="cpr-statlabel">Protection</div>
     <div class="cpr-cov-figure">{{$d.Protected}} <small>of {{len $d.Accounts}} accounts have a usable backup</small></div>
-    <div class="cpr-meter" role="img" aria-label="{{$d.Protected}} protected, {{$d.Stale}} stale, {{$d.Unprotected}} never backed up">
+    <div class="cpr-meter" role="img" aria-label="{{$d.Protected}} protected, {{$d.Stale}} needing attention, {{$d.Unprotected}} never backed up">
       {{if $d.Protected}}<i class="cpr-ok" style="width:{{$d.ProtectedPct}}%"></i>{{end}}
       {{if $d.Stale}}<i class="cpr-stale" style="width:{{$d.StalePct}}%"></i>{{end}}
       {{if $d.Unprotected}}<i class="cpr-none" style="width:{{$d.UnprotectedPct}}%"></i>{{end}}
     </div>
     <div class="cpr-legend">
       <span><span class="cpr-key" style="background:var(--good)"></span><b>{{$d.Protected}}</b> protected</span>
-      <span><span class="cpr-key" style="background:var(--warn)"></span><b>{{$d.Stale}}</b> stale</span>
+      <span><span class="cpr-key" style="background:var(--warn)"></span><b>{{$d.Stale}}</b> need attention</span>
       <span><span class="cpr-key" style="background:var(--bad)"></span><b>{{$d.Unprotected}}</b> never</span>
     </div>
   </div>

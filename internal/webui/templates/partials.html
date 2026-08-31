@@ -1,12 +1,15 @@
 {{/* Shared fragments used by more than one page. */}}
 
 {{define "accountstate"}}
-  {{if .Running}}<span class="cpr-pill cpr-warn"><span class="cpr-spin"></span>Working</span>
-  {{else if not .LastBackup}}<span class="cpr-pill cpr-bad"><span class="cpr-dot"></span>No backup</span>
-  {{else if eq (printf "%s" .LastStatus) "success"}}<span class="cpr-pill cpr-ok"><span class="cpr-dot"></span>Protected</span>
-  {{else if eq (printf "%s" .LastStatus) "partial_success"}}<span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>Partial</span>
-  {{else if eq (printf "%s" .LastStatus) "failed"}}<span class="cpr-pill cpr-bad"><span class="cpr-dot"></span>Last run failed</span>
-  {{else}}<span class="cpr-pill cpr-idle"><span class="cpr-dot"></span>—</span>{{end}}
+  {{$state := .State}}
+  {{if eq $state "working"}}<span class="cpr-pill cpr-warn"><span class="cpr-spin"></span>Working</span>
+  {{else if eq $state "protected"}}<span class="cpr-pill cpr-ok"><span class="cpr-dot"></span>Protected</span>
+  {{else if eq $state "out-of-date"}}<span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>Out of date</span>
+  {{else if eq $state "unscheduled"}}<span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>Not scheduled</span>
+  {{else if eq $state "partial"}}<span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>Partial</span>
+  {{else if eq $state "failed"}}<span class="cpr-pill cpr-bad"><span class="cpr-dot"></span>Last run failed</span>
+  {{else}}<span class="cpr-pill cpr-bad"><span class="cpr-dot"></span>No backup</span>{{end}}
+  {{with .Why}}<div class="cpr-sublabel">{{.}}</div>{{end}}
 {{end}}
 
 {{define "runstate"}}
