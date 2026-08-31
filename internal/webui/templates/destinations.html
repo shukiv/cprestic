@@ -31,7 +31,9 @@
           <input type="hidden" name="id" value="{{.ID}}">
           <button class="cpr-btn">Test</button>
         </form>
-        <a class="cpr-btn cpr-quiet" href="?p=destinations&amp;edit={{.ID}}">Edit</a>
+        <a class="cpr-btn cpr-quiet" href="?p=destinations&amp;edit={{.ID}}"
+           data-dialog="add-destination" data-dialog-fetch
+           data-dialog-title="Edit “{{.Name}}”">Edit</a>
         <form method="post" action="?p=destinations/delete" class="cpr-inline"
               data-confirm="Remove this destination from cprest? The backups already stored there are left alone.">
           <input type="hidden" name="csrf" value="{{$.CSRF}}">
@@ -80,7 +82,7 @@
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
     <h2 style="margin:0">Edit “{{$data.Editing.Name}}”</h2>
   </div>
-  <div class="cpr-pad">{{template "destinationform" .}}</div>
+  <div class="cpr-pad" data-drawer-content>{{template "destinationform" .}}</div>
 </div>
 {{else if $data.Adding}}
 {{/* Followed the link with no JavaScript, or came here by link: the same
@@ -103,10 +105,10 @@
      than pushing the list down the screen. */}}
 <dialog id="add-destination" class="cpr-sheet" aria-label="Add a destination">
   <div class="cpr-sheet-head">
-    <h2 style="margin:0">Add a destination</h2>
+    <h2 style="margin:0" data-drawer-title>Add a destination</h2>
     <button type="button" class="cpr-btn cpr-quiet" data-dialog-close aria-label="Close">✕</button>
   </div>
-  <div class="cpr-sheet-body">
+  <div class="cpr-sheet-body" data-drawer-body>
     {{template "addform" .}}
     <div style="margin-top:var(--s5); border-top:1px solid var(--line); padding-top:var(--s3)">
       <details>

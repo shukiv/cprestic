@@ -188,6 +188,44 @@
 // than under every row.
 (function () {
   "use strict";
+  // What the drawer holds when nothing has been loaded into it: the form
+  // for adding a destination. Editing borrows the same drawer and puts
+  // this back on the way out.
+  var drawerBody = document.querySelector("[data-drawer-body]");
+  var drawerTitle = document.querySelector("[data-drawer-title]");
+  var drawerHome = drawerBody ? { html: drawerBody.innerHTML, title: drawerTitle.textContent } : null;
+
+  function focusFirst(dialog) {
+    var first = dialog.querySelector("input:not([type=hidden]), select, textarea");
+    if (first) { first.focus(); }
+  }
+
+  // Editing loads the form for that destination into the drawer. It is
+  // fetched as the page it already is, and read here — the same trick the
+  // live refresh uses, and for the same reason: nothing then depends on
+  // cpsrvd passing a content type through, which it does not.
+  function loadIntoDrawer(dialog, link) {
+    drawerTitle.textContent = link.dataset.dialogTitle || drawerHome.title;
+    drawerBody.innerHTML = '<p class="cpr-hint">Loading…</p>';
+    dialog.showModal();
+
+    window.fetch(link.href, { credentials: "same-origin" })
+      .then(function (response) { return response.ok ? response.text() : null; })
+      .then(function (html) {
+        if (!html) { throw new Error("no page"); }
+        var fetched = new DOMParser().parseFromString(html, "text/html");
+        var content = fetched.querySelector("[data-drawer-content]");
+        if (!content) { throw new Error("no form"); }
+        drawerBody.innerHTML = content.innerHTML;
+        focusFirst(dialog);
+      })
+      .catch(function () {
+        // The form exists as its own page; if it cannot be brought here,
+        // go to it rather than leaving an empty drawer.
+        window.location.href = link.href;
+      });
+  }
+
   document.addEventListener("click", function (event) {
     var opener = event.target.closest("[data-dialog]");
     if (opener) {
@@ -197,9 +235,12 @@
         // a page of its own, which is what a browser with no JavaScript
         // gets and what a shared link opens.
         event.preventDefault();
+        if (opener.hasAttribute("data-dialog-fetch") && drawerBody) {
+          loadIntoDrawer(dialog, opener);
+          return;
+        }
         dialog.showModal();
-        var first = dialog.querySelector("input:not([type=hidden]), select, textarea");
-        if (first) { first.focus(); }
+        focusFirst(dialog);
       }
       return;
     }
@@ -215,6 +256,16 @@
       if (open) { open.close(); }
     }
   });
+
+  // Whatever was loaded in goes away with the drawer, so opening it again
+  // is opening the same thing it was before.
+  var drawer = document.querySelector(".cpr-sheet");
+  if (drawer && drawerHome) {
+    drawer.addEventListener("close", function () {
+      drawerBody.innerHTML = drawerHome.html;
+      drawerTitle.textContent = drawerHome.title;
+    });
+  }
 })();
 
 // Theme control. WHM does not tell a plugin which theme it is wearing, so

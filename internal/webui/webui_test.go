@@ -1503,3 +1503,45 @@ func TestTheDrawerIsOnlyVisibleWhenItIsOpen(t *testing.T) {
 		}
 	}
 }
+
+// Editing opens the same drawer as adding, with that destination's form
+// loaded into it — and the link still goes to the form's own page for a
+// browser that cannot do that.
+func TestEditingOpensTheDrawer(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	if _, _, err := engine.AddDestination(nodestore.Destination{
+		Name: "Local disk", Type: "local",
+		Config: map[string]string{"root": t.TempDir()},
+	}, nil, "cp01"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/destinations")
+	if !strings.Contains(page, "data-dialog-fetch") {
+		t.Error("the edit link does not open the drawer")
+	}
+	if !strings.Contains(page, `data-dialog-title="Edit “Local disk”"`) {
+		t.Error("the drawer would not say which destination is being edited")
+	}
+	if !strings.Contains(page, "data-drawer-body") || !strings.Contains(page, "data-drawer-title") {
+		t.Error("the drawer has nothing to load a form into")
+	}
+
+	// The page the drawer reads, and that a browser without the drawer
+	// simply goes to.
+	destinations, err := engine.Store().Destinations()
+	if err != nil || len(destinations) != 1 {
+		t.Fatalf("destinations = %+v (%v)", destinations, err)
+	}
+	status, editPage := get(t, client, "/destinations?edit="+destinations[0].ID)
+	if status != http.StatusOK {
+		t.Fatalf("GET the edit page = %d", status)
+	}
+	if !strings.Contains(editPage, "data-drawer-content") {
+		t.Error("the edit page does not mark the part the drawer loads")
+	}
+	if !strings.Contains(editPage, "Save changes") {
+		t.Error("the edit page has no form on it")
+	}
+}
