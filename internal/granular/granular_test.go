@@ -102,3 +102,51 @@ func TestAnImpossibleRequestFailsRatherThanAskingForNothing(t *testing.T) {
 		}
 	}
 }
+
+// The parts of an account an operator asks for by name, and where each
+// one comes from. These are cPanel's own names inside a cpmove archive,
+// read off a live 136.0.37 rather than assumed.
+func TestEveryBackupItemHasSomewhereToComeFrom(t *testing.T) {
+	for _, kind := range Kinds {
+		req := Request{Kind: kind, Account: "studio"}
+		switch kind {
+		case KindFiles:
+			req.Names = []string{"public_html/index.php"}
+		case KindMailbox:
+			req.Names = []string{"studio.co.il/sales"}
+		case KindDatabase:
+			req.Names = []string{"studio_kpeh1"}
+		}
+		plan, err := Build(split, req)
+		if err != nil {
+			t.Errorf("%s: %v", kind, err)
+			continue
+		}
+		if len(plan.Include) == 0 {
+			t.Errorf("%s asks for nothing", kind)
+		}
+		if kind.Title() == string(kind) {
+			t.Errorf("%s has no name an operator would recognise", kind)
+		}
+	}
+}
+
+// Database users are staged beside the dumps, so a snapshot's paths do not
+// change when an account gains or loses a database.
+func TestDatabaseUsersComeFromBesideTheDumps(t *testing.T) {
+	plan, err := Build(split, Request{Kind: KindDBUsers, Account: "studio"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := split.Databases + "/" + DatabaseUsersFile
+	if len(plan.Include) != 1 || plan.Include[0] != want {
+		t.Errorf("include = %v, want %q", plan.Include, want)
+	}
+
+	// A backup with no databases has no users to restore either, and says
+	// so rather than producing an empty file.
+	if _, err := Build(reassemble.Parts{Metadata: "/stage/metadata", Homedir: "/home/studio"},
+		Request{Kind: KindDBUsers, Account: "studio"}); err == nil {
+		t.Error("database users were promised from a backup that holds none")
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/shuki/cprest/internal/granular"
 	"github.com/shuki/cprest/internal/pkgacct"
 )
 
@@ -31,6 +32,9 @@ type Real struct {
 	// UsersDir holds one file per cPanel account. Empty means the standard
 	// location.
 	UsersDir string
+	// MysqlPath is the client used to read database users and their
+	// grants. Empty means whatever is on PATH.
+	MysqlPath string
 }
 
 var _ Provider = (*Real)(nil)
@@ -47,6 +51,13 @@ func (r *Real) mysqldump() string {
 		return r.MysqldumpPath
 	}
 	return "mysqldump"
+}
+
+func (r *Real) mysql() string {
+	if r.MysqlPath != "" {
+		return r.MysqlPath
+	}
+	return "mysql"
 }
 
 func (r *Real) homeRoot() string {
@@ -222,6 +233,75 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 	return payload, nil
 }
 
+// dumpDatabaseUsers writes the account's database users and their grants.
+//
+// pkgacct puts them in the archive it builds — but only when it is also
+// dumping the databases, which in split mode it is not. Without this a
+// restore brings back every table and nothing that can read them.
+func (r *Real) dumpDatabaseUsers(ctx context.Context, req StageRequest, dir string) error {
+	account := req.Account.User
+	if !plainAccountName(account) {
+		return fmt.Errorf("cpanel: %q is not a cPanel account name", account)
+	}
+
+	// cPanel prefixes an account's database users with the account name.
+	// The account itself is also a database user on most servers.
+	list := exec.CommandContext(ctx, r.mysql(), "--batch", "--skip-column-names", "--execute",
+		fmt.Sprintf(
+			"SELECT CONCAT(QUOTE(user), '@', QUOTE(host)) FROM mysql.user "+
+				"WHERE user = '%s' OR user LIKE '%s\\_%%'", account, account))
+	users, err := list.Output()
+	if err != nil {
+		return fmt.Errorf("cpanel: list database users for %s: %w", account, err)
+	}
+
+	var script strings.Builder
+	script.WriteString("-- Database users and grants for " + account + "\n")
+	for _, line := range strings.Split(string(users), "\n") {
+		user := strings.TrimSpace(line)
+		if user == "" {
+			continue
+		}
+		for _, statement := range []string{"SHOW CREATE USER " + user, "SHOW GRANTS FOR " + user} {
+			out, err := exec.CommandContext(ctx, r.mysql(),
+				"--batch", "--skip-column-names", "--execute", statement).Output()
+			if err != nil {
+				// A user that cannot be read is worth saying so about,
+				// rather than leaving a gap in the file that looks like
+				// an account with no grants.
+				return fmt.Errorf("cpanel: %s: %w", statement, err)
+			}
+			for _, row := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+				if row = strings.TrimSpace(row); row != "" {
+					script.WriteString(row + ";\n")
+				}
+			}
+		}
+	}
+
+	path := filepath.Join(dir, granular.DatabaseUsersFile)
+	if err := os.WriteFile(path, []byte(script.String()), 0o600); err != nil {
+		return fmt.Errorf("cpanel: write database users: %w", err)
+	}
+	return nil
+}
+
+// plainAccountName keeps a name that reaches a SQL statement to what a
+// cPanel account name can actually be.
+func plainAccountName(name string) bool {
+	if name == "" || len(name) > 32 {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func (r *Real) dumpDatabases(ctx context.Context, req StageRequest, payload pkgacct.Payload) error {
 	if len(payload.DumpPaths) == 0 {
 		return nil
@@ -229,6 +309,11 @@ func (r *Real) dumpDatabases(ctx context.Context, req StageRequest, payload pkga
 	dir := filepath.Join(req.StagingDir, "databases")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("cpanel: create database staging: %w", err)
+	}
+	if err := r.dumpDatabaseUsers(ctx, req, dir); err != nil {
+		// A database restored without the user that owns it is a database
+		// no site can open, so this is part of the backup, not a bonus.
+		return err
 	}
 	for name, path := range payload.DumpPaths {
 		file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)

@@ -37,12 +37,21 @@ const (
 	KindSSL Kind = "ssl"
 	// KindSettings restores the cPanel configuration of the account.
 	KindSettings Kind = "settings"
+	// KindCron restores the account's cron jobs.
+	KindCron Kind = "cron"
+	// KindDomains restores its domains and their web server configuration.
+	KindDomains Kind = "domains"
+	// KindFTP restores its FTP accounts.
+	KindFTP Kind = "ftp"
+	// KindDBUsers restores the database users and their grants. A database
+	// without the user that owns it is a database no site can open.
+	KindDBUsers Kind = "dbusers"
 )
 
 // Kinds is every kind, in the order the interface offers them.
 var Kinds = []Kind{
-	KindFiles, KindWebsite, KindMailbox, KindDatabase,
-	KindDNS, KindSSL, KindSettings,
+	KindFiles, KindWebsite, KindMailbox, KindDatabase, KindDBUsers,
+	KindDNS, KindDomains, KindSSL, KindCron, KindFTP, KindSettings,
 }
 
 // Title is the kind as the interface names it.
@@ -61,7 +70,15 @@ func (k Kind) Title() string {
 	case KindSSL:
 		return "SSL certificates"
 	case KindSettings:
-		return "Account settings"
+		return "Panel configuration"
+	case KindCron:
+		return "Cron jobs"
+	case KindDomains:
+		return "Domains"
+	case KindFTP:
+		return "FTP accounts"
+	case KindDBUsers:
+		return "Database users"
 	}
 	return string(k)
 }
@@ -111,9 +128,12 @@ var (
 		"has_sslstorage", "autossl.json",
 	}
 	settingsMembers = []string{
-		"cp/", "userdata/", "meta/", "cron/", "quota", "shell",
-		"version", "packaged_in_version",
+		"cp/", "meta/", "quota", "shell", "shadow", "digestshadow",
+		"userconfig/", "version", "packaged_in_version",
 	}
+	cronMembers   = []string{"cron/"}
+	ftpMembers    = []string{"proftpdpasswd"}
+	domainMembers = []string{"userdata/", "dnszones/", "ips/", "addons"}
 	// A mailbox is not only its maildir: forwarders, filters and the
 	// domain's mail configuration live in the metadata archive.
 	mailMembers = []string{"va/", "vad/", "vf/", "meta/mailserver"}
@@ -146,7 +166,15 @@ func Build(parts reassemble.Parts, req Request) (Plan, error) {
 	case KindSSL:
 		return buildMetadata(parts, sslMembers, "the SSL certificates and keys")
 	case KindSettings:
-		return buildMetadata(parts, settingsMembers, "the account settings")
+		return buildMetadata(parts, settingsMembers, "the panel configuration")
+	case KindCron:
+		return buildMetadata(parts, cronMembers, "the cron jobs")
+	case KindDomains:
+		return buildMetadata(parts, domainMembers, "the domains")
+	case KindFTP:
+		return buildMetadata(parts, ftpMembers, "the FTP accounts")
+	case KindDBUsers:
+		return buildDatabaseUsers(parts)
 	default:
 		return Plan{}, fmt.Errorf("granular: unknown restore kind %q", req.Kind)
 	}
@@ -216,6 +244,22 @@ func buildDatabase(parts reassemble.Parts, req Request) (Plan, error) {
 		plan.Include = append(plan.Include, path.Join(parts.Databases, name+".sql"))
 	}
 	return plan, nil
+}
+
+// DatabaseUsersFile is where the account's database users and their
+// grants are staged, inside the same directory as the dumps so a
+// snapshot's paths do not change when an account gains or loses one.
+const DatabaseUsersFile = "_users.sql"
+
+func buildDatabaseUsers(parts reassemble.Parts) (Plan, error) {
+	if parts.Databases == "" {
+		return Plan{}, fmt.Errorf(
+			"granular: this backup holds no databases, so it holds no database users either")
+	}
+	return Plan{
+		Include:     []string{path.Join(parts.Databases, DatabaseUsersFile)},
+		Description: "the database users and their grants",
+	}, nil
 }
 
 func buildMetadata(parts reassemble.Parts, members []string, description string) (Plan, error) {

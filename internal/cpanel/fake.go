@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/shuki/cprest/internal/granular"
 	"github.com/shuki/cprest/internal/pkgacct"
 )
 
@@ -102,12 +103,14 @@ func (f *Fake) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 		return pkgacct.Payload{}, err
 	}
 	payload, err := pkgacct.Plan(pkgacct.PlanRequest{
-		Account:    req.Account.User,
-		HomeDir:    req.Account.HomeDir,
-		Databases:  req.Account.Databases,
-		StagingDir: req.StagingDir,
-		Mode:       req.Mode,
-		Caps:       caps,
+		Account:       req.Account.User,
+		HomeDir:       req.Account.HomeDir,
+		Databases:     req.Account.Databases,
+		StagingDir:    req.StagingDir,
+		Mode:          req.Mode,
+		Caps:          caps,
+		SkipHomedir:   req.SkipHomedir,
+		SkipDatabases: req.SkipDatabases,
 	})
 	if err != nil {
 		return pkgacct.Payload{}, err
@@ -131,6 +134,12 @@ func (f *Fake) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 				if err := writeFile(path, sqlDumpFor(name)); err != nil {
 					return pkgacct.Payload{}, err
 				}
+			}
+			// The users that own those databases are staged beside them,
+			// as the real provider does.
+			users := filepath.Join(part.Path, granular.DatabaseUsersFile)
+			if err := writeFile(users, []byte("-- database users for "+req.Account.User+"\n")); err != nil {
+				return pkgacct.Payload{}, err
 			}
 		case pkgacct.PartArchive:
 			if err := writeMonolithicArchive(part.Path, req.Account.User); err != nil {
