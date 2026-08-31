@@ -1654,6 +1654,9 @@ func TestTheRecoveryKeyIsShownAndNagsUntilItIsSaved(t *testing.T) {
 	if !strings.Contains(revealed, "RESTIC_REPOSITORY") {
 		t.Error("the page does not say how to use it without cprest")
 	}
+	if !strings.Contains(revealed, "RESTIC_PASSWORD='"+password+"'") {
+		t.Error("the commands still ask the reader to paste the key in themselves")
+	}
 
 	// The file is the same thing, to put somewhere else.
 	card, err := client.PostForm("http://ui/destinations/recovery/card", map[string][]string{
@@ -1926,5 +1929,27 @@ func TestTheRecoveryCardCarriesWhatIsNeededToReachTheDestination(t *testing.T) {
 		if !strings.Contains(written, want) {
 			t.Errorf("the recovery card does not carry %q", want)
 		}
+	}
+}
+
+// A destination that holds backups is worth looking inside from where it
+// is listed, not only from a page of its own.
+func TestADestinationCanBeBrowsedFromItsRow(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	_, page := get(t, client, "/destinations")
+	added, err := client.PostForm("http://ui/destinations/add", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Local disk"}, "type": {"local"},
+		"root": {t.TempDir()}, "repo_path": {"cp01"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	added.Body.Close()
+	repos, _ := engine.Store().Repositories()
+
+	_, page = get(t, client, "/destinations")
+	if !strings.Contains(page, "?p=browse&amp;repository="+repos[0].ID) {
+		t.Error("the destination cannot be browsed from its own row")
 	}
 }

@@ -377,7 +377,7 @@ cprest.
 		fmt.Fprintf(&body, `Reaching it from %s
 ------------------------------------------------------------------
     export RESTIC_REPOSITORY='%s'
-    export RESTIC_PASSWORD='<the password above>'
+    export RESTIC_PASSWORD='%s'
 
     restic -o sftp.args="%s" snapshots
     restic -o sftp.args="%s" restore <snapshot-id> --target /somewhere
@@ -394,7 +394,7 @@ KEY
     printf '%%s\n' '%s' > /root/cprest-known-hosts
 
     export RESTIC_REPOSITORY='%s'
-    export RESTIC_PASSWORD='<the password above>'
+    export RESTIC_PASSWORD='%s'
     restic -o sftp.args="-i /root/cprest-key -o UserKnownHostsFile=/root/cprest-known-hosts -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes" snapshots
 
 If that key no longer works — the account was removed, or its
@@ -405,20 +405,20 @@ password:
     export RESTIC_REPOSITORY='%s'
     restic snapshots
 
-`, card.Hostname, card.URI, card.ResticOptions, card.ResticOptions,
-			card.SSHPrivateKey, card.SSHHostKey, card.URI,
+`, card.Hostname, card.URI, card.Password, card.ResticOptions, card.ResticOptions,
+			card.SSHPrivateKey, card.SSHHostKey, card.URI, card.Password,
 			card.SSHUser, card.SSHHost, card.URI)
 
 	default:
 		fmt.Fprintf(&body, `To restore without cprest, on any machine with restic installed:
 
     export RESTIC_REPOSITORY='%s'
-    export RESTIC_PASSWORD='<the password above>'
+    export RESTIC_PASSWORD='%s'
 
     restic snapshots
     restic restore <snapshot-id> --target /somewhere
 
-`, card.URI)
+`, card.URI, card.Password)
 	}
 
 	fmt.Fprintf(&body, `Keep this file somewhere that survives the loss of %s. It carries

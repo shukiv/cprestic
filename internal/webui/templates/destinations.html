@@ -17,7 +17,7 @@
     <div class="cpr-log" style="font-size:14px; user-select:all">{{.Password}}</div>
     <p class="cpr-hint">To read this repository from this server:</p>
     <div class="cpr-log">export RESTIC_REPOSITORY='{{.URI}}'
-export RESTIC_PASSWORD='&lt;the key above&gt;'
+export RESTIC_PASSWORD='{{.Password}}'
 {{if .ResticOptions}}restic -o sftp.args="{{.ResticOptions}}" snapshots
 restic -o sftp.args="{{.ResticOptions}}" restore &lt;snapshot-id&gt; --target /somewhere{{else}}restic snapshots
 restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
@@ -85,6 +85,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
            data-dialog="add-destination" data-dialog-fetch
            data-dialog-title="Edit “{{.Name}}”">Edit</a>
         {{if .Repository.ID}}
+        <a class="cpr-btn cpr-quiet" href="?p=browse&amp;repository={{.Repository.ID}}">Browse</a>
         <form method="post" action="?p=destinations/recovery" class="cpr-inline">
           <input type="hidden" name="csrf" value="{{$.CSRF}}">
           <input type="hidden" name="repository" value="{{.Repository.ID}}">
