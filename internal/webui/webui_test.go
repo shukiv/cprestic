@@ -1713,3 +1713,52 @@ func TestTheRecoveryKeyNeedsTheToken(t *testing.T) {
 		t.Error("a request with no token was shown the recovery key")
 	}
 }
+
+// A replacement server needs the settings of the one it replaces, so the
+// server's own configuration is backed up like an account and restored
+// like an item.
+func TestTheServersOwnSettingsCanBeScheduledAndRestored(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	_, page := get(t, client, "/destinations")
+	added, err := client.PostForm("http://ui/destinations/add", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Local disk"}, "type": {"local"},
+		"root": {t.TempDir()}, "repo_path": {"cp01"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	added.Body.Close()
+	repos, _ := engine.Store().Repositories()
+
+	_, page = get(t, client, "/schedule")
+	saved, err := client.PostForm("http://ui/schedule/save", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Nightly"}, "cron": {"0 2 * * *"},
+		"repository": {repos[0].ID}, "scope": {"all"}, "enabled": {"1"}, "mode": {"split"},
+		"include_system": {"1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved.Body.Close()
+
+	policies, err := engine.Store().Policies()
+	if err != nil || len(policies) != 1 || !policies[0].IncludeSystem {
+		t.Fatalf("policies = %+v (%v)", policies, err)
+	}
+
+	// It queues under its own name, which cannot collide with an account:
+	// cPanel usernames cannot contain "@".
+	queued, err := engine.QueueSystemBackup(policies[0].ID)
+	if err != nil {
+		t.Fatalf("queue the system backup: %v", err)
+	}
+	if queued.Account != "@system" {
+		t.Errorf("queued as %q", queued.Account)
+	}
+
+	// And it is offered on the restore page as something to restore.
+	if _, page = get(t, client, "/restore"); !strings.Contains(page, "The server's own settings") {
+		t.Error("the restore page does not offer the server's settings")
+	}
+}

@@ -25,6 +25,10 @@ const (
 	// cPanel's own archive layout intact at a large storage cost, and is
 	// only sound when pkgacct compression can actually be disabled.
 	ModeMonolithic Mode = "monolithic"
+	// ModeSystem backs up the server's own configuration rather than an
+	// account: what a replacement machine has to be told before the
+	// accounts on it mean anything.
+	ModeSystem Mode = "system"
 )
 
 // PartKind labels a component of a staged payload.
@@ -35,6 +39,7 @@ const (
 	PartHomedir  PartKind = "homedir"
 	PartDatabase PartKind = "database"
 	PartArchive  PartKind = "archive"
+	PartSystem   PartKind = "system"
 )
 
 // Part is one staged path handed to restic.

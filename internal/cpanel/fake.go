@@ -312,3 +312,27 @@ func writeFile(path string, body []byte) error {
 	}
 	return nil
 }
+
+// StageSystem writes a small stand-in for the server's own configuration,
+// so the pipeline that backs it up can be tested without a cPanel.
+func (f *Fake) StageSystem(_ context.Context, stagingDir string) (pkgacct.Payload, error) {
+	root := filepath.Join(stagingDir, "system")
+	if err := os.MkdirAll(filepath.Join(root, "files", "etc"), 0o700); err != nil {
+		return pkgacct.Payload{}, err
+	}
+	for name, body := range map[string]string{
+		filepath.Join(root, "files", "etc", "wwwacct.conf"): "HOST fake.example.com\n",
+		filepath.Join(root, "ea4-profile.json"):             `{"os":"fake","pkgs":["ea-apache24"]}` + "\n",
+		filepath.Join(root, "manifest.txt"):                 "# cprest system backup\npaths_copied\t1\n",
+	} {
+		if err := writeFile(name, []byte(body)); err != nil {
+			return pkgacct.Payload{}, err
+		}
+	}
+	payload := pkgacct.Payload{
+		Mode:    pkgacct.ModeSystem,
+		Account: SystemAccount,
+		Parts:   []pkgacct.Part{{Kind: pkgacct.PartSystem, Path: root}},
+	}
+	return payload, payload.Verify()
+}

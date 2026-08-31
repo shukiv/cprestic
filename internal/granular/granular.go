@@ -46,6 +46,10 @@ const (
 	// KindDBUsers restores the database users and their grants. A database
 	// without the user that owns it is a database no site can open.
 	KindDBUsers Kind = "dbusers"
+	// KindSystem restores the server's own configuration from a system
+	// backup: EasyApache, the tweak settings, packages, service
+	// configuration.
+	KindSystem Kind = "system"
 )
 
 // Kinds is every kind, in the order the interface offers them.
@@ -79,6 +83,8 @@ func (k Kind) Title() string {
 		return "FTP accounts"
 	case KindDBUsers:
 		return "Database users"
+	case KindSystem:
+		return "Server settings"
 	}
 	return string(k)
 }
@@ -175,6 +181,15 @@ func Build(parts reassemble.Parts, req Request) (Plan, error) {
 		return buildMetadata(parts, ftpMembers, "the FTP accounts")
 	case KindDBUsers:
 		return buildDatabaseUsers(parts)
+	case KindSystem:
+		if parts.System == "" {
+			return Plan{}, fmt.Errorf(
+				"granular: this is a backup of an account, not of the server's own settings")
+		}
+		return Plan{
+			Include:     []string{parts.System},
+			Description: "the server's settings",
+		}, nil
 	default:
 		return Plan{}, fmt.Errorf("granular: unknown restore kind %q", req.Kind)
 	}

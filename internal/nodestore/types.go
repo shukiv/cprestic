@@ -78,6 +78,11 @@ type Policy struct {
 	SkipHomedir   bool `json:"skip_homedir,omitempty"`
 	SkipDatabases bool `json:"skip_databases,omitempty"`
 	SkipEmail     bool `json:"skip_email,omitempty"`
+	// IncludeSystem adds the server's own configuration to what this
+	// schedule backs up: EasyApache, the tweak settings, the packages and
+	// the service configuration a replacement machine would need before
+	// the accounts restored onto it mean anything.
+	IncludeSystem bool `json:"include_system,omitempty"`
 	// RetryFailed gives a destination that failed one more attempt before
 	// the job is called failed. The payload is still staged, so a retry
 	// costs an upload rather than another pkgacct.

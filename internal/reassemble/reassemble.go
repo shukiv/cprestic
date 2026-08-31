@@ -123,6 +123,9 @@ type Parts struct {
 	Homedir   string
 	Databases string
 	Archive   string
+	// System is the server's own configuration, backed up under its own
+	// name rather than as an account.
+	System string
 }
 
 func (p Parts) mode() pkgacct.Mode {
@@ -148,6 +151,8 @@ func classifyPaths(paths []string) (Parts, error) {
 			found.Metadata = path
 		case strings.HasSuffix(path, "/databases"):
 			found.Databases = path
+		case strings.HasSuffix(path, "/system"):
+			found.System = path
 		case strings.HasSuffix(path, ".tar"), strings.HasSuffix(path, ".tar.gz"):
 			found.Archive = path
 		default:
@@ -161,6 +166,14 @@ func classifyPaths(paths []string) (Parts, error) {
 	}
 
 	switch {
+	case found.System != "":
+		// A backup of the server itself: one directory of configuration,
+		// and none of the parts an account has.
+		if found.Metadata != "" || found.Homedir != "" || found.Archive != "" {
+			return Parts{}, fmt.Errorf(
+				"reassemble: snapshot mixes the server's own settings with an account's parts")
+		}
+		return found, nil
 	case found.Archive != "" && (found.Metadata != "" || found.Homedir != ""):
 		return Parts{}, fmt.Errorf("reassemble: snapshot mixes a monolithic archive with split Parts")
 	case found.Archive != "":

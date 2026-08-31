@@ -12,6 +12,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
+	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/destination"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/nodestore"
@@ -66,6 +67,13 @@ func (e *Engine) EnsureProvisioned(ctx context.Context) (int, error) {
 }
 
 // QueueBackup queues a backup of one account under a policy.
+// QueueSystemBackup queues the server's own configuration, under the name
+// it is stored as. It is queued like any account, so it goes to the same
+// destinations, with the same retention and the same reporting.
+func (e *Engine) QueueSystemBackup(policyID string) (nodestore.Job, error) {
+	return e.QueueBackup(policyID, cpanel.SystemAccount)
+}
+
 func (e *Engine) QueueBackup(policyID, account string) (nodestore.Job, error) {
 	running, err := e.store.RunningJobFor(account)
 	if err != nil {
@@ -141,9 +149,16 @@ func (e *Engine) runBackup(ctx context.Context, stored nodestore.Job) error {
 	if err != nil {
 		return e.failJob(stored, fmt.Sprintf("policy: %v", err))
 	}
-	account, err := e.provider.Account(ctx, stored.Account)
-	if err != nil {
-		return e.failJob(stored, fmt.Sprintf("account: %v", err))
+	var account cpanel.AccountInfo
+	if stored.Account == cpanel.SystemAccount {
+		// Not an account: cPanel has never heard of it, and the worker
+		// knows to stage the server's configuration instead.
+		account = cpanel.AccountInfo{User: cpanel.SystemAccount}
+	} else {
+		account, err = e.provider.Account(ctx, stored.Account)
+		if err != nil {
+			return e.failJob(stored, fmt.Sprintf("account: %v", err))
+		}
 	}
 	assignment, err := e.assignmentFor(stored, policy, account)
 	if err != nil {
@@ -226,9 +241,16 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 	if err != nil {
 		return e.failRestore(stored, err.Error())
 	}
-	account, err := e.provider.Account(ctx, stored.Account)
-	if err != nil {
-		return e.failRestore(stored, fmt.Sprintf("account: %v", err))
+	var account cpanel.AccountInfo
+	if stored.Account == cpanel.SystemAccount {
+		// The server's own settings are not an account, and asking cPanel
+		// about them fails on the name alone.
+		account = cpanel.AccountInfo{User: cpanel.SystemAccount}
+	} else {
+		account, err = e.provider.Account(ctx, stored.Account)
+		if err != nil {
+			return e.failRestore(stored, fmt.Sprintf("account: %v", err))
+		}
 	}
 
 	now := time.Now().UTC()
@@ -359,6 +381,12 @@ func (e *Engine) Schedule(ctx context.Context, now time.Time) (int, error) {
 		}
 		if err := e.store.SetPolicyLastRun(policy.ID, now); err != nil {
 			return queued, err
+		}
+		if policy.IncludeSystem {
+			// The server's own configuration goes first: it is small, and
+			// a replacement machine needs it before the accounts on it
+			// mean anything.
+			accounts = append([]string{cpanel.SystemAccount}, accounts...)
 		}
 		for _, account := range accounts {
 			if _, err := e.QueueBackup(policy.ID, account); err != nil {

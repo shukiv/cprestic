@@ -58,6 +58,11 @@ type Provider interface {
 	// forced a layout that deduplicates poorly.
 	Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, error)
 
+	// StageSystem materialises the server's own configuration: what a
+	// replacement machine needs before the accounts restored onto it mean
+	// anything.
+	StageSystem(ctx context.Context, stagingDir string) (pkgacct.Payload, error)
+
 	// Apply hands a rebuilt account archive to cPanel, overwriting the
 	// live account. Callers must only reach this when an operator has
 	// explicitly asked for it.

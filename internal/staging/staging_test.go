@@ -324,3 +324,20 @@ func TestSpaceErrorReadsAsSizes(t *testing.T) {
 		t.Errorf("error = %q,\n want %q", err.Error(), want)
 	}
 }
+
+// The server's own configuration is staged under a name no cPanel account
+// can have. Everything else that is not a plain name is still refused: a
+// key becomes a directory under the staging root.
+func TestKeysAllowTheSystemNameAndNothingDangerous(t *testing.T) {
+	root := t.TempDir()
+	manager := &Manager{Root: root, MaxConcurrent: 4}
+
+	if _, err := manager.Allocate("@system", 1<<10); err != nil {
+		t.Errorf("the system key was refused: %v", err)
+	}
+	for _, key := range []string{"../escape", "a/b", "a b", "a;rm -rf /", ".", ""} {
+		if _, err := manager.Allocate(key, 1<<10); err == nil {
+			t.Errorf("staging accepted %q as a key", key)
+		}
+	}
+}

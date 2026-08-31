@@ -995,6 +995,7 @@ func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 		RepositoryIDs: r.PostForm["repository"],
 		// A schedule that leaves something out says so here; everything
 		// it does not mention travels.
+		IncludeSystem:     r.PostFormValue("include_system") != "",
 		SkipHomedir:       r.PostFormValue("skip_homedir") != "",
 		SkipDatabases:     r.PostFormValue("skip_databases") != "",
 		SkipEmail:         r.PostFormValue("skip_email") != "",
@@ -2061,6 +2062,14 @@ func (s *Server) handleRestoreItems(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStartRestore(w http.ResponseWriter, r *http.Request) {
+	if r.PostFormValue("account") == cpanel.SystemAccount &&
+		strings.TrimSpace(r.PostFormValue("paths")) == "" {
+		s.redirect(w, r, "/restore?account="+url.QueryEscape(cpanel.SystemAccount), "error",
+			"The server's settings are not an account, so there is no account archive to "+
+				"rebuild. Use Restore one thing → Server settings, which puts the files "+
+				"somewhere you can read them.")
+		return
+	}
 	restore := nodestore.Restore{
 		Account:      r.PostFormValue("account"),
 		RepositoryID: r.PostFormValue("repository"),

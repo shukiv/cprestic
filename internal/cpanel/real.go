@@ -35,6 +35,9 @@ type Real struct {
 	// MysqlPath is the client used to read database users and their
 	// grants. Empty means whatever is on PATH.
 	MysqlPath string
+	// EasyApachePath is the tool that writes an EasyApache profile.
+	// Empty means the standard location.
+	EasyApachePath string
 }
 
 var _ Provider = (*Real)(nil)

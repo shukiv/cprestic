@@ -315,8 +315,12 @@ func validateKey(key string) error {
 		return fmt.Errorf("staging: key is empty")
 	}
 	for _, r := range key {
+		// "@" is allowed for one reason: the server's own configuration is
+		// staged under a name a cPanel account cannot have, and cPanel
+		// usernames cannot contain it. It is as safe in a path as the
+		// rest of these.
 		isAllowed := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') || r == '-' || r == '_'
+			(r >= '0' && r <= '9') || r == '-' || r == '_' || r == '@'
 		if !isAllowed {
 			return fmt.Errorf("staging: key %q contains an unsupported character", key)
 		}

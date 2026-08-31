@@ -92,6 +92,12 @@ func (a *Agent) restoreItems(ctx context.Context, log *slog.Logger,
 			return report, false
 		}
 	}
+	if parts.System != "" {
+		if err := adopt(filepath.Join(raw, parts.System), filepath.Join(out, "system")); err != nil {
+			report.Error = err.Error()
+			return report, false
+		}
+	}
 
 	// Configuration lives inside the account's metadata archive, so only
 	// the members that were asked for are taken out of it.

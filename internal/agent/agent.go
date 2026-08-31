@@ -201,11 +201,16 @@ func (a *Agent) RunJob(ctx context.Context, assignment protocol.JobAssignment) p
 	report := protocol.JobReport{JobID: assignment.JobID}
 	log := a.log.With("job_id", assignment.JobID, "account", assignment.CPanelUser)
 
-	account, err := a.provider.Account(ctx, assignment.CPanelUser)
-	if err != nil {
-		log.Error("read account", "error", err)
-		report.StagingError = err.Error()
-		return report
+	system := assignment.CPanelUser == cpanel.SystemAccount
+	var account cpanel.AccountInfo
+	if !system {
+		found, err := a.provider.Account(ctx, assignment.CPanelUser)
+		if err != nil {
+			log.Error("read account", "error", err)
+			report.StagingError = err.Error()
+			return report
+		}
+		account = found
 	}
 	// Prefer what the host reports now over the controller's stored
 	// estimate, which may predate the account growing.
@@ -214,6 +219,11 @@ func (a *Agent) RunJob(ctx context.Context, assignment protocol.JobAssignment) p
 		size = assignment.SizeEstimate
 	}
 	estimate := stagingEstimate(size, pkgacct.Mode(assignment.PayloadMode))
+	if system {
+		// Configuration files and an EasyApache profile: megabytes, and
+		// the same every night.
+		estimate = systemStagingEstimate
+	}
 
 	// Staged under the account, not the job: the paths restic records
 	// must be identical every night, or each run becomes its own
@@ -231,11 +241,19 @@ func (a *Agent) RunJob(ctx context.Context, assignment protocol.JobAssignment) p
 	}()
 
 	mode := pkgacct.Mode(assignment.PayloadMode)
-	payload, err := a.provider.Stage(ctx, cpanel.StageRequest{
-		Account: account, StagingDir: dir.Path, Mode: mode,
-		SkipHomedir:   assignment.SkipHomedir,
-		SkipDatabases: assignment.SkipDatabases,
-	})
+	var payload pkgacct.Payload
+	if system {
+		// The server's own configuration, not an account: no pkgacct, no
+		// databases, no home directory.
+		mode = pkgacct.ModeSystem
+		payload, err = a.provider.StageSystem(ctx, dir.Path)
+	} else {
+		payload, err = a.provider.Stage(ctx, cpanel.StageRequest{
+			Account: account, StagingDir: dir.Path, Mode: mode,
+			SkipHomedir:   assignment.SkipHomedir,
+			SkipDatabases: assignment.SkipDatabases,
+		})
+	}
 	if err != nil {
 		log.Error("stage payload", "error", err)
 		report.StagingError = err.Error()
@@ -311,6 +329,8 @@ func (a *Agent) progressFor(jobID, repositoryID string) func(resticrun.Progress)
 const (
 	splitStagingShare = 0.20
 	splitStagingFloor = 512 << 20
+	// The server's own configuration is small and roughly constant.
+	systemStagingEstimate = 256 << 20
 )
 
 // stagingEstimate is how much room a payload of this shape needs.

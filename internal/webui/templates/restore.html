@@ -17,6 +17,7 @@
           {{range $data.Accounts}}
           <option value="{{.User}}" {{if eq .User $data.Account}}selected{{end}}>{{.User}}</option>
           {{end}}
+          <option value="@system" {{if eq "@system" $data.Account}}selected{{end}}>The server's own settings</option>
         </select>
       </div>
       <div>

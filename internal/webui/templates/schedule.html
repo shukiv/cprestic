@@ -138,6 +138,13 @@
     travel. They are one archive that cPanel's own restore reads, and pkgacct has no switch
     that takes pieces out of it.</p>
 
+    <label class="cpr-check">
+      <input type="checkbox" name="include_system" value="1" {{with $edit}}{{if .IncludeSystem}}checked{{end}}{{end}}>
+      <span>Also back up the server's own settings
+      <small class="cpr-help">EasyApache's profile, the tweak settings, packages, feature lists,
+      resellers, the mail and DNS configuration. A replacement server needs these before the
+      accounts restored onto it mean anything. It is small and changes rarely.</small></span></label>
+
     <h2 style="margin-top:var(--s5)">Directories and files to exclude</h2>
     <label for="excludes">One path or pattern per line</label>
     <textarea id="excludes" name="excludes" rows="4" data-excludes

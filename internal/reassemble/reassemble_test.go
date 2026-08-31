@@ -351,3 +351,21 @@ func contains(values []string, want string) bool {
 	}
 	return false
 }
+
+// A backup of the server itself has one part and none of an account's, so
+// it is recognised rather than rejected for having no metadata.
+func TestClassifyRecognisesASystemSnapshot(t *testing.T) {
+	found, err := Classify([]string{"/var/lib/cprest/staging/stage-@system/system"})
+	if err != nil {
+		t.Fatalf("classify: %v", err)
+	}
+	if found.System == "" || found.Homedir != "" || found.Metadata != "" {
+		t.Errorf("parts = %+v", found)
+	}
+
+	if _, err := Classify([]string{
+		"/stage/stage-@system/system", "/home/customer1",
+	}); err == nil {
+		t.Error("a snapshot mixing the server's settings with an account was accepted")
+	}
+}
