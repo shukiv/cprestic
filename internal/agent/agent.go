@@ -208,10 +208,11 @@ func (a *Agent) RunJob(ctx context.Context, assignment protocol.JobAssignment) p
 	}
 	// Prefer what the host reports now over the controller's stored
 	// estimate, which may predate the account growing.
-	estimate := account.SizeBytes
-	if assignment.SizeEstimate > estimate {
-		estimate = assignment.SizeEstimate
+	size := account.SizeBytes
+	if assignment.SizeEstimate > size {
+		size = assignment.SizeEstimate
 	}
+	estimate := stagingEstimate(size, pkgacct.Mode(assignment.PayloadMode))
 
 	// Staged under the account, not the job: the paths restic records
 	// must be identical every night, or each run becomes its own
@@ -266,6 +267,34 @@ func (a *Agent) progressFor(jobID, repositoryID string) func(resticrun.Progress)
 	return func(progress resticrun.Progress) {
 		a.OnProgress(jobID, repositoryID, progress)
 	}
+}
+
+// Staging holds what pkgacct writes and what mysqldump writes. In split
+// mode that is the account's configuration and its database dumps — the
+// home directory is backed up where it lies and is never copied — so
+// reserving the whole account refuses backups that would have fitted
+// easily. It refused a 6.8 GB account on a volume with 6.4 GB free, for a
+// job that would have staged a few hundred megabytes.
+//
+// A fraction is still a guess. It is a deliberate one: too small a
+// reservation costs a run that fails partway, which is the same outcome as
+// refusing it, while too large costs backups that never run at all.
+const (
+	splitStagingShare = 0.20
+	splitStagingFloor = 512 << 20
+)
+
+// stagingEstimate is how much room a payload of this shape needs.
+func stagingEstimate(size uint64, mode pkgacct.Mode) uint64 {
+	if mode != pkgacct.ModeSplit {
+		// One archive of the whole account, written into staging.
+		return size
+	}
+	share := uint64(float64(size) * splitStagingShare)
+	if share < splitStagingFloor {
+		return splitStagingFloor
+	}
+	return share
 }
 
 func (a *Agent) backupTarget(ctx context.Context, log *slog.Logger,

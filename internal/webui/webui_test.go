@@ -324,13 +324,25 @@ func TestSFTPDestinationReportsAnUnreachableHost(t *testing.T) {
 		t.Fatalf("POST: %v", err)
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	page = string(body)
 
-	location := resp.Header.Get("Location")
-	if !strings.Contains(location, "kind=error") {
-		t.Fatalf("redirect = %q, want an error", location)
+	// The form comes back with the reason in it, still filled in: a
+	// destination that could not be reached is a typo to correct, not a
+	// reason to type everything again.
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST = %d, want the form back", resp.StatusCode)
 	}
-	if !strings.Contains(location, "SSH") {
-		t.Errorf("redirect = %q, want it to name the problem", location)
+	if !strings.Contains(page, "SSH") {
+		t.Error("the page does not say what went wrong")
+	}
+	for _, kept := range []string{`value="cpbackup"`, `value="/home/cpbackup/backups"`, `value="127.0.0.1"`} {
+		if !strings.Contains(page, kept) {
+			t.Errorf("the form came back without %s in it", kept)
+		}
+	}
+	if strings.Contains(page, "kind=error") {
+		t.Error("the operator was sent away from the form they were filling in")
 	}
 }
 
@@ -355,8 +367,8 @@ func TestRedirectsStayRelativeSoWHMKeepsItsToken(t *testing.T) {
 	client, _, _ := newUI(t)
 
 	_, page := get(t, client, "/destinations")
-	resp, err := client.PostForm("http://ui/destinations/add", map[string][]string{
-		"csrf": {csrfToken(t, page)}, "name": {""}, "type": {"local"},
+	resp, err := client.PostForm("http://ui/schedule/save", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Nightly"}, "cron": {"0 2 * * *"},
 	})
 	if err != nil {
 		t.Fatalf("POST: %v", err)
@@ -370,7 +382,7 @@ func TestRedirectsStayRelativeSoWHMKeepsItsToken(t *testing.T) {
 	if !strings.HasPrefix(location, "?") {
 		t.Errorf("Location = %q, want it to start with ?", location)
 	}
-	if strings.Contains(location, "/destinations") {
+	if strings.Contains(location, "/schedule") {
 		t.Errorf("Location = %q, want no path component", location)
 	}
 }
@@ -1396,63 +1408,6 @@ func TestTheAccountsPageShowsEachAccountsRecord(t *testing.T) {
 	}
 }
 
-// A destination is one line in the operator's head, so it is one line on
-// the page: the type, host, user and directory are read off it.
-func TestADestinationCanBeAddedFromOneLine(t *testing.T) {
-	client, _, engine := newUI(t)
-	root := t.TempDir()
-
-	_, page := get(t, client, "/destinations")
-	added, err := client.PostForm("http://ui/destinations/quick", map[string][]string{
-		"csrf": {csrfToken(t, page)}, "target": {root + "/backups"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	added.Body.Close()
-
-	destinations, err := engine.Store().Destinations()
-	if err != nil || len(destinations) != 1 {
-		t.Fatalf("destinations = %+v (%v)", destinations, err)
-	}
-	got := destinations[0]
-	if got.Type != "local" {
-		t.Errorf("type = %q, want local", got.Type)
-	}
-	if got.Config["root"] != root+"/backups" {
-		t.Errorf("root = %q", got.Config["root"])
-	}
-	if got.Name == "" {
-		t.Error("a destination nobody named should still be called something")
-	}
-}
-
-// A line this cannot read is refused with an explanation, rather than
-// saved as something the operator did not mean.
-func TestAnUnreadableLineIsRefused(t *testing.T) {
-	client, _, engine := newUI(t)
-
-	_, page := get(t, client, "/destinations")
-	refused, err := client.PostForm("http://ui/destinations/quick", map[string][]string{
-		"csrf": {csrfToken(t, page)}, "target": {"backup.example.com"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	refused.Body.Close()
-
-	destinations, err := engine.Store().Destinations()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(destinations) != 0 {
-		t.Errorf("a line that names no path was saved as %+v", destinations)
-	}
-}
-
-// Adding a destination happens over the list, not below it — but the
-// button is a link first, so a browser with no JavaScript reaches the same
-// form on a page of its own.
 func TestAddingADestinationWorksWithAndWithoutTheSheet(t *testing.T) {
 	client, _, _ := newUI(t)
 
@@ -1472,7 +1427,7 @@ func TestAddingADestinationWorksWithAndWithoutTheSheet(t *testing.T) {
 	if strings.Contains(standalone, `<dialog id="add-destination"`) {
 		t.Error("the form is in a sheet on the page that exists because there is no sheet")
 	}
-	for _, want := range []string{"Where the backups go", "Set it up field by field", "Add and test"} {
+	for _, want := range []string{"Server address", "Folder inside the destination", "Add and test"} {
 		if !strings.Contains(standalone, want) {
 			t.Errorf("the add page is missing %q", want)
 		}

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"github.com/shuki/cprest/internal/pkgacct"
 	"strings"
 	"testing"
 )
@@ -42,5 +43,30 @@ func TestTrimDetailLeavesShortOutputAlone(t *testing.T) {
 	}
 	if got := trimDetail("   \n  "); got != "" {
 		t.Errorf("blank output became %q", got)
+	}
+}
+
+// Split mode never copies the home directory into staging: restic reads it
+// where it lies. Reserving the whole account refused backups that would
+// have fitted easily — a 6.8 GB account on a volume with 6.4 GB free, for
+// a job that stages a few hundred megabytes.
+func TestStagingEstimateFollowsWhatIsActuallyStaged(t *testing.T) {
+	const gigabyte = 1 << 30
+
+	for _, tc := range []struct {
+		what string
+		size uint64
+		mode pkgacct.Mode
+		want uint64
+	}{
+		{"a monolithic backup stages the whole account", 10 * gigabyte, pkgacct.ModeMonolithic, 10 * gigabyte},
+		{"an unset mode is monolithic", 10 * gigabyte, "", 10 * gigabyte},
+		{"a split backup stages a fraction", 10 * gigabyte, pkgacct.ModeSplit, 2 * gigabyte},
+		{"a small split account still gets room to work", 100 << 20, pkgacct.ModeSplit, 512 << 20},
+		{"an account of no known size gets the floor", 0, pkgacct.ModeSplit, 512 << 20},
+	} {
+		if got := stagingEstimate(tc.size, tc.mode); got != tc.want {
+			t.Errorf("%s: estimate = %d, want %d", tc.what, got, tc.want)
+		}
 	}
 }

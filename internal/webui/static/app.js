@@ -257,6 +257,14 @@
     }
   });
 
+  // A form that came back with something wrong reopens where it was being
+  // filled in, rather than leaving the reason on a page behind it.
+  var refused = document.querySelector(".cpr-sheet[data-drawer-open]");
+  if (refused && refused.showModal) {
+    refused.showModal();
+    focusFirst(refused);
+  }
+
   // Whatever was loaded in goes away with the drawer, so opening it again
   // is opening the same thing it was before.
   var drawer = document.querySelector(".cpr-sheet");

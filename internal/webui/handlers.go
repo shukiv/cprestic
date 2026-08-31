@@ -288,22 +288,58 @@ func endpointOf(dest nodestore.Destination) string {
 	}
 }
 
+// destinationsView is the destinations page.
+type destinationsView struct {
+	Destinations []destinationView
+	Hostname     string
+	Editing      *destinationView
+	// Adding renders the form as a page of its own rather than as a
+	// drawer over the list. That is what a browser with no JavaScript
+	// follows the button to, and what a bookmarked link opens.
+	Adding bool
+	// FormError is why the last attempt was refused, shown inside the
+	// drawer with the form still filled in. A destination that could not
+	// be reached used to send the operator back to an empty form with the
+	// reason in a banner above it, which is a way of asking them to type
+	// it all again.
+	FormError string
+	// Submitted is what they typed, so a rejected form comes back as they
+	// left it.
+	Submitted map[string]string
+}
+
+// Field is what an input should show: what was submitted, else what is
+// stored for the destination being edited.
+func (v destinationsView) Field(name string) string {
+	if value, typed := v.Submitted[name]; typed {
+		return value
+	}
+	if v.Editing == nil {
+		return ""
+	}
+	switch name {
+	case "name":
+		return v.Editing.Name
+	default:
+		return v.Editing.Config[name]
+	}
+}
+
+// FieldOr is Field with a default for the fields that have one.
+func (v destinationsView) FieldOr(name, fallback string) string {
+	if value := v.Field(name); value != "" {
+		return value
+	}
+	return fallback
+}
+
 func (s *Server) handleDestinations(w http.ResponseWriter, r *http.Request) {
 	views, err := s.destinationViews()
 	if err != nil {
 		s.fail(w, r, http.StatusInternalServerError, err)
 		return
 	}
-	view := struct {
-		Destinations []destinationView
-		Hostname     string
-		Editing      *destinationView
-		// Adding renders the add form as a page of its own rather than
-		// as a sheet over the list. That is what a browser with no
-		// JavaScript follows the button to, and what a bookmarked or
-		// shared "add a destination" link opens.
-		Adding bool
-	}{
+	view := destinationsView{
 		Destinations: views,
 		Hostname:     s.engine.Settings().Hostname,
 		Adding:       r.URL.Query().Get("add") != "",
@@ -324,112 +360,49 @@ func (s *Server) handleDestinations(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "destinations.html", "Backup destinations", "destinations", view)
 }
 
-// handleQuickDestination sets up a destination from the one line an
-// operator would write it as, rather than from a form.
-//
-// The four-field form is a poor way to say cpbackup@backup.example.com:
-// /backups. Given a password it does what it already did — install its own
-// key on that account. Given an administrator's password instead, it
-// creates the account first: the user, its home, the backup directory, the
-// key, and a locked password so the key is the only way in.
-func (s *Server) handleQuickDestination(w http.ResponseWriter, r *http.Request) {
-	line := strings.TrimSpace(r.PostFormValue("target"))
-	target, err := destination.ParseTarget(line)
+// refuseDestination hands the form back with what went wrong and what was
+// typed, rather than sending the operator to an empty one with the reason
+// in a banner above it.
+func (s *Server) refuseDestination(w http.ResponseWriter, r *http.Request, cause error) {
+	views, err := s.destinationViews()
 	if err != nil {
-		s.redirect(w, r, "/destinations", "error", err.Error())
+		s.fail(w, r, http.StatusInternalServerError, err)
 		return
 	}
-
-	name := strings.TrimSpace(r.PostFormValue("name"))
-	if name == "" {
-		name = nameFor(target)
+	view := destinationsView{
+		Destinations: views,
+		Hostname:     s.engine.Settings().Hostname,
+		FormError:    cause.Error(),
+		Submitted:    map[string]string{},
 	}
-	repositoryPath := s.engine.Settings().Hostname
-	if target.Repository != "" {
-		repositoryPath = target.Repository
-	}
-	password := r.PostFormValue("password")
-	createAccount := r.PostFormValue("create_account") != ""
-
-	switch target.Type {
-	case destination.TypeSFTP:
-		request := node.SFTPRequest{
-			Name:           name,
-			Host:           target.Config["host"],
-			Port:           atoiOr(target.Config["port"], 22),
-			User:           target.Config["user"],
-			RemoteDir:      target.Config["root"],
-			RepositoryPath: repositoryPath,
+	for name, values := range r.PostForm {
+		// Secrets are not handed back: they would then live in a page
+		// rather than only in the vault, and the operator retyping one is
+		// a smaller cost than that.
+		switch name {
+		case "csrf", "password", "secret_access_key", "admin_password":
+			continue
 		}
-		if createAccount {
-			request.AdminUser = strings.TrimSpace(r.PostFormValue("admin_user"))
-			request.AdminPassword = password
-		} else {
-			request.Password = password
+		if len(values) > 0 {
+			view.Submitted[name] = values[0]
 		}
-		s.finishSFTP(w, r, request)
-	case destination.TypeLocal:
-		s.saveDestination(w, r, nodestore.Destination{
-			Name: name, Type: string(target.Type), Config: target.Config,
-		}, nil, repositoryPath)
-	case destination.TypeREST:
-		// https://user:pass@backup.example.com carries the credentials the
-		// form would otherwise ask for in two more fields.
-		user, secret, config := splitRESTCredentials(target.Config["base_url"])
-		if secret == "" {
-			secret = password
+	}
+	if id := r.PostFormValue("id"); id != "" {
+		for i := range views {
+			if views[i].ID == id {
+				view.Editing = &views[i]
+				break
+			}
 		}
-		if user == "" || secret == "" {
-			s.redirect(w, r, "/destinations", "error",
-				"A backup server needs a username and password. Write it as "+
-					"https://user:password@"+strings.TrimPrefix(config, "https://")+
-					", or use the full form below.")
-			return
-		}
-		s.saveDestination(w, r, nodestore.Destination{
-			Name: name, Type: string(target.Type), Config: map[string]string{"base_url": config},
-		}, map[string]string{"username": user, "password": secret}, repositoryPath)
-	default:
-		s.redirect(w, r, "/destinations", "error",
-			"S3 needs an access key and a secret key, which do not belong in one line. "+
-				"Use the form below for this one.")
 	}
-}
-
-// nameFor calls a destination after whatever identifies it, so an operator
-// who did not name it still gets something they recognise.
-func nameFor(target destination.Target) string {
-	switch {
-	case target.Config["host"] != "":
-		return target.Config["host"]
-	case target.Config["bucket"] != "":
-		return target.Config["bucket"]
-	case target.Config["base_url"] != "":
-		return strings.TrimPrefix(target.Config["base_url"], "https://")
-	default:
-		return target.Config["root"]
-	}
-}
-
-// splitRESTCredentials takes any credentials out of a URL, returning them
-// and the address without them: a password belongs in the vault, not in a
-// stored configuration value.
-func splitRESTCredentials(raw string) (user, password, address string) {
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.User == nil {
-		return "", "", raw
-	}
-	user = parsed.User.Username()
-	password, _ = parsed.User.Password()
-	parsed.User = nil
-	return user, password, strings.TrimRight(parsed.String(), "/")
+	s.render(w, r, "destinations.html", "Backup destinations", "destinations", view)
 }
 
 func (s *Server) handleAddDestination(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.PostFormValue("name"))
 	destType := r.PostFormValue("type")
 	if name == "" {
-		s.redirect(w, r, "/destinations", "error", "Give the destination a name.")
+		s.refuseDestination(w, r, fmt.Errorf("Give the destination a name."))
 		return
 	}
 
@@ -465,7 +438,7 @@ func (s *Server) handleAddDestination(w http.ResponseWriter, r *http.Request) {
 	case destination.TypeLocal:
 		config["root"] = strings.TrimSpace(r.PostFormValue("root"))
 	default:
-		s.redirect(w, r, "/destinations", "error", "Choose a destination type.")
+		s.refuseDestination(w, r, fmt.Errorf("Choose a destination type."))
 		return
 	}
 
@@ -487,7 +460,7 @@ func (s *Server) saveDestination(w http.ResponseWriter, r *http.Request,
 	name := dest.Name
 	stored, _, err := s.engine.AddDestination(dest, secrets, repositoryPath)
 	if err != nil {
-		s.redirect(w, r, "/destinations", "error", err.Error())
+		s.refuseDestination(w, r, err)
 		return
 	}
 
@@ -530,7 +503,7 @@ func (s *Server) addSFTPDestination(w http.ResponseWriter, r *http.Request, name
 func (s *Server) finishSFTP(w http.ResponseWriter, r *http.Request, request node.SFTPRequest) {
 	result, err := s.engine.AddSFTPDestination(request)
 	if err != nil {
-		s.redirect(w, r, "/destinations", "error", err.Error())
+		s.refuseDestination(w, r, err)
 		return
 	}
 

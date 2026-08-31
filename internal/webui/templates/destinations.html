@@ -92,30 +92,19 @@
     <h2 style="margin:0">Add a destination</h2>
     <a class="cpr-btn cpr-quiet" href="?p=destinations">Cancel</a>
   </div>
-  <div class="cpr-pad">{{template "addform" .}}</div>
-  <div class="cpr-pad" style="border-top:1px solid var(--line)">
-    <details>
-      <summary>Set it up field by field</summary>
-      <div style="margin-top:var(--s4)">{{template "destinationform" .}}</div>
-    </details>
-  </div>
+  <div class="cpr-pad" data-drawer-content>{{template "destinationform" .}}</div>
 </div>
 {{else}}
 {{/* The sheet: the list stays the page, and adding happens over it rather
      than pushing the list down the screen. */}}
-<dialog id="add-destination" class="cpr-sheet" aria-label="Add a destination">
+<dialog id="add-destination" class="cpr-sheet" aria-label="Add a destination"
+        {{if $data.FormError}}data-drawer-open{{end}}>
   <div class="cpr-sheet-head">
     <h2 style="margin:0" data-drawer-title>Add a destination</h2>
     <button type="button" class="cpr-btn cpr-quiet" data-dialog-close aria-label="Close">✕</button>
   </div>
   <div class="cpr-sheet-body" data-drawer-body>
-    {{template "addform" .}}
-    <div style="margin-top:var(--s5); border-top:1px solid var(--line); padding-top:var(--s3)">
-      <details>
-        <summary>Set it up field by field</summary>
-        <div style="margin-top:var(--s4)">{{template "destinationform" .}}</div>
-      </details>
-    </div>
+    {{template "destinationform" .}}
   </div>
 </dialog>
 {{end}}
@@ -127,13 +116,16 @@
 {{define "destinationform"}}
 {{$data := .Data}}
 {{$editing := $data.Editing}}
+{{with $data.FormError}}
+<div class="cpr-banner cpr-bad" style="margin-bottom:var(--s4)"><div class="cpr-body">{{.}}</div></div>
+{{end}}
   <form method="post" action="{{if $editing}}?p=destinations/edit{{else}}?p=destinations/add{{end}}">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     {{with $editing}}<input type="hidden" name="id" value="{{.ID}}">{{end}}
     <div class="cpr-grid2">
       <div>
         <label for="name">Name</label>
-        <input type="text" id="name" name="name" placeholder="Backup server, Wasabi, …" required
+        <input type="text" id="name" name="name" placeholder="Backup server, Wasabi, …" required value="{{$data.Field "name"}}"
                value="{{with $editing}}{{.Name}}{{end}}">
       </div>
       <div>
@@ -154,13 +146,13 @@
 
     <div {{if $editing}}{{if ne $editing.Type "rest"}}hidden{{end}}{{else}}data-for-type="rest"{{end}}>
       <label for="base_url">Server address</label>
-      <input type="text" id="base_url" name="base_url" value="{{with $editing}}{{index .Config "base_url"}}{{end}}" placeholder="https://backup.example.com">
+      <input type="text" id="base_url" name="base_url" value="{{$data.Field "base_url"}}" placeholder="https://backup.example.com">
       <small class="cpr-help">Must be https. Point it at a rest-server instance.</small>
 
       <div class="cpr-grid2">
         <div>
           <label for="username">Username</label>
-          <input type="text" id="username" name="username">
+          <input type="text" id="username" name="username" value="{{$data.Field "username"}}">
           {{if $editing}}<small class="cpr-help">Leave empty to keep the stored credentials.</small>{{end}}
         </div>
         <div>
@@ -176,13 +168,13 @@
         cannot run through this address — give the second one below.</small></span></label>
 
       <label for="maintenance_base_url">Address that may delete (optional)</label>
-      <input type="text" id="maintenance_base_url" name="maintenance_base_url"
+      <input type="text" id="maintenance_base_url" name="maintenance_base_url" value="{{$data.Field "maintenance_base_url"}}"
              placeholder="https://backup.internal:8000">
       <small class="cpr-help">A second rest-server over the same storage with append-only off.
       Without it, nothing can ever prune old backups.</small>
 
       <label for="ca_bundle">CA bundle file (optional)</label>
-      <input type="text" id="ca_bundle" name="ca_bundle" value="{{with $editing}}{{index .Config "ca_bundle"}}{{end}}" placeholder="/etc/cprest/backup-ca.pem">
+      <input type="text" id="ca_bundle" name="ca_bundle" value="{{$data.Field "ca_bundle"}}" placeholder="/etc/cprest/backup-ca.pem">
       <small class="cpr-help">Only if the backup server uses a private certificate authority.</small>
     </div>
 
@@ -190,19 +182,19 @@
       <div class="cpr-grid2">
         <div>
           <label for="host">Host</label>
-          <input type="text" id="host" name="host" value="{{with $editing}}{{index .Config "host"}}{{end}}" placeholder="backup.example.com">
+          <input type="text" id="host" name="host" value="{{$data.Field "host"}}" placeholder="backup.example.com">
         </div>
         <div>
           <label for="port">Port</label>
-          <input type="number" id="port" name="port" value="{{if $editing}}{{if index $editing.Config "port"}}{{index $editing.Config "port"}}{{else}}22{{end}}{{else}}22{{end}}">
+          <input type="number" id="port" name="port" value="{{$data.FieldOr "port" "22"}}">
         </div>
         <div>
           <label for="user">SSH user</label>
-          <input type="text" id="user" name="user" value="{{with $editing}}{{index .Config "user"}}{{end}}" placeholder="cpbackup">
+          <input type="text" id="user" name="user" value="{{$data.Field "user"}}" placeholder="cpbackup">
         </div>
         <div>
           <label for="root">Remote directory</label>
-          <input type="text" id="root" name="root" value="{{with $editing}}{{index .Config "root"}}{{end}}" placeholder="/home/cpbackup/backups">
+          <input type="text" id="root" name="root" value="{{$data.Field "root"}}" placeholder="/home/cpbackup/backups">
         </div>
       </div>
 
@@ -220,7 +212,7 @@
       <details>
         <summary class="cpr-muted">Use a key I already have instead</summary>
         <label for="identity_file">Private key on this server</label>
-        <input type="text" id="identity_file" name="identity_file"
+        <input type="text" id="identity_file" name="identity_file" value="{{$data.Field "identity_file"}}"
                placeholder="/root/.ssh/id_ed25519">
         <small class="cpr-help">Leave empty to have cprest generate one.</small>
       </details>
@@ -230,20 +222,20 @@
       <div class="cpr-grid2">
         <div>
           <label for="bucket">Bucket</label>
-          <input type="text" id="bucket" name="bucket" value="{{with $editing}}{{index .Config "bucket"}}{{end}}">
+          <input type="text" id="bucket" name="bucket" value="{{$data.Field "bucket"}}">
         </div>
         <div>
           <label for="region">Region</label>
-          <input type="text" id="region" name="region" value="{{with $editing}}{{index .Config "region"}}{{end}}" placeholder="us-east-1">
+          <input type="text" id="region" name="region" value="{{$data.Field "region"}}" placeholder="us-east-1">
         </div>
       </div>
       <label for="endpoint">Endpoint (leave empty for Amazon S3)</label>
-      <input type="text" id="endpoint" name="endpoint" value="{{with $editing}}{{index .Config "endpoint"}}{{end}}" placeholder="s3.us-east-1.wasabisys.com">
+      <input type="text" id="endpoint" name="endpoint" value="{{$data.Field "endpoint"}}" placeholder="s3.us-east-1.wasabisys.com">
       <small class="cpr-help">Wasabi, Cloudflare R2, MinIO, Backblaze B2 and Ceph all work here.</small>
       <div class="cpr-grid2">
         <div>
           <label for="access_key_id">Access key</label>
-          <input type="text" id="access_key_id" name="access_key_id">
+          <input type="text" id="access_key_id" name="access_key_id" value="{{$data.Field "access_key_id"}}">
           {{if $editing}}<small class="cpr-help">Leave empty to keep the stored credentials.</small>{{end}}
         </div>
         <div>
@@ -255,7 +247,7 @@
 
     <div {{if $editing}}{{if ne $editing.Type "local"}}hidden{{end}}{{else}}data-for-type="local" hidden{{end}}>
       <label for="local_root">Directory</label>
-      <input type="text" id="local_root" name="root" value="{{with $editing}}{{index .Config "root"}}{{end}}" placeholder="/mnt/backups">
+      <input type="text" id="local_root" name="root" value="{{$data.Field "root"}}" placeholder="/mnt/backups">
       <small class="cpr-help">A disk on this machine protects against a lost file, not a lost
       server. Pair it with something remote.</small>
     </div>
@@ -267,7 +259,7 @@
     empty repository somewhere else, so it is fixed once the destination is created.</small>
     {{else}}
     <label for="repo_path">Folder inside the destination</label>
-    <input type="text" id="repo_path" name="repo_path" value="{{$data.Hostname}}">
+    <input type="text" id="repo_path" name="repo_path" value="{{$data.FieldOr "repo_path" $data.Hostname}}">
     <small class="cpr-help">Keeps this server's backups separate from any other server's.</small>
     {{end}}
 
@@ -279,42 +271,3 @@
   </form>
 {{end}}
 
-{{/* The line an operator already has in their head. Everything a line
-     cannot say is in the full form, one disclosure away. */}}
-{{define "addform"}}
-<form method="post" action="?p=destinations/quick">
-  <input type="hidden" name="csrf" value="{{.CSRF}}">
-  <label for="target">Where the backups go</label>
-  <input type="text" id="target" name="target" required
-         placeholder="cpbackup@backup.example.com:/backups" data-quick-target>
-  <small class="cpr-help" data-quick-reading>Also understood:
-    <span class="cpr-mono">sftp://user@host:2222/srv/backups</span>,
-    <span class="cpr-mono">https://user:password@backup.example.com</span>,
-    <span class="cpr-mono">/mnt/nas/backups</span>,
-    <span class="cpr-mono">s3://bucket/folder</span>.</small>
-
-  <label for="quick_name">Name <span class="cpr-muted">(optional)</span></label>
-  <input type="text" id="quick_name" name="name" placeholder="taken from the address">
-
-  <label for="quick_password" data-quick-password-label>Password for that account</label>
-  <input type="password" id="quick_password" name="password" autocomplete="new-password">
-  <small class="cpr-help">Used once to install cprest's own key, then discarded.</small>
-
-  <label class="cpr-check">
-    <input type="checkbox" name="create_account" value="1" data-quick-create>
-    <span>That account does not exist yet — create it for me
-    <small class="cpr-help">cprest creates the account, gives it a locked password so its key
-    is the only way in, makes the backup directory, installs the key and checks it works. The
-    password above is then an administrator's on that server.</small></span></label>
-
-  <div data-quick-admin hidden>
-    <label for="admin_user">Administrator to log in as</label>
-    <input type="text" id="admin_user" name="admin_user" value="root">
-  </div>
-
-  <div class="cpr-row" style="margin-top:var(--s4)">
-    <button class="cpr-btn cpr-primary" type="submit">Add and test</button>
-    <span class="cpr-hint" style="margin:0">Credentials are encrypted before they are written to disk.</span>
-  </div>
-</form>
-{{end}}

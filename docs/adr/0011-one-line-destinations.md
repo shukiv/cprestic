@@ -1,7 +1,20 @@
 # 0011 — Destinations in one line, and making the remote account
 
-Status: accepted
+Status: withdrawn — the one-line form is not in the interface
 Date: 2026-08-31
+Withdrawn: 2026-08-31
+
+## Withdrawn
+
+The operator asked for this to be cancelled: one line, a password and a
+checkbox is not enough logic to configure a remote destination, and the
+form said nothing about what it would do until it had already done it.
+Both halves are out of the interface. `destination.ParseTarget` and the
+account-creating path in `AddSFTPDestination` remain, with their tests, so
+whatever replaces this has them to build on. Nothing calls them today.
+
+The rest of this record is what was built, kept because the next attempt
+starts from why this one was wrong.
 
 ## Context
 
