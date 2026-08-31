@@ -1478,3 +1478,28 @@ func TestAddingADestinationWorksWithAndWithoutTheSheet(t *testing.T) {
 		}
 	}
 }
+
+// A dialog is display:none until the browser opens it. A stylesheet that
+// says otherwise leaves the drawer standing open on the page, outside the
+// top layer, positioned against whichever element of WHM's chrome happens
+// to be its containing block — which is exactly what it did.
+func TestTheDrawerIsOnlyVisibleWhenItIsOpen(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	_, page := get(t, client, "/destinations")
+	for _, rule := range []string{
+		".cprest .cpr-sheet[open] { display:flex; }",
+	} {
+		if !strings.Contains(page, rule) {
+			t.Errorf("the stylesheet does not say %q", rule)
+		}
+	}
+	// Nothing may give a dialog a display of its own outside [open].
+	for _, forbidden := range []string{
+		".cprest .cpr-sheet {\n  position:fixed; inset:0 0 0 auto; margin:0;\n  width:min(520px, 94vw); max-width:none; height:100%; max-height:none;\n  padding:0; border:0; border-left:1px solid var(--line-strong); border-radius:0;\n  background:var(--surface); color:var(--ink);\n  box-shadow:-8px 0 28px rgba(10,14,20,.22);\n  display:flex;",
+	} {
+		if strings.Contains(page, forbidden) {
+			t.Error("the drawer is displayed whether or not it is open")
+		}
+	}
+}

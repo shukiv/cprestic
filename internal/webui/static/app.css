@@ -448,7 +448,17 @@
   padding:0; border:0; border-left:1px solid var(--line-strong); border-radius:0;
   background:var(--surface); color:var(--ink);
   box-shadow:-8px 0 28px rgba(10,14,20,.22);
-  display:flex; flex-direction:column;
+  flex-direction:column;
+}
+/* Only when open. A dialog is display:none until the browser opens it,
+   and a stylesheet that says otherwise leaves the drawer standing open on
+   the page, outside the top layer, positioned against whichever WHM
+   element happens to be its containing block. */
+.cprest .cpr-sheet[open] { display:flex; }
+.cprest .cpr-sheet[open] { animation:cpr-slide-in .18s ease-out; }
+@keyframes cpr-slide-in { from { transform:translateX(24px); opacity:.6; } }
+@media (prefers-reduced-motion:reduce) {
+  .cprest .cpr-sheet[open] { animation:none; }
 }
 .cprest .cpr-sheet::backdrop { background:rgba(10,14,20,.45); }
 .cprest .cpr-sheet-head {
