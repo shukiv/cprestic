@@ -951,6 +951,10 @@ type accountView struct {
 	// for a small account.
 	Stored uint64
 	Took   time.Duration
+	// LastError is why the last backup failed, in the words it failed
+	// with. A row that says only "the last run failed" sends the operator
+	// to another page to find out what every row already knows.
+	LastError string
 	// Copies is how many backups of this account each destination has
 	// taken. Counted from this server's own records, so it says what was
 	// written rather than what survives: retention prunes old snapshots
@@ -1059,6 +1063,9 @@ func (a accountView) Why() string {
 	case StatePartial:
 		return "some files could not be read"
 	case StateFailed:
+		if a.LastError != "" {
+			return a.LastError
+		}
 		return "the last run failed"
 	case StateNever:
 		return "nothing has ever been backed up"
@@ -1073,6 +1080,24 @@ func shortID(id string) string {
 		return id[:8]
 	}
 	return id
+}
+
+// failureOf is why a job failed, taken from wherever it went wrong: the
+// staging step, which stops the job before restic runs, or the first
+// destination that refused it.
+func failureOf(stored nodestore.Job) string {
+	if stored.Status != job.StatusFailed {
+		return ""
+	}
+	if stored.StagingErr != "" {
+		return stored.StagingErr
+	}
+	for _, target := range stored.Targets {
+		if target.Error != "" {
+			return target.Error
+		}
+	}
+	return ""
 }
 
 // cost is what one backup came to: the bytes it added across the
@@ -1257,6 +1282,7 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 		}
 		if last, seen := latest[account.User]; seen {
 			view.Stored, view.Took = cost(last)
+			view.LastError = failureOf(last)
 		}
 		for name, written := range copies[account.User] {
 			view.Copies = append(view.Copies, copyCount{Destination: name, Written: written})

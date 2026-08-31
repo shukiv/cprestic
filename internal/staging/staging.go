@@ -52,7 +52,26 @@ type ErrInsufficientSpace struct {
 }
 
 func (e *ErrInsufficientSpace) Error() string {
-	return fmt.Sprintf("staging: need %d bytes free, have %d", e.Required, e.Available)
+	// Bytes are what the check compares; an operator deciding what to do
+	// about it is thinking in gigabytes and in what else is on the disk.
+	return fmt.Sprintf(
+		"not enough room to stage this account: it needs %s free and there is %s",
+		human(e.Required), human(e.Available))
+}
+
+// human renders a size the way the interface does, so an error read in a
+// log and a number read on a page agree with each other.
+func human(bytes uint64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	value, exponent := float64(bytes), 0
+	for value >= unit && exponent < 4 {
+		value /= unit
+		exponent++
+	}
+	return fmt.Sprintf("%.1f %s", value, [...]string{"B", "KiB", "MiB", "GiB", "TiB"}[exponent])
 }
 
 // Allocate reserves a staging directory after checking space.

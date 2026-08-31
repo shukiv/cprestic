@@ -1545,3 +1545,23 @@ func TestEditingOpensTheDrawer(t *testing.T) {
 		t.Error("the edit page has no form on it")
 	}
 }
+
+// A row that says only "the last run failed" sends the operator to
+// another page to find out what this one already knows.
+func TestAFailedAccountSaysWhyOnTheRow(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	finished := time.Now().Add(-time.Hour)
+	if _, err := engine.Store().PutJob(nodestore.Job{
+		Account: "customer1", Status: job.StatusFailed,
+		QueuedAt: finished, FinishedAt: &finished,
+		StagingErr: "not enough room to stage this account: it needs 7.6 GiB free and there is 6.3 GiB",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/accounts")
+	if !strings.Contains(page, "it needs 7.6 GiB free and there is 6.3 GiB") {
+		t.Error("the row does not say why the backup failed")
+	}
+}

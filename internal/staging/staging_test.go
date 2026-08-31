@@ -315,3 +315,12 @@ func TestRetainedListsWhatIsWaitingWithItsSizeAndAge(t *testing.T) {
 		t.Errorf("produced at %v, which is not now", outputs[0].At)
 	}
 }
+
+// The number an operator has to act on is a size, not a byte count.
+func TestSpaceErrorReadsAsSizes(t *testing.T) {
+	err := &ErrInsufficientSpace{Required: 8151213721, Available: 6778830848}
+	want := "not enough room to stage this account: it needs 7.6 GiB free and there is 6.3 GiB"
+	if err.Error() != want {
+		t.Errorf("error = %q,\n want %q", err.Error(), want)
+	}
+}
