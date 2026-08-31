@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1054,5 +1055,33 @@ func TestPostRoutesThroughTheQueryParameter(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("POST ?p=destinations/add = %d, want 403", resp.StatusCode)
+	}
+}
+
+// The typefaces ship inside the plugin: a page that runs as root should
+// not be telling a font host when a root session is open.
+func TestFontsAreServedByThePluginItself(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	status, body := get(t, client, "/font?name=fira-sans-400.woff2")
+	if status != http.StatusOK {
+		t.Fatalf("GET the regular weight = %d", status)
+	}
+	if len(body) < 1000 || body[:4] != "wOF2" {
+		t.Errorf("that is not a woff2 file: %d bytes starting %q", len(body), body[:min(4, len(body))])
+	}
+
+	for _, name := range []string{"", "../static/app.css", "fonts/fira-sans-400.woff2", "nonesuch.woff2"} {
+		if status, _ := get(t, client, "/font?name="+url.QueryEscape(name)); status != http.StatusNotFound {
+			t.Errorf("GET a font named %q = %d, want 404", name, status)
+		}
+	}
+
+	_, page := get(t, client, "/destinations")
+	if strings.Contains(page, "fonts.googleapis.com") || strings.Contains(page, "fonts.gstatic.com") {
+		t.Error("the page still asks a font host for its typefaces")
+	}
+	if !strings.Contains(page, `url("?p=font&name=fira-sans-400.woff2")`) {
+		t.Error("the stylesheet does not point at the plugin's own fonts")
 	}
 }

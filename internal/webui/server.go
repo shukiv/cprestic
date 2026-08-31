@@ -36,6 +36,13 @@ var templateFS embed.FS
 //go:embed static/*
 var staticFS embed.FS
 
+// The typefaces the interface is set in travel with the plugin. Asking a
+// font host for them would tell a third party whenever a root WHM session
+// is open, and would let one serve styling into a privileged page.
+//
+//go:embed fonts/*.woff2
+var fontFS embed.FS
+
 // Server renders the node's interface.
 type Server struct {
 	engine *node.Engine
@@ -139,6 +146,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /accounts/download", s.guard(s.handleDownloadRequest))
 	mux.HandleFunc("POST /accounts/verify", s.guard(s.handleVerifyRequest))
 	mux.HandleFunc("GET /download", s.handleDownload)
+	mux.HandleFunc("GET /font", s.handleFont)
 
 	mux.HandleFunc("GET /restore", s.handleRestore)
 	mux.HandleFunc("POST /restore/start", s.guard(s.handleStartRestore))

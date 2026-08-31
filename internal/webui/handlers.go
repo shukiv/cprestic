@@ -1339,3 +1339,38 @@ func atoiOr(raw string, fallback int) int {
 func stagingFree(path string) (uint64, error) {
 	return freeBytes(filepath.Clean(path))
 }
+
+// --- fonts ---
+
+// fontFiles is the allowlist. A request names a face, never a path, so
+// nothing outside this map can be read however the name is spelt.
+var fontFiles = map[string]string{
+	"fira-sans-400.woff2": "fonts/fira-sans-400.woff2",
+	"fira-sans-500.woff2": "fonts/fira-sans-500.woff2",
+	"fira-sans-600.woff2": "fonts/fira-sans-600.woff2",
+	"fira-sans-700.woff2": "fonts/fira-sans-700.woff2",
+	"fira-code.woff2":     "fonts/fira-code.woff2",
+}
+
+// handleFont serves one vendored typeface. Content-Disposition is what
+// gets a non-HTML response past cpsrvd intact; a browser ignores it for a
+// subresource, and if any of this fails the stylesheet's fallback stack
+// renders exactly as it did before the fonts were vendored.
+func (s *Server) handleFont(w http.ResponseWriter, r *http.Request) {
+	path, ok := fontFiles[r.URL.Query().Get("name")]
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	body, err := fontFS.ReadFile(path)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "font/woff2")
+	w.Header().Set("Content-Disposition", `inline; filename="`+filepath.Base(path)+`"`)
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(body)
+}

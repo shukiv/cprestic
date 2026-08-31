@@ -21,6 +21,7 @@ var (
 	classAttr   = regexp.MustCompile(`class="([^"]*)"`)
 	action      = regexp.MustCompile(`(?s){{.*?}}`)
 	cssSelector = regexp.MustCompile(`(?s)([^{}]+)\{`)
+	cssComment  = regexp.MustCompile(`(?s)/\*.*?\*/`)
 )
 
 func TestEveryRenderedClassIsNamespaced(t *testing.T) {
@@ -53,7 +54,10 @@ func TestStylesheetOnlyTargetsNamespacedClasses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read stylesheet: %v", err)
 	}
-	for _, m := range cssSelector.FindAllStringSubmatch(string(body), -1) {
+	// Comments carry filenames — app.css, README.md — and a dotted name
+	// reads as a class to anything scanning selectors.
+	stylesheet := cssComment.ReplaceAllString(string(body), " ")
+	for _, m := range cssSelector.FindAllStringSubmatch(stylesheet, -1) {
 		for _, name := range classNames(m[1]) {
 			if name == wrapperClass || strings.HasPrefix(name, classPrefix) {
 				continue
