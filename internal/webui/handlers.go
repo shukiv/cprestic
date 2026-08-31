@@ -819,6 +819,17 @@ type accountView struct {
 	// for a small account.
 	Stored uint64
 	Took   time.Duration
+	// Copies is how many backups of this account each destination has
+	// taken. Counted from this server's own records, so it says what was
+	// written rather than what survives: retention prunes old snapshots
+	// in the repository, and nothing tells this server when it does.
+	Copies []copyCount
+}
+
+// copyCount is one destination's share of an account's backups.
+type copyCount struct {
+	Destination string
+	Written     int
 }
 
 // Record is the account's history in one line.
@@ -921,6 +932,15 @@ func (a accountView) Why() string {
 		return "nothing has ever been backed up"
 	}
 	return ""
+}
+
+// shortID is a repository id an operator can still recognise, for the
+// case where its destination has been removed since.
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 // cost is what one backup came to: the bytes it added across the
@@ -1034,6 +1054,36 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 		}
 	}
 
+	// Destination names, so a count can say where the copies went rather
+	// than quoting a repository id.
+	destinations, err := s.destinationViews()
+	if err != nil {
+		return nil, nil, err
+	}
+	names := map[string]string{}
+	for _, dest := range destinations {
+		names[dest.Repository.ID] = dest.Name
+	}
+	copies := map[string]map[string]int{}
+	for _, stored := range jobs {
+		if !stored.Status.Terminal() {
+			continue
+		}
+		for _, target := range stored.Targets {
+			if target.Status != job.TargetSuccess {
+				continue
+			}
+			name := names[target.RepositoryID]
+			if name == "" {
+				name = shortID(target.RepositoryID)
+			}
+			if copies[stored.Account] == nil {
+				copies[stored.Account] = map[string]int{}
+			}
+			copies[stored.Account][name]++
+		}
+	}
+
 	// A rehearsal is the only thing that says a backup rebuilds, so when
 	// one last ran belongs beside the account it was run for.
 	restores, err := s.engine.Store().Restores(0)
@@ -1076,6 +1126,12 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 		if last, seen := latest[account.User]; seen {
 			view.Stored, view.Took = cost(last)
 		}
+		for name, written := range copies[account.User] {
+			view.Copies = append(view.Copies, copyCount{Destination: name, Written: written})
+		}
+		sort.Slice(view.Copies, func(i, j int) bool {
+			return view.Copies[i].Destination < view.Copies[j].Destination
+		})
 		if last, seen := latest[account.User]; seen {
 			view.LastBackup = last.FinishedAt
 			view.LastStatus = last.Status

@@ -53,6 +53,9 @@
             {{if or .Stored .Took}}<div class="cpr-sublabel"
               title="What the last backup added to the destination after deduplication, and how long the whole run took — staging the account included.">
               {{if .Stored}}{{bytes .Stored}} stored{{end}}{{if and .Stored .Took}} · {{end}}{{if .Took}}took {{took .Took}}{{end}}</div>{{end}}
+            {{if .Copies}}<div class="cpr-sublabel"
+              title="Backups of this account written to each destination, counted from this server's records. Retention prunes older snapshots in the repository, so open the account to see what is actually there now.">
+              {{range $i, $copy := .Copies}}{{if $i}} · {{end}}{{$copy.Written}} to {{$copy.Destination}}{{end}}</div>{{end}}
             {{if .Verified}}<div class="cpr-sublabel"
               title="A rehearsal rebuilt this account's backup and checked what came out. It is the only thing that shows a backup restores.">
               {{if .VerifiedOK}}verified {{ago .Verified}}{{else}}rehearsal failed {{ago .Verified}}{{end}}</div>{{end}}

@@ -1341,17 +1341,24 @@ func TestTheAccountsPageShowsEachAccountsRecord(t *testing.T) {
 	client, _, engine := newUI(t)
 
 	when := time.Now().Add(-2 * time.Hour)
+	// Oldest first: the failure is history, the last run worked.
 	for _, status := range []job.Status{
-		job.StatusSuccess, job.StatusSuccess, job.StatusFailed,
+		job.StatusFailed, job.StatusSuccess, job.StatusSuccess,
 	} {
 		started := when
 		finished := when.Add(90 * time.Second)
+		target := nodestore.JobTarget{
+			RepositoryID: "repo-1", Status: job.TargetSuccess,
+			BytesAdded: 6 << 20, BytesProcessed: 90 << 20,
+		}
+		if status == job.StatusFailed {
+			// A failed run wrote nothing, so it is not a copy.
+			target = nodestore.JobTarget{RepositoryID: "repo-1", Status: job.TargetFailed}
+		}
 		if _, err := engine.Store().PutJob(nodestore.Job{
 			Account: "customer1", Status: status,
 			QueuedAt: when, StartedAt: &started, FinishedAt: &finished,
-			Targets: []nodestore.JobTarget{{
-				Status: job.TargetSuccess, BytesAdded: 6 << 20, BytesProcessed: 90 << 20,
-			}},
+			Targets:  []nodestore.JobTarget{target},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -1382,5 +1389,9 @@ func TestTheAccountsPageShowsEachAccountsRecord(t *testing.T) {
 	}
 	if !strings.Contains(page, "took 1m 30s") {
 		t.Error("the page does not show how long the last backup took")
+	}
+	// Where the copies went, and how many each destination took.
+	if !strings.Contains(page, "2 to ") {
+		t.Error("the page does not show how many copies each destination holds")
 	}
 }
