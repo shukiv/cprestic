@@ -1344,10 +1344,14 @@ func TestTheAccountsPageShowsEachAccountsRecord(t *testing.T) {
 	for _, status := range []job.Status{
 		job.StatusSuccess, job.StatusSuccess, job.StatusFailed,
 	} {
-		finished := when
+		started := when
+		finished := when.Add(90 * time.Second)
 		if _, err := engine.Store().PutJob(nodestore.Job{
 			Account: "customer1", Status: status,
-			QueuedAt: when, FinishedAt: &finished,
+			QueuedAt: when, StartedAt: &started, FinishedAt: &finished,
+			Targets: []nodestore.JobTarget{{
+				Status: job.TargetSuccess, BytesAdded: 6 << 20, BytesProcessed: 90 << 20,
+			}},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -1371,5 +1375,12 @@ func TestTheAccountsPageShowsEachAccountsRecord(t *testing.T) {
 	}
 	if !strings.Contains(page, "verified ") {
 		t.Error("the page does not show when the backup was last rehearsed")
+	}
+	// What the last run cost: what it stored, and how long it took.
+	if !strings.Contains(page, "6.0 MiB stored") {
+		t.Error("the page does not show what the last backup stored")
+	}
+	if !strings.Contains(page, "took 1m 30s") {
+		t.Error("the page does not show how long the last backup took")
 	}
 }

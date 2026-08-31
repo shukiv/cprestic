@@ -813,6 +813,12 @@ type accountView struct {
 	// rebuilds, with VerifiedOK saying whether it passed.
 	Verified   *time.Time
 	VerifiedOK bool
+	// Stored is what the last backup actually cost across its
+	// destinations, after restic deduplicated it, and Took is how long the
+	// whole run lasted — staging the account included, which is most of it
+	// for a small account.
+	Stored uint64
+	Took   time.Duration
 }
 
 // Record is the account's history in one line.
@@ -915,6 +921,32 @@ func (a accountView) Why() string {
 		return "nothing has ever been backed up"
 	}
 	return ""
+}
+
+// cost is what one backup came to: the bytes it added across the
+// destinations that took it, and how long the run took from end to end.
+//
+// Added bytes rather than processed: what an operator is paying for is
+// what restic actually had to store, which on an unchanged account is a
+// small fraction of what it read.
+func cost(stored nodestore.Job) (uint64, time.Duration) {
+	var bytes uint64
+	var targets time.Duration
+	for _, target := range stored.Targets {
+		if target.Status != job.TargetSuccess {
+			continue
+		}
+		bytes += target.BytesAdded
+		targets += time.Duration(target.DurationSecs * float64(time.Second))
+	}
+	if stored.StartedAt != nil && stored.FinishedAt != nil {
+		// The wall clock covers staging too, which is most of the time
+		// spent on a small account.
+		if wall := stored.FinishedAt.Sub(*stored.StartedAt); wall > 0 {
+			return bytes, wall
+		}
+	}
+	return bytes, targets
 }
 
 // expectedIntervals is how often each account is backed up, by the
@@ -1040,6 +1072,9 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 		if drilled, seen := verified[account.User]; seen {
 			at := drilled.at
 			view.Verified, view.VerifiedOK = &at, drilled.ok
+		}
+		if last, seen := latest[account.User]; seen {
+			view.Stored, view.Took = cost(last)
 		}
 		if last, seen := latest[account.User]; seen {
 			view.LastBackup = last.FinishedAt
