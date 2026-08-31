@@ -1839,3 +1839,41 @@ func firstError(page string) string {
 	}
 	return strings.TrimSpace(rest[:end])
 }
+
+// Browsing goes one level at a time: destinations, then what a
+// destination holds, then an account's backups, then inside one. Listing
+// every file of every snapshot of nineteen accounts would be minutes of
+// restic for a question nobody asked.
+func TestBrowsingStartsAtTheDestinations(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	status, page := get(t, client, "/browse")
+	if status != http.StatusOK {
+		t.Fatalf("GET /browse = %d", status)
+	}
+	if !strings.Contains(page, "No destination yet") {
+		t.Error("a server with no destinations does not say so")
+	}
+
+	_, page = get(t, client, "/destinations")
+	added, err := client.PostForm("http://ui/destinations/add", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Local disk"}, "type": {"local"},
+		"root": {t.TempDir()}, "repo_path": {"cp01"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	added.Body.Close()
+
+	_, page = get(t, client, "/browse")
+	if !strings.Contains(page, "Local disk") {
+		t.Error("the destination is not listed to browse")
+	}
+	if !strings.Contains(page, "?p=browse&amp;repository=") {
+		t.Error("there is no way into the destination")
+	}
+	// The listing itself costs nothing until a destination is opened.
+	if strings.Contains(page, "Most recent") {
+		t.Error("the destination list is reading repositories nobody opened")
+	}
+}

@@ -2490,3 +2490,184 @@ func (s *Server) handleRecoverAccount(w http.ResponseWriter, r *http.Request) {
 		"Rebuilding %s. The archive will be left on this server to inspect; nothing is "+
 			"created until you ask for that.", account))
 }
+
+// --- browsing what is stored ---
+
+// browseView is one level of what a destination holds: the destinations
+// themselves, then the accounts in one, then that account's backups, then
+// what is inside one of them.
+//
+// Each level is fetched when it is asked for. Listing every file of every
+// snapshot of nineteen accounts would be minutes of restic and megabytes
+// of page for a question nobody asked.
+type browseView struct {
+	Destinations []destinationView
+	Repository   string
+	Destination  string
+	Account      string
+	Accounts     []node.AccountBackups
+	SystemBackup bool
+	Snapshot     string
+	SnapshotAt   time.Time
+	Snapshots    []resticrun.Snapshot
+	Path         string
+	Up           string
+	Crumbs       []crumb
+	Entries      []browseEntry
+	Err          string
+}
+
+// crumb is one step of the path back out.
+type crumb struct {
+	Label string
+	URL   string
+}
+
+func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
+	destinations, err := s.destinationViews()
+	if err != nil {
+		s.fail(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	query := r.URL.Query()
+	view := browseView{
+		Destinations: destinations,
+		Repository:   query.Get("repository"),
+		Account:      query.Get("account"),
+		Snapshot:     query.Get("snapshot"),
+		Path:         query.Get("path"),
+	}
+	for _, dest := range destinations {
+		if dest.Repository.ID == view.Repository {
+			view.Destination = dest.Name
+		}
+	}
+
+	switch {
+	case view.Repository == "":
+		// Nothing chosen: the destinations themselves.
+	case view.Snapshot != "":
+		s.browseSnapshot(r, &view)
+	case view.Account != "":
+		s.browseSnapshots(r, &view)
+	default:
+		s.browseAccounts(r, &view)
+	}
+	view.Crumbs = browseCrumbs(view)
+	s.render(w, r, "browse.html", "Browse backups", "browse", view)
+}
+
+// browseAccounts lists what a repository holds, from its snapshots.
+func (s *Server) browseAccounts(r *http.Request, view *browseView) {
+	contents, err := s.engine.Contents(r.Context(), view.Repository)
+	if err != nil {
+		view.Err = err.Error()
+		return
+	}
+	view.Accounts = contents.Accounts
+	view.SystemBackup = contents.System
+}
+
+// browseSnapshots lists one account's backups, newest first.
+func (s *Server) browseSnapshots(r *http.Request, view *browseView) {
+	snapshots, err := s.engine.Snapshots(r.Context(), view.Repository, view.Account)
+	if err != nil {
+		view.Err = err.Error()
+		return
+	}
+	sort.Slice(snapshots, func(i, j int) bool { return snapshots[i].Time.After(snapshots[j].Time) })
+	view.Snapshots = snapshots
+}
+
+// browseSnapshot lists one directory inside one backup.
+func (s *Server) browseSnapshot(r *http.Request, view *browseView) {
+	snapshots, err := s.engine.Snapshots(r.Context(), view.Repository, view.Account)
+	if err != nil {
+		view.Err = err.Error()
+		return
+	}
+	snapshot, found := findSnapshot(snapshots, view.Snapshot)
+	if !found {
+		view.Err = "That backup is not in this destination."
+		return
+	}
+	view.SnapshotAt = snapshot.Time
+
+	// With no path, the snapshot's own roots: the home directory, the
+	// databases, the metadata archive — whatever it was told to store.
+	if view.Path == "" {
+		for _, root := range snapshot.Paths {
+			view.Entries = append(view.Entries, browseEntry{
+				Name: root, Path: root, Dir: true, Item: root,
+			})
+		}
+		sort.Slice(view.Entries, func(i, j int) bool {
+			return view.Entries[i].Name < view.Entries[j].Name
+		})
+		return
+	}
+
+	entries, err := s.engine.Browse(r.Context(), view.Repository, snapshot.ID, view.Path)
+	if err != nil {
+		view.Err = err.Error()
+		return
+	}
+	view.Up = path.Dir(view.Path)
+	if view.Up == view.Path {
+		view.Up = ""
+	}
+	for _, entry := range entries {
+		if entry.Path == view.Path {
+			continue
+		}
+		view.Entries = append(view.Entries, browseEntry{
+			Name: entry.Name,
+			Path: entry.Path,
+			Size: entry.Size,
+			Dir:  entry.IsDir(),
+			Item: entry.Path,
+		})
+	}
+	sort.Slice(view.Entries, func(i, j int) bool {
+		if view.Entries[i].Dir != view.Entries[j].Dir {
+			return view.Entries[i].Dir
+		}
+		return view.Entries[i].Name < view.Entries[j].Name
+	})
+}
+
+// browseCrumbs is the way back out of wherever the operator has got to.
+func browseCrumbs(view browseView) []crumb {
+	crumbs := []crumb{{Label: "Destinations", URL: "?p=browse"}}
+	if view.Repository == "" {
+		return crumbs
+	}
+	name := view.Destination
+	if name == "" {
+		name = "this destination"
+	}
+	crumbs = append(crumbs, crumb{
+		Label: name,
+		URL:   "?p=browse&repository=" + url.QueryEscape(view.Repository),
+	})
+	if view.Account == "" {
+		return crumbs
+	}
+	crumbs = append(crumbs, crumb{
+		Label: view.Account,
+		URL: "?p=browse&repository=" + url.QueryEscape(view.Repository) +
+			"&account=" + url.QueryEscape(view.Account),
+	})
+	if view.Snapshot == "" {
+		return crumbs
+	}
+	base := "?p=browse&repository=" + url.QueryEscape(view.Repository) +
+		"&account=" + url.QueryEscape(view.Account) +
+		"&snapshot=" + url.QueryEscape(view.Snapshot)
+	crumbs = append(crumbs, crumb{Label: shortID(view.Snapshot), URL: base})
+
+	if view.Path != "" {
+		crumbs = append(crumbs, crumb{Label: view.Path, URL: base + "&path=" + url.QueryEscape(view.Path)})
+	}
+	return crumbs
+}
