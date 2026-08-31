@@ -473,3 +473,63 @@ func TestExitThreeIsOnlyForgivenForBackup(t *testing.T) {
 		t.Errorf("backup exiting 3 still produced a snapshot: %v", err)
 	}
 }
+
+// While a backup runs, restic reports progress once a second. An operator
+// watching a large account should see it move rather than wait for the
+// summary, so those lines are parsed as they arrive.
+func TestProgressIsReportedWhileTheBackupRuns(t *testing.T) {
+	var seen []Progress
+	read := progressReader(func(p Progress) { seen = append(seen, p) })
+	if read == nil {
+		t.Fatal("a caller that wants progress got no reader")
+	}
+
+	for _, line := range []string{
+		`{"message_type":"status","percent_done":0.25,"total_files":10,"files_done":2,"total_bytes":2048,"bytes_done":512,"seconds_elapsed":3}`,
+		`{"message_type":"verbose_status","percent_done":0.9}`,
+		`not json at all`,
+		`{"message_type":"summary","snapshot_id":"abc"}`,
+		`{"message_type":"status","percent_done":1,"total_bytes":2048,"bytes_done":2048}`,
+	} {
+		read([]byte(line))
+	}
+
+	if len(seen) != 2 {
+		t.Fatalf("read %d status lines, want 2: %+v", len(seen), seen)
+	}
+	if seen[0].PercentDone != 0.25 || seen[0].BytesDone != 512 || seen[0].FilesDone != 2 {
+		t.Errorf("first status = %+v", seen[0])
+	}
+	if seen[1].PercentDone != 1 {
+		t.Errorf("last status = %+v", seen[1])
+	}
+}
+
+// Nobody listening means nothing is parsed.
+func TestProgressReaderIsNilWhenNoOneIsWatching(t *testing.T) {
+	if progressReader(nil) != nil {
+		t.Error("a reader was built for a caller that wants no progress")
+	}
+}
+
+// restic's output arrives in whatever chunks the pipe delivers, which is
+// not the same as one line per write.
+func TestLineWriterEmitsWholeLinesOnly(t *testing.T) {
+	var lines []string
+	w := &lineWriter{emit: func(line []byte) { lines = append(lines, string(line)) }}
+
+	for _, chunk := range []string{"{\"a\":1}\n{\"b\"", ":2}\n{\"c\":3}", "\n"} {
+		if _, err := w.Write([]byte(chunk)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []string{`{"a":1}`, `{"b":2}`, `{"c":3}`}
+	if len(lines) != len(want) {
+		t.Fatalf("lines = %v, want %v", lines, want)
+	}
+	for i := range want {
+		if lines[i] != want[i] {
+			t.Errorf("line %d = %q, want %q", i, lines[i], want[i])
+		}
+	}
+}

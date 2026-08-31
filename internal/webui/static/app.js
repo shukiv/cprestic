@@ -39,6 +39,14 @@
     input.addEventListener("input", function () { applyFilters(target); });
   });
 
+  // A live refresh replaces rows, which loses the filter the operator set.
+  // Re-applying it is the one thing outside this closure needs from here.
+  window.cprestReapplyFilters = function () {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-filter]"), function (input) {
+      applyFilters(input.dataset.filter);
+    });
+  };
+
   Array.prototype.forEach.call(document.querySelectorAll("[data-filter-state]"), function (group) {
     var target = group.dataset.filterState;
     group.addEventListener("click", function (event) {
@@ -91,10 +99,94 @@
     });
   });
 
-  // While work is in flight, refresh so progress appears without a click.
-  if (document.querySelector("[data-running]")) {
-    window.setTimeout(function () { window.location.reload(); }, 10000);
+})();
+
+// While work is in flight, keep the page current without reloading it.
+//
+// A full reload threw away the scroll position and any open report, which
+// on a nineteen-account run meant the page jumped to the top every few
+// seconds. Instead the same page is fetched, parsed here, and only the
+// regions marked data-live are swapped. The response is HTML we already
+// know how to render, so nothing depends on cpsrvd passing a content type
+// through, which it does not.
+(function () {
+  "use strict";
+  var INTERVAL = 3000;
+  var timer = null;
+  var inFlight = false;
+
+  function running() { return document.querySelector("[data-running]") !== null; }
+
+  function swap(fresh) {
+    var swapped = false;
+    Array.prototype.forEach.call(fresh.querySelectorAll("[data-live]"), function (node) {
+      var here = document.querySelector('[data-live="' + node.dataset.live + '"]');
+      if (here && here.innerHTML !== node.innerHTML) {
+        here.innerHTML = node.innerHTML;
+        swapped = true;
+      }
+    });
+    if (swapped && typeof window.cprestReapplyFilters === "function") {
+      // The rows are new, so the filter the operator typed has to be put
+      // back over them.
+      window.cprestReapplyFilters();
+    }
   }
+
+  function tick() {
+    timer = null;
+    if (inFlight) { return; }
+    // A report the operator has open must not be pulled out from under
+    // them; the next tick will catch up.
+    if (document.querySelector("dialog[open]")) { schedule(); return; }
+
+    inFlight = true;
+    window.fetch(window.location.href, {
+      credentials: "same-origin",
+      headers: { "X-Cprest-Live": "1" }
+    }).then(function (response) {
+      return response.ok ? response.text() : null;
+    }).then(function (html) {
+      if (!html) { return; }
+      var fresh = new DOMParser().parseFromString(html, "text/html");
+      swap(fresh);
+    }).catch(function () {
+      // A refresh that fails is not worth reporting: the page still shows
+      // what it last knew, and the next tick tries again.
+    }).then(function () {
+      inFlight = false;
+      schedule();
+    });
+  }
+
+  function schedule() {
+    if (timer !== null || !running()) { return; }
+    timer = window.setTimeout(tick, INTERVAL);
+  }
+
+  schedule();
+})();
+
+// A report is long and wanted occasionally, so it lives in a dialog rather
+// than under every row.
+(function () {
+  "use strict";
+  document.addEventListener("click", function (event) {
+    var opener = event.target.closest("[data-dialog]");
+    if (opener) {
+      var dialog = document.getElementById(opener.dataset.dialog);
+      if (dialog && dialog.showModal) {
+        event.preventDefault();
+        dialog.showModal();
+      }
+      return;
+    }
+    var closer = event.target.closest("[data-dialog-close]");
+    if (closer) {
+      var open = closer.closest("dialog");
+      if (open) { open.close(); }
+    }
+  });
 })();
 
 // Theme control. WHM does not tell a plugin which theme it is wearing, so

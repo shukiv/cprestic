@@ -39,6 +39,10 @@ type Agent struct {
 	// failing backend for a long time; without a bound, one unreachable
 	// destination consumes the window the reachable ones needed.
 	TargetTimeout time.Duration
+	// OnProgress, when set, is called as a backup runs. It is called from
+	// the goroutine reading restic's output, roughly once a second per
+	// repository, so it must not block.
+	OnProgress func(jobID, repositoryID string, progress resticrun.Progress)
 }
 
 // Config assembles an Agent.
@@ -253,6 +257,17 @@ func (a *Agent) RunJob(ctx context.Context, assignment protocol.JobAssignment) p
 	return report
 }
 
+// progressFor adapts the hook to what the runner expects, and returns nil
+// when nobody is watching so restic's status lines are not even parsed.
+func (a *Agent) progressFor(jobID, repositoryID string) func(resticrun.Progress) {
+	if a.OnProgress == nil {
+		return nil
+	}
+	return func(progress resticrun.Progress) {
+		a.OnProgress(jobID, repositoryID, progress)
+	}
+}
+
 func (a *Agent) backupTarget(ctx context.Context, log *slog.Logger,
 	assignment protocol.JobAssignment, target protocol.Target,
 	payload pkgacct.Payload) protocol.TargetReport {
@@ -278,8 +293,9 @@ func (a *Agent) backupTarget(ctx context.Context, log *slog.Logger,
 		Path:     target.RepoPath,
 		Password: target.RepoPassword,
 	}, resticrun.BackupSpec{
-		Paths: payload.Paths(),
-		Host:  a.Hostname,
+		Paths:      payload.Paths(),
+		Host:       a.Hostname,
+		OnProgress: a.progressFor(assignment.JobID, target.RepositoryID),
 		// Tags identify the account, and must be stable: retention groups
 		// by them, so a per-job tag would put every run in a group of its
 		// own and exempt it from pruning. The job a snapshot came from is

@@ -1,0 +1,10 @@
+[      96ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8931/themes/x/icons/group_plugins.svg:0
+[      98ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8931/themes/x/images/jumpUp.png:0
+[      98ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8931/core/web-components/dist/assets/whm-logo-dark.svg:0
+[      99ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8931/core/web-components/dist/assets/whm-logo-white.svg:0
+[     102ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8931/libraries/fontawesome/webfonts/fa-solid-900.woff2:0
+[     102ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8931/libraries/ui-fonts/open_sans/optimized/OpenSans-Regular-webfont.woff:0
+[     102ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8931/libraries/ui-fonts/open_sans/optimized/OpenSans-Bold-webfont.woff:0
+[     136ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8931/libraries/fontawesome/webfonts/fa-solid-900.woff:0
+[     136ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8931/libraries/ui-fonts/open_sans/optimized/OpenSans-Regular-webfont.ttf:0
+[     136ms] [ERROR] Failed to load resource: the server responded with a status of 404 (File not found) @ http://127.0.0.1:8931/libraries/ui-fonts/open_sans/optimized/OpenSans-Bold-webfont.ttf:0

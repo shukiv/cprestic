@@ -1146,3 +1146,80 @@ func TestTheRestorePageOffersEveryGranularKind(t *testing.T) {
 		t.Errorf("the restore page does not offer %q", want)
 	}
 }
+
+// A running backup reports how far it has got, and the page says so
+// rather than showing a pill that never changes.
+func TestARunningBackupShowsItsProgress(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	queued, err := engine.Store().PutJob(nodestore.Job{
+		Account: "customer1", Status: job.StatusRunning, QueuedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Store().SetJobProgress(queued.ID, nodestore.JobProgress{
+		Percent: 42.5, BytesDone: 512 << 20, TotalBytes: 1 << 30,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/jobs")
+	for _, want := range []string{
+		`data-running="1"`, // the page knows to keep itself current
+		"cpr-spin",         // and the pill spins rather than sitting still
+		"43%",              // restic's own percentage, rounded
+		"width:42.5%",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the history page does not show %q", want)
+		}
+	}
+}
+
+// A finished job carries no percentage: "100%" beside a failure would be
+// a lie, and a bar on something that is over says nothing.
+func TestAFinishedJobShowsNoProgress(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	queued, err := engine.Store().PutJob(nodestore.Job{
+		Account: "customer1", Status: job.StatusRunning, QueuedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Store().SetJobProgress(queued.ID, nodestore.JobProgress{Percent: 99}); err != nil {
+		t.Fatal(err)
+	}
+	queued.Status = job.StatusFailed
+	queued.Progress = nil
+	if _, err := engine.Store().PutJob(queued); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, page := get(t, client, "/jobs"); strings.Contains(page, `class="cpr-progress"`) {
+		t.Error("a finished job is still showing a progress bar")
+	}
+}
+
+// A late status line must not reopen a job that has already finished.
+func TestProgressOnAFinishedJobIsIgnored(t *testing.T) {
+	_, _, engine := newUI(t)
+
+	stored, err := engine.Store().PutJob(nodestore.Job{
+		Account: "customer1", Status: job.StatusSuccess, QueuedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Store().SetJobProgress(stored.ID, nodestore.JobProgress{Percent: 12}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := engine.Store().Job(stored.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Progress != nil {
+		t.Errorf("progress was written onto a finished job: %+v", after.Progress)
+	}
+}

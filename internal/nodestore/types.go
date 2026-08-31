@@ -78,9 +78,27 @@ type Job struct {
 	Status     job.Status  `json:"status"`
 	Targets    []JobTarget `json:"targets"`
 	StagingErr string      `json:"staging_error,omitempty"`
-	QueuedAt   time.Time   `json:"queued_at"`
-	StartedAt  *time.Time  `json:"started_at,omitempty"`
-	FinishedAt *time.Time  `json:"finished_at,omitempty"`
+	// Progress is what restic last reported about a running job. It is
+	// cleared when the job finishes: a percentage on a job that is over
+	// says nothing, and "100%" beside a failure would be a lie.
+	Progress   *JobProgress `json:"progress,omitempty"`
+	QueuedAt   time.Time    `json:"queued_at"`
+	StartedAt  *time.Time   `json:"started_at,omitempty"`
+	FinishedAt *time.Time   `json:"finished_at,omitempty"`
+}
+
+// JobProgress is how far a running backup has got.
+type JobProgress struct {
+	// Percent is 0-100, as restic reports it.
+	Percent    float64 `json:"percent"`
+	BytesDone  uint64  `json:"bytes_done"`
+	TotalBytes uint64  `json:"total_bytes"`
+	FilesDone  uint64  `json:"files_done"`
+	TotalFiles uint64  `json:"total_files"`
+	// Repository names which copy is being written, since a job uploads
+	// the same payload to every destination in turn.
+	Repository string    `json:"repository,omitempty"`
+	At         time.Time `json:"at"`
 }
 
 // JobTarget is one repository's outcome within a job.

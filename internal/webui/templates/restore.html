@@ -184,7 +184,7 @@
   {{if $data.Restores}}
   <div class="cpr-tablewrap"><table>
     <thead><tr><th>When</th><th>Account</th><th>Kind</th><th>Result</th><th>Where it went</th></tr></thead>
-    <tbody>
+    <tbody data-live="restores">
     {{range $data.Restores}}
     <tr class="cpr-state {{template "runstripe" .Status}}" {{if not .Status.Terminal}}data-running="1"{{end}}>
       <td style="white-space:nowrap">{{stamp .QueuedAt}}</td>

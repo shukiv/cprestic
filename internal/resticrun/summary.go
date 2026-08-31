@@ -2,6 +2,7 @@ package resticrun
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -111,4 +112,51 @@ func isStackFrame(line []byte) bool {
 	return bytes.HasPrefix(trimmed, []byte("runtime.")) ||
 		bytes.HasPrefix(trimmed, []byte("main.init")) ||
 		bytes.HasPrefix(trimmed, []byte("github.com/restic/restic/"))
+}
+
+// Progress is restic's account of a backup while it is still running.
+//
+// restic prints one of these per second on the "backup --json" stream. It
+// is what the interface shows instead of an unmoving "Running" pill: a
+// nightly run of a large account takes long enough that "is it stuck?" is
+// a fair question to ask of it.
+type Progress struct {
+	PercentDone    float64 `json:"percent_done"`
+	TotalFiles     uint64  `json:"total_files"`
+	FilesDone      uint64  `json:"files_done"`
+	TotalBytes     uint64  `json:"total_bytes"`
+	BytesDone      uint64  `json:"bytes_done"`
+	SecondsElapsed float64 `json:"seconds_elapsed"`
+	// CurrentFiles is what restic is reading right now. Kept out of the
+	// interface: an operator watching a backup does not need to be told
+	// which of an account's files is open at this instant, and a path can
+	// be a customer's private business.
+	CurrentFiles []string `json:"current_files,omitempty"`
+}
+
+// progressReader turns restic's status lines into Progress calls. It
+// returns nil when nobody is listening, so nothing is parsed for a caller
+// that does not want it.
+func progressReader(onProgress func(Progress)) func([]byte) {
+	if onProgress == nil {
+		return nil
+	}
+	return func(line []byte) {
+		if len(line) == 0 || line[0] != '{' {
+			return
+		}
+		var probe struct {
+			MessageType string `json:"message_type"`
+		}
+		if err := json.Unmarshal(line, &probe); err != nil || probe.MessageType != "status" {
+			return
+		}
+		var progress Progress
+		if err := json.Unmarshal(line, &progress); err != nil {
+			// A status line this program cannot read is not worth failing
+			// a backup over; the summary is what the job is judged on.
+			return
+		}
+		onProgress(progress)
+	}
 }

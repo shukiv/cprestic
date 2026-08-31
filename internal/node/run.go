@@ -190,6 +190,10 @@ func (e *Engine) runBackup(ctx context.Context, stored nodestore.Job) error {
 	}
 
 	stored.Status = job.Rollup(results)
+	// A percentage on a finished job says nothing, and "100%" beside a
+	// failure would be a lie.
+	stored.Progress = nil
+	e.forgetProgress(stored.ID)
 	finished := time.Now().UTC()
 	stored.FinishedAt = &finished
 	if _, err := e.store.PutJob(stored); err != nil {
@@ -202,6 +206,8 @@ func (e *Engine) runBackup(ctx context.Context, stored nodestore.Job) error {
 
 func (e *Engine) failJob(stored nodestore.Job, reason string) error {
 	stored.Status = job.StatusFailed
+	stored.Progress = nil
+	e.forgetProgress(stored.ID)
 	stored.StagingErr = reason
 	finished := time.Now().UTC()
 	stored.FinishedAt = &finished

@@ -8,13 +8,13 @@
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Backups</h2></div>
   {{if $data.Jobs}}
   <div class="cpr-tablewrap"><table>
-    <thead><tr><th>When</th><th>Account</th><th>Result</th><th>Copies</th><th>Stored</th></tr></thead>
-    <tbody>
+    <thead><tr><th>When</th><th>Account</th><th>Result</th><th>Copies</th><th>Stored</th><th class="cpr-right">&nbsp;</th></tr></thead>
+    <tbody data-live="backups">
     {{range $data.Jobs}}
     <tr class="cpr-state {{template "runstripe" .Status}}" {{if not .Status.Terminal}}data-running="1"{{end}}>
       <td style="white-space:nowrap">{{stamp .QueuedAt}}</td>
       <td class="cpr-acct">{{.Account}}</td>
-      <td>{{template "runstate" .Status}}</td>
+      <td>{{template "runstate" .Status}}{{template "jobprogress" .}}</td>
       <td>
         {{range .Targets}}
           {{$name := index $data.Destination .RepositoryID}}
@@ -31,29 +31,50 @@
         <div>{{bytes .BytesAdded}} new of {{bytes .BytesProcessed}}</div>
         {{end}}{{end}}
       </td>
-    </tr>
-    {{$job := .}}
-    {{range .Targets}}{{if or .Detail .SnapshotID}}
-    <tr class="cpr-detailrow">
-      <td colspan="5">
-        <details>
-          <summary>What restic reported for {{$job.Account}}{{with index $data.Destination .RepositoryID}} → {{.}}{{end}}</summary>
-          {{if .SnapshotID}}<p class="cpr-hint">Snapshot <span class="cpr-mono">{{short .SnapshotID}}</span>
-            · took {{printf "%.0f" .DurationSecs}}s</p>{{end}}
-          {{if .Detail}}<pre class="cpr-log">{{.Detail}}</pre>
-          {{else}}<p class="cpr-hint">restic reported nothing beyond the summary.</p>{{end}}
-          {{if .Incomplete}}
-          <p class="cpr-hint">Files that vanish or cannot be read mid-backup are normal on a
-          live server — sessions, sockets, caches. What matters is whether anything above
-          is a file the site actually needs.</p>
-          {{end}}
-        </details>
+      <td class="cpr-right">
+        {{$reportable := false}}
+        {{range .Targets}}{{if or .Detail .SnapshotID}}{{$reportable = true}}{{end}}{{end}}
+        {{if $reportable}}<div class="cpr-actions">
+          <button type="button" class="cpr-btn cpr-quiet" data-dialog="report-{{.ID}}">Report</button>
+        </div>{{end}}
       </td>
     </tr>
-    {{end}}{{end}}
     {{end}}
     </tbody>
   </table></div>
+
+  {{range $data.Jobs}}
+  {{$job := .}}
+  {{$reportable := false}}
+  {{range .Targets}}{{if or .Detail .SnapshotID}}{{$reportable = true}}{{end}}{{end}}
+  {{if $reportable}}
+  <dialog id="report-{{.ID}}" class="cpr-modal" aria-label="What restic reported for {{.Account}}">
+    <div class="cpr-modal-head">
+      <h2 style="margin:0">What restic reported for {{.Account}}</h2>
+      <button type="button" class="cpr-btn cpr-quiet" data-dialog-close aria-label="Close">✕</button>
+    </div>
+    <div class="cpr-modal-body">
+      {{range .Targets}}
+      {{$name := index $data.Destination .RepositoryID}}
+      <h3 class="cpr-statlabel" style="margin-top:var(--s4)">{{if $name}}{{$name}}{{else}}{{short .RepositoryID}}{{end}}</h3>
+      {{if .SnapshotID}}<p class="cpr-hint">Snapshot <span class="cpr-mono">{{short .SnapshotID}}</span>
+        · took {{printf "%.0f" .DurationSecs}}s{{if .BytesAdded}} · {{bytes .BytesAdded}} new of {{bytes .BytesProcessed}}{{end}}</p>{{end}}
+      {{if .Detail}}<pre class="cpr-log">{{.Detail}}</pre>
+      {{else}}<p class="cpr-hint">restic reported nothing beyond the summary.</p>{{end}}
+      {{if .Incomplete}}
+      <p class="cpr-hint">Files that vanish or cannot be read mid-backup are normal on a
+      live server — sessions, sockets, caches. What matters is whether anything above
+      is a file the site actually needs.</p>
+      {{end}}
+      {{end}}
+    </div>
+    <div class="cpr-modal-foot">
+      <button type="button" class="cpr-btn" data-dialog-close>Close</button>
+    </div>
+  </dialog>
+  {{end}}
+  {{end}}
+
   <div class="cpr-pad" style="border-top:1px solid var(--line)">
     <p class="cpr-hint" style="margin:0">"New" is what the backup actually cost in storage. On an
     unchanged account it should be a small fraction of what was read.</p>
@@ -66,7 +87,7 @@
   {{if $data.Restores}}
   <div class="cpr-tablewrap"><table>
     <thead><tr><th>When</th><th>Account</th><th>What</th><th>Result</th><th>Detail</th></tr></thead>
-    <tbody>
+    <tbody data-live="restores">
     {{range $data.Restores}}
     <tr class="cpr-state {{template "runstripe" .Status}}" {{if not .Status.Terminal}}data-running="1"{{end}}>
       <td style="white-space:nowrap">{{stamp .QueuedAt}}</td>

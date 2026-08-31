@@ -794,6 +794,9 @@ type accountView struct {
 	LastBackup *time.Time
 	LastStatus job.Status
 	Running    bool
+	// Progress is how far the running backup of this account has got,
+	// nil when nothing is running for it.
+	Progress *nodestore.JobProgress
 }
 
 // Stripe is the severity colour on the row's leading edge, so state reads
@@ -841,9 +844,13 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 
 	latest := map[string]nodestore.Job{}
 	running := map[string]bool{}
+	progress := map[string]*nodestore.JobProgress{}
 	for _, stored := range jobs {
 		if !stored.Status.Terminal() {
 			running[stored.Account] = true
+			if stored.Progress != nil {
+				progress[stored.Account] = stored.Progress
+			}
 			continue
 		}
 		if previous, seen := latest[stored.Account]; !seen || stored.QueuedAt.After(previous.QueuedAt) {
@@ -854,7 +861,11 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 	views := make([]accountView, 0, len(accounts))
 	var warnings []string
 	for _, account := range accounts {
-		view := accountView{AccountInfo: account, Running: running[account.User]}
+		view := accountView{
+			AccountInfo: account,
+			Running:     running[account.User],
+			Progress:    progress[account.User],
+		}
 		if last, seen := latest[account.User]; seen {
 			view.LastBackup = last.FinishedAt
 			view.LastStatus = last.Status

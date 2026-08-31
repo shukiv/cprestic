@@ -1,7 +1,7 @@
 {{/* Shared fragments used by more than one page. */}}
 
 {{define "accountstate"}}
-  {{if .Running}}<span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>Working</span>
+  {{if .Running}}<span class="cpr-pill cpr-warn"><span class="cpr-spin"></span>Working</span>
   {{else if not .LastBackup}}<span class="cpr-pill cpr-bad"><span class="cpr-dot"></span>No backup</span>
   {{else if eq (printf "%s" .LastStatus) "success"}}<span class="cpr-pill cpr-ok"><span class="cpr-dot"></span>Protected</span>
   {{else if eq (printf "%s" .LastStatus) "partial_success"}}<span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>Partial</span>
@@ -14,7 +14,7 @@
   {{if eq $s "success"}}<span class="cpr-pill cpr-ok"><span class="cpr-dot"></span>Success</span>
   {{else if eq $s "partial_success"}}<span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>Partial</span>
   {{else if eq $s "failed"}}<span class="cpr-pill cpr-bad"><span class="cpr-dot"></span>Failed</span>
-  {{else if eq $s "running"}}<span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>Running</span>
+  {{else if eq $s "running"}}<span class="cpr-pill cpr-warn"><span class="cpr-spin"></span>Running</span>
   {{else}}<span class="cpr-pill cpr-idle"><span class="cpr-dot"></span>{{$s}}</span>{{end}}
 {{end}}
 
@@ -28,3 +28,16 @@
 
 {{/* The severity colour for a row, from a run status. */}}
 {{define "runstripe"}}{{$s := printf "%s" .}}{{if eq $s "success"}}cpr-s-ok{{else if eq $s "failed"}}cpr-s-bad{{else}}cpr-s-warn{{end}}{{end}}
+
+{{/* How far a running job has got. Nothing is shown for a job that has
+     finished: a percentage then says nothing, and restic reports no
+     progress at all until it has scanned what it is about to read. */}}
+{{define "jobprogress"}}
+  {{with .Progress}}
+  <div class="cpr-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+       aria-valuenow="{{printf "%.0f" .Percent}}" aria-label="backup progress">
+    <i style="{{barwidth .Percent}}"></i>
+  </div>
+  <div class="cpr-sublabel">{{percent .Percent}}{{if .TotalBytes}} · {{bytes .BytesDone}} of {{bytes .TotalBytes}}{{end}}</div>
+  {{end}}
+{{end}}

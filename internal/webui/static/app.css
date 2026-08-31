@@ -392,3 +392,46 @@
 .cprest form * + fieldset { margin-top:var(--s4); }
 .cprest form .cpr-grid2 > div > label:first-child,
 .cprest form .cpr-grid3 > div > label:first-child { margin-top:0; }
+
+/* --- work in progress ------------------------------------------------ */
+/* A backup of a large account takes minutes. A pill that never changes
+   cannot be told apart from a wedged one, so a running job spins and says
+   how far it has got. */
+.cprest .cpr-spin {
+  width:9px; height:9px; flex:none; border-radius:50%;
+  border:1.5px solid currentColor; border-top-color:transparent;
+  animation:cpr-spin .7s linear infinite;
+}
+@keyframes cpr-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) {
+  .cprest .cpr-spin { animation:none; opacity:.6; }
+}
+
+/* Named for what it is, not what it looks like: .cpr-bar is already the
+   app bar at the top of every page. */
+.cprest .cpr-progress {
+  display:block; height:4px; margin:6px 0 2px; width:120px; max-width:100%;
+  background:var(--line); border-radius:99px; overflow:hidden;
+}
+.cprest .cpr-progress i { display:block; height:100%; background:var(--accent); transition:width .4s ease; }
+
+/* --- report modal ---------------------------------------------------- */
+/* restic's account of a run is long and only wanted occasionally, so it
+   sits behind a button rather than under every row. */
+.cprest .cpr-modal {
+  padding:0; border:1px solid var(--line-strong); border-radius:var(--r);
+  background:var(--surface); color:var(--ink); box-shadow:var(--shadow);
+  width:min(820px, 92vw); max-height:82vh; overflow:hidden;
+}
+.cprest .cpr-modal::backdrop { background:rgba(10,14,20,.5); }
+.cprest .cpr-modal-head {
+  display:flex; align-items:center; justify-content:space-between; gap:var(--s3);
+  padding:var(--s3) var(--s4); border-bottom:1px solid var(--line);
+}
+.cprest .cpr-modal-head h2 { font-size:14px; text-transform:none; letter-spacing:0; color:var(--ink); }
+.cprest .cpr-modal-body { padding:var(--s4); overflow:auto; max-height:60vh; }
+.cprest .cpr-modal-body .cpr-log { max-height:none; }
+.cprest .cpr-modal-foot {
+  display:flex; justify-content:flex-end; padding:var(--s3) var(--s4);
+  border-top:1px solid var(--line); background:var(--surface-2);
+}

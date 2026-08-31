@@ -70,7 +70,7 @@ func (r *Runner) Snapshots(ctx context.Context, repo Repository, filter Snapshot
 		args = append(args, "--latest", fmt.Sprint(filter.Latest))
 	}
 
-	result, err := r.run(ctx, repo, args, secondary{})
+	result, err := r.run(ctx, repo, args, secondary{}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func (r *Runner) Restore(ctx context.Context, repo Repository, spec RestoreSpec)
 	if err != nil {
 		return RestoreResult{}, err
 	}
-	result, err := r.run(ctx, repo, args, secondary{})
+	result, err := r.run(ctx, repo, args, secondary{}, nil)
 	if err != nil {
 		return RestoreResult{}, err
 	}
@@ -199,7 +199,7 @@ func (r *Runner) Ls(ctx context.Context, repo Repository, snapshotID string, sub
 	}
 	args := append([]string{"ls", "--json", snapshotID}, subpaths...)
 
-	result, err := r.run(ctx, repo, args, secondary{})
+	result, err := r.run(ctx, repo, args, secondary{}, nil)
 	if err != nil {
 		return nil, err
 	}

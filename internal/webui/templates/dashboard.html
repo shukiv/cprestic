@@ -75,9 +75,9 @@
   <div class="cpr-tablewrap">
     <table>
       <thead><tr><th>Account</th><th>Last backup</th><th>State</th><th class="cpr-right">&nbsp;</th></tr></thead>
-      <tbody>
+      <tbody data-live="attention">
         {{range $d.Attention}}
-        <tr class="cpr-state {{.Stripe}}">
+        <tr class="cpr-state {{.Stripe}}" {{if .Running}}data-running="1"{{end}}>
           <td class="cpr-acct"><a class="cpr-link" href="?p=account&amp;user={{.User}}">{{.User}}</a>
             {{if .PrimaryDomain}}<div class="cpr-sublabel">{{.PrimaryDomain}}</div>{{end}}</td>
           <td>{{if .LastBackup}}{{ago .LastBackup}}{{else}}<span class="cpr-mono">never</span>{{end}}</td>

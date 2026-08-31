@@ -39,14 +39,14 @@
       <thead>
         <tr><th>Account</th><th>Size</th><th>Last backup</th><th>State</th><th class="cpr-right">&nbsp;</th></tr>
       </thead>
-      <tbody>
+      <tbody data-live="accounts">
         {{range $d.Accounts}}
-        <tr class="cpr-state {{.Stripe}}" data-name="{{.User}} {{.PrimaryDomain}}" data-state="{{.Filter}}">
+        <tr class="cpr-state {{.Stripe}}" data-name="{{.User}} {{.PrimaryDomain}}" data-state="{{.Filter}}" {{if .Running}}data-running="1"{{end}}>
           <td class="cpr-acct"><a class="cpr-link" href="?p=account&amp;user={{.User}}">{{.User}}</a>
             {{if .PrimaryDomain}}<div class="cpr-sublabel">{{.PrimaryDomain}}</div>{{end}}</td>
           <td class="cpr-mono cpr-num">{{if .SizeBytes}}{{bytes .SizeBytes}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
           <td>{{if .LastBackup}}{{ago .LastBackup}}{{else}}<span class="cpr-mono">never</span>{{end}}</td>
-          <td>{{template "accountstate" .}}</td>
+          <td>{{template "accountstate" .}}{{template "jobprogress" .}}</td>
           <td class="cpr-right"><div class="cpr-actions">
             <form method="post" action="?p=accounts/backup" class="cpr-inline">
               <input type="hidden" name="csrf" value="{{$.CSRF}}">

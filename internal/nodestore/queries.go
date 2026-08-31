@@ -321,6 +321,26 @@ func (s *Store) PutJob(j Job) (Job, error) {
 }
 
 // Job reads one job.
+// SetJobProgress records how far a running job has got.
+//
+// It is a read-modify-write of one record rather than a field update,
+// which bbolt has no notion of. Progress arrives about once a second per
+// job and the caller throttles it further, so this stays cheap. A job that
+// has already finished is left alone: a late status line must not reopen
+// a closed record.
+func (s *Store) SetJobProgress(id string, progress JobProgress) error {
+	stored, err := s.Job(id)
+	if err != nil {
+		return err
+	}
+	if stored.Status.Terminal() {
+		return nil
+	}
+	stored.Progress = &progress
+	_, err = s.PutJob(stored)
+	return err
+}
+
 func (s *Store) Job(id string) (Job, error) {
 	var j Job
 	if err := s.get(bucketJobs, id, &j); err != nil {

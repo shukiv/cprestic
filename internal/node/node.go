@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/shuki/cprest/internal/agent"
@@ -35,8 +36,13 @@ type Engine struct {
 	provider cpanel.Provider
 	runner   *resticrun.Runner
 	worker   *agent.Agent
-	staging  *staging.Manager
-	log      *slog.Logger
+
+	// progressMu guards lastProgress, which throttles how often a running
+	// job's percentage is written.
+	progressMu   sync.Mutex
+	lastProgress map[string]progressMark
+	staging      *staging.Manager
+	log          *slog.Logger
 
 	settings nodestore.Settings
 }
@@ -104,8 +110,12 @@ func New(cfg Config) (*Engine, error) {
 	engine := &Engine{
 		store: cfg.Store, vault: cfg.Vault, provider: cfg.Provider,
 		runner: runner, worker: worker, staging: stagingManager,
-		log: log, settings: settings,
+		log: log, settings: settings, lastProgress: map[string]progressMark{},
 	}
+	// A backup of a large account takes minutes, and an operator watching
+	// it deserves to see it move. restic reports about once a second per
+	// repository; the engine writes far less often than that.
+	worker.OnProgress = engine.recordProgress
 	if err := engine.RecoverFromRestart(); err != nil {
 		return nil, err
 	}
@@ -412,3 +422,64 @@ func (e *Engine) SaveDestination(dest nodestore.Destination) error {
 // KindVerify is a restore that is rehearsed and thrown away: it proves the
 // backup can be rebuilt without touching the account or keeping anything.
 const KindVerify = "verify"
+
+// progressFloor is how much has to change before a running job's progress
+// is written again: a percentage point, or two seconds. restic reports
+// once a second per repository and a fleet backup runs several at once, so
+// writing every line would rewrite the same record for no visible gain.
+const (
+	progressFloor    = 1.0
+	progressInterval = 2 * time.Second
+)
+
+// recordProgress stores how far a running backup has got.
+//
+// It is called from the goroutine reading restic's output, so it holds its
+// own lock, keeps the work small, and never fails the backup: a job that
+// cannot write its progress is still a job that is running.
+func (e *Engine) recordProgress(jobID, repositoryID string, progress resticrun.Progress) {
+	percent := progress.PercentDone * 100
+	if percent > 100 {
+		percent = 100
+	}
+
+	e.progressMu.Lock()
+	last, seen := e.lastProgress[jobID]
+	now := time.Now()
+	if seen && percent-last.percent < progressFloor && now.Sub(last.at) < progressInterval {
+		e.progressMu.Unlock()
+		return
+	}
+	if e.lastProgress == nil {
+		e.lastProgress = map[string]progressMark{}
+	}
+	e.lastProgress[jobID] = progressMark{percent: percent, at: now}
+	e.progressMu.Unlock()
+
+	err := e.store.SetJobProgress(jobID, nodestore.JobProgress{
+		Percent:    percent,
+		BytesDone:  progress.BytesDone,
+		TotalBytes: progress.TotalBytes,
+		FilesDone:  progress.FilesDone,
+		TotalFiles: progress.TotalFiles,
+		Repository: repositoryID,
+		At:         now.UTC(),
+	})
+	if err != nil {
+		e.log.Debug("record backup progress", "job_id", jobID, "error", err)
+	}
+}
+
+// forgetProgress drops what was remembered about a job that has finished,
+// so the map does not grow for the life of the process.
+func (e *Engine) forgetProgress(jobID string) {
+	e.progressMu.Lock()
+	delete(e.lastProgress, jobID)
+	e.progressMu.Unlock()
+}
+
+// progressMark is the last progress written for one job.
+type progressMark struct {
+	percent float64
+	at      time.Time
+}

@@ -80,28 +80,43 @@
 <div class="cpr-card">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Activity</h2></div>
   {{if $d.Activity}}
-  <div class="cpr-tablewrap"><table><tbody>
-    {{range $d.Activity}}
-    <tr class="cpr-state {{.Stripe}}">
-      <td style="width:150px; white-space:nowrap">{{stamp .When}}</td>
-      <td style="white-space:nowrap">{{.What}}</td>
-      <td>{{template "runstate" .Status}}</td>
+  <div class="cpr-tablewrap"><table><tbody data-live="activity">
+    {{range $i, $row := $d.Activity}}
+    <tr class="cpr-state {{$row.Stripe}}" {{if not $row.Status.Terminal}}data-running="1"{{end}}>
+      <td style="width:150px; white-space:nowrap">{{stamp $row.When}}</td>
+      <td style="white-space:nowrap">{{$row.What}}</td>
+      <td>{{template "runstate" $row.Status}}</td>
       <td>
-        {{if .Note}}<div style="font-size:13px">{{.Note}}</div>{{end}}
-        {{if .Download}}<a class="cpr-btn" href="?p=download&amp;id={{.Download}}">Download</a>{{end}}
-        {{if .Log}}
-        <details>
-          <summary>What restic reported</summary>
-          <div class="cpr-log">{{.Log}}</div>
-          {{if .Incomplete}}<p class="cpr-hint">Files that vanish mid-backup are normal on a live
-            server — sessions, sockets, caches. What matters is whether anything above is a file
-            the site actually needs.</p>{{end}}
-        </details>
-        {{end}}
+        {{if $row.Note}}<div style="font-size:13px">{{$row.Note}}</div>{{end}}
       </td>
+      <td class="cpr-right"><div class="cpr-actions">
+        {{if $row.Download}}<a class="cpr-btn" href="?p=download&amp;id={{$row.Download}}">Download</a>{{end}}
+        {{if $row.Log}}<button type="button" class="cpr-btn cpr-quiet"
+          data-dialog="activity-{{$i}}">Report</button>{{end}}
+      </div></td>
     </tr>
     {{end}}
   </tbody></table></div>
+
+  {{range $i, $row := $d.Activity}}
+  {{if $row.Log}}
+  <dialog id="activity-{{$i}}" class="cpr-modal" aria-label="What restic reported">
+    <div class="cpr-modal-head">
+      <h2 style="margin:0">{{$row.What}} · {{stamp $row.When}}</h2>
+      <button type="button" class="cpr-btn cpr-quiet" data-dialog-close aria-label="Close">✕</button>
+    </div>
+    <div class="cpr-modal-body">
+      <pre class="cpr-log">{{$row.Log}}</pre>
+      {{if $row.Incomplete}}<p class="cpr-hint">Files that vanish mid-backup are normal on a live
+        server — sessions, sockets, caches. What matters is whether anything above is a file
+        the site actually needs.</p>{{end}}
+    </div>
+    <div class="cpr-modal-foot">
+      <button type="button" class="cpr-btn" data-dialog-close>Close</button>
+    </div>
+  </dialog>
+  {{end}}
+  {{end}}
   {{else}}
   <div class="cpr-empty"><p>Nothing has run for this account yet.</p></div>
   {{end}}

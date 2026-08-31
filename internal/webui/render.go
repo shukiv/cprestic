@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -106,7 +107,24 @@ func flashFrom(r *http.Request) *flash {
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
 		"bytes": humanBytes,
-		"ago":   humanAgo,
+		// barwidth is the CSS for a progress bar's filled part. It is
+		// built here rather than interpolated in the template so the
+		// value is a number this program produced, not markup.
+		"barwidth": func(percent float64) template.CSS {
+			switch {
+			case percent < 0:
+				percent = 0
+			case percent > 100:
+				percent = 100
+			}
+			return template.CSS(fmt.Sprintf("width:%.1f%%", percent))
+		},
+		"percent": func(value float64) string {
+			// Half rounds up: 42.5% reads as 43%, not 42%, which is what
+			// anyone watching a bar expects of the number beside it.
+			return fmt.Sprintf("%.0f%%", math.Round(value))
+		},
+		"ago": humanAgo,
 		"stamp": func(t time.Time) string {
 			if t.IsZero() {
 				return "never"

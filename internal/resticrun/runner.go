@@ -75,7 +75,7 @@ func (r *Runner) Backup(ctx context.Context, repo Repository, spec BackupSpec) (
 	if err != nil {
 		return BackupResult{}, err
 	}
-	result, err := r.run(ctx, repo, args, secondary{})
+	result, err := r.run(ctx, repo, args, secondary{}, progressReader(spec.OnProgress))
 	if err != nil {
 		return BackupResult{}, err
 	}
@@ -143,7 +143,7 @@ func (r *Runner) Init(ctx context.Context, repo Repository, chunkerSource *Repos
 		}
 	}
 
-	result, err := r.run(ctx, repo, InitArgs(sourceURI), extra)
+	result, err := r.run(ctx, repo, InitArgs(sourceURI), extra, nil)
 	if err != nil {
 		return err
 	}
@@ -165,7 +165,7 @@ func (r *Runner) Check(ctx context.Context, repo Repository, spec CheckSpec) err
 	if err != nil {
 		return err
 	}
-	result, err := r.run(ctx, repo, args, secondary{})
+	result, err := r.run(ctx, repo, args, secondary{}, nil)
 	if err != nil {
 		return err
 	}
@@ -182,7 +182,7 @@ func (r *Runner) Forget(ctx context.Context, repo Repository, spec ForgetSpec) e
 	if err != nil {
 		return err
 	}
-	result, err := r.run(ctx, repo, args, secondary{})
+	result, err := r.run(ctx, repo, args, secondary{}, nil)
 	if err != nil {
 		return err
 	}
@@ -194,7 +194,7 @@ func (r *Runner) Forget(ctx context.Context, repo Repository, spec ForgetSpec) e
 //
 // extra carries the settings of a second repository opened in the same
 // invocation, as "restic init --from-repo" needs.
-func (r *Runner) run(ctx context.Context, repo Repository, args []string, extra secondary) (CommandResult, error) {
+func (r *Runner) run(ctx context.Context, repo Repository, args []string, extra secondary, onLine func([]byte)) (CommandResult, error) {
 	if repo.Dest == nil {
 		return CommandResult{}, fmt.Errorf("resticrun: repository has no destination")
 	}
@@ -257,9 +257,10 @@ func (r *Runner) run(ctx context.Context, repo Repository, args []string, extra 
 		globals = append(globals, "--cacert", r.cfg.CACertPath)
 	}
 	return r.exec.Exec(ctx, Command{
-		Path: r.binary(),
-		Args: append(globals, args...),
-		Env:  envSlice(env),
+		Path:   r.binary(),
+		Args:   append(globals, args...),
+		Env:    envSlice(env),
+		OnLine: onLine,
 	})
 }
 

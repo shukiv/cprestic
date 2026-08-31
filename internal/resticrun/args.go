@@ -19,6 +19,11 @@ type BackupSpec struct {
 	Exclude []string
 	// LimitUploadKiB throttles upload bandwidth. Zero means unlimited.
 	LimitUploadKiB int
+	// OnProgress, when set, is called as restic reports progress. It is
+	// called from the goroutine reading restic's output, so an
+	// implementation must be quick and safe to call concurrently with the
+	// rest of the program.
+	OnProgress func(Progress)
 }
 
 // ForgetSpec describes a retention run. It is executed by the maintenance

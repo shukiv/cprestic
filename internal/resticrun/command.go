@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os/exec"
 )
 
@@ -22,6 +23,11 @@ type Command struct {
 	// /proc/<pid>/cmdline is world-readable.
 	Env []string
 	Dir string
+	// OnLine, when set, is called with each complete line of stdout as it
+	// arrives. restic reports backup progress as one JSON object per line,
+	// and an operator watching a five-minute upload should not have to
+	// wait for the summary to know it is moving.
+	OnLine func(line []byte)
 }
 
 // CommandResult is the outcome of an invocation that actually ran. A
@@ -65,7 +71,11 @@ func (o *OSExec) Exec(ctx context.Context, cmd Command) (CommandResult, error) {
 	c.Dir = cmd.Dir
 
 	var stdout, stderr bytes.Buffer
-	c.Stdout = &cappedWriter{buf: &stdout, limit: limit}
+	var out io.Writer = &cappedWriter{buf: &stdout, limit: limit}
+	if cmd.OnLine != nil {
+		out = io.MultiWriter(out, &lineWriter{emit: cmd.OnLine})
+	}
+	c.Stdout = out
 	c.Stderr = &cappedWriter{buf: &stderr, limit: limit}
 
 	err := c.Run()
@@ -103,4 +113,42 @@ func (w *cappedWriter) Write(p []byte) (int, error) {
 	// Always report a full write: truncation is intentional and must not
 	// look like a broken pipe to the child process.
 	return len(p), nil
+}
+
+// lineWriter calls emit once per complete line written through it.
+//
+// A partial line is held until the rest arrives, so a caller parsing JSON
+// never sees half an object. Anything left unterminated when the process
+// exits is dropped: restic's last line is the summary, which is read from
+// the captured output rather than from here.
+type lineWriter struct {
+	emit    func(line []byte)
+	pending []byte
+}
+
+// maxPendingLine bounds the held partial line, so output with no newline
+// at all cannot grow without limit.
+const maxPendingLine = 1 << 20
+
+func (w *lineWriter) Write(p []byte) (int, error) {
+	written := len(p)
+	for len(p) > 0 {
+		newline := bytes.IndexByte(p, '\n')
+		if newline < 0 {
+			if len(w.pending)+len(p) <= maxPendingLine {
+				w.pending = append(w.pending, p...)
+			}
+			return written, nil
+		}
+		line := p[:newline]
+		if len(w.pending) > 0 {
+			line = append(w.pending, line...)
+			w.pending = w.pending[:0]
+		}
+		if len(line) > 0 {
+			w.emit(line)
+		}
+		p = p[newline+1:]
+	}
+	return written, nil
 }
