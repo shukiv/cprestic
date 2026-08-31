@@ -97,9 +97,11 @@
       <td>
         {{if .Detail}}<div class="cpr-mono" style="font-size:12px; color:var(--muted)">{{.Detail}}</div>{{end}}
         {{if .Error}}<div style="font-size:13px">{{.Error}}</div>
-        {{else if .ArchivePath}}
+        {{else if .Collectable}}
           <a class="cpr-btn" href="?p=download&amp;id={{.ID}}">Download</a>
           <div class="cpr-sublabel cpr-mono">{{.ArchivePath}}</div>
+        {{else if .ArchivePath}}
+          <div class="cpr-sublabel">no longer on this server</div>
         {{else}}<span class="cpr-mono" style="font-size:12px; color:var(--muted)">{{.RestoredTo}}</span>{{end}}
       </td>
     </tr>

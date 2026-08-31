@@ -1223,3 +1223,80 @@ func TestProgressOnAFinishedJobIsIgnored(t *testing.T) {
 		t.Errorf("progress was written onto a finished job: %+v", after.Progress)
 	}
 }
+
+// A download button that leads to a file which is no longer on the server
+// is worse than no button: it offers the operator their data and then
+// fails. Whether the archive still exists is checked when the page is
+// rendered.
+func TestADownloadIsOnlyOfferedWhileTheArchiveExists(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	archive := filepath.Join(t.TempDir(), "cpmove-customer1.tar")
+	if err := os.WriteFile(archive, []byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := engine.Store().PutRestore(nodestore.Restore{
+		Account: "customer1", Kind: "account", Status: job.StatusSuccess,
+		ArchivePath: archive, QueuedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, page := get(t, client, "/jobs"); !strings.Contains(page, "?p=download&amp;id="+stored.ID) {
+		t.Error("a collectable archive is not offered for download")
+	}
+
+	if err := os.Remove(archive); err != nil {
+		t.Fatal(err)
+	}
+	_, page := get(t, client, "/jobs")
+	if strings.Contains(page, "?p=download&amp;id="+stored.ID) {
+		t.Error("a download is still offered for an archive that has been swept")
+	}
+	if !strings.Contains(page, "no longer on this server") {
+		t.Error("the page does not say what happened to it")
+	}
+}
+
+// Collected output can be deleted from the settings page, and that needs
+// the token like every other change.
+func TestCollectedOutputCanBeDeleted(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	root := engine.Settings().StagingRoot
+	kept := filepath.Join(root, "keep-restore-customer1")
+	if err := os.MkdirAll(kept, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kept, "cpmove.tar"), make([]byte, 1024), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/settings")
+	if !strings.Contains(page, "restore-customer1") {
+		t.Fatal("the settings page does not list what is waiting in the work directory")
+	}
+
+	refused, err := client.PostForm("http://ui/settings/output/delete", map[string][]string{
+		"key": {"restore-customer1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused.Body.Close()
+	if _, err := os.Stat(kept); err != nil {
+		t.Fatal("output was deleted without the token")
+	}
+
+	deleted, err := client.PostForm("http://ui/settings/output/delete", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "key": {"restore-customer1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleted.Body.Close()
+	if _, err := os.Stat(kept); !os.IsNotExist(err) {
+		t.Error("the output is still there after being deleted")
+	}
+}

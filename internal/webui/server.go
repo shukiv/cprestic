@@ -155,6 +155,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /jobs", s.handleJobs)
 	mux.HandleFunc("GET /settings", s.handleSettings)
 	mux.HandleFunc("POST /settings/save", s.guard(s.handleSaveSettings))
+	mux.HandleFunc("POST /settings/output/delete", s.guard(s.handleDeleteOutput))
+	mux.HandleFunc("POST /settings/output/clear", s.guard(s.handleClearOutput))
 
 	return s.recoverPanics(s.route(mux))
 }

@@ -193,9 +193,11 @@
       <td>{{template "runstate" .Status}}</td>
       <td>
         {{if .Detail}}<div class="cpr-mono" style="font-size:12px; color:var(--muted)">{{.Detail}}</div>{{end}}
-        {{if .ArchivePath}}
+        {{if .Collectable}}
           <a class="cpr-btn" href="?p=download&amp;id={{.ID}}">Download</a>
           <div class="cpr-sublabel cpr-mono">{{.ArchivePath}}</div>
+        {{else if .ArchivePath}}
+          <div class="cpr-sublabel">no longer on this server</div>
         {{else if .RestoredTo}}<span class="cpr-mono" style="font-size:12px; color:var(--muted)">{{.RestoredTo}}</span>
         {{else}}<span style="font-size:13px">{{.Error}}</span>{{end}}
       </td>

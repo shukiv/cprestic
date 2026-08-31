@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/node"
 	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shuki/cprest/internal/staging"
 	"github.com/shuki/cprest/internal/vault"
 )
 
@@ -309,5 +311,70 @@ func TestDrillRefusesWhenTheVolumeIsTooFull(t *testing.T) {
 		Account: "customer1", SnapshotID: "abc", Kind: node.KindVerify,
 	}); err == nil {
 		t.Error("a drill was queued while that account was already busy")
+	}
+}
+
+// Collected output is swept once nobody has come back for it, and work in
+// progress is never touched however old it looks.
+func TestSweepRemovesOldOutputAndLeavesWorkAlone(t *testing.T) {
+	root := t.TempDir()
+	store, err := nodestore.Open(filepath.Join(root, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	settings := nodestore.DefaultSettings()
+	settings.StagingRoot = filepath.Join(root, "staging")
+	settings.ResticCache = filepath.Join(root, "cache")
+	settings.ConfigDir = filepath.Join(root, "config")
+	if err := store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	engine := newEngine(t, store, root)
+
+	manager := &staging.Manager{Root: settings.StagingRoot, MaxConcurrent: 4}
+	old, err := manager.Allocate("restore-old", 1<<10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldOutput, err := manager.Retain(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := manager.Allocate("restore-fresh", 1<<10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	freshOutput, err := manager.Retain(fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	working, err := manager.Allocate("customer1", 1<<10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Only age decides, so the old one is aged rather than waited for.
+	longAgo := time.Now().Add(-30 * 24 * time.Hour)
+	if err := os.Chtimes(oldOutput.Path, longAgo, longAgo); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(working.Path, longAgo, longAgo); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := engine.SweepWorkdir(); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+
+	if _, err := os.Stat(oldOutput.Path); !os.IsNotExist(err) {
+		t.Error("output nobody collected is still there")
+	}
+	if _, err := os.Stat(freshOutput.Path); err != nil {
+		t.Error("output produced today was swept")
+	}
+	if _, err := os.Stat(working.Path); err != nil {
+		t.Error("a directory being worked in was swept")
 	}
 }

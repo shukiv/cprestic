@@ -47,7 +47,13 @@ func (a *Agent) RunRestore(ctx context.Context, assignment protocol.RestoreAssig
 	if estimate == 0 {
 		estimate = 1 << 20
 	}
+	// The key carries the kind as well as the account: a granular restore
+	// and a whole-account rebuild are different output, and one must not
+	// silently replace the other while somebody is downloading it.
 	stagingKey := "restore-" + assignment.CPanelUser
+	if assignment.Kind == protocol.RestoreItems {
+		stagingKey = "items-" + assignment.CPanelUser
+	}
 	// A previous restore of this account may have left its rebuilt archive
 	// here. This restore supersedes it, so the space is reclaimed rather
 	// than allowed to wedge every future restore of the account.

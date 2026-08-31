@@ -24,6 +24,7 @@ import (
 	"github.com/shuki/cprest/internal/protocol"
 	"github.com/shuki/cprest/internal/reassemble"
 	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shuki/cprest/internal/staging"
 )
 
 // --- dashboard ---
@@ -1084,8 +1085,12 @@ func (s *Server) handleAccount(w http.ResponseWriter, r *http.Request) {
 				row.What = "Restored over the live account"
 			}
 			if restore.ArchivePath != "" && !restore.Applied {
-				row.Download = restore.ID
-				row.Note = ""
+				if onDisk(restore.ArchivePath) {
+					row.Download = restore.ID
+					row.Note = ""
+				} else {
+					row.Note = "no longer on this server"
+				}
 			}
 		}
 		view.Activity = append(view.Activity, row)
@@ -1126,13 +1131,43 @@ func (s *Server) handleBackupNow(w http.ResponseWriter, r *http.Request) {
 
 // --- restore ---
 
+// restoreRow is a restore as the history shows it: the record, plus
+// whether what it produced is still on this server.
+//
+// Output does not live for ever — it is swept once nobody has collected
+// it, and a newer restore of the same account supersedes an older one — so
+// whether a download still works is a question about the disk, asked when
+// the page is rendered rather than assumed from the record.
+type restoreRow struct {
+	nodestore.Restore
+	Collectable bool
+}
+
+// collectableRows pairs each restore with the state of what it left behind.
+func collectableRows(restores []nodestore.Restore) []restoreRow {
+	rows := make([]restoreRow, 0, len(restores))
+	for _, restore := range restores {
+		rows = append(rows, restoreRow{
+			Restore:     restore,
+			Collectable: restore.ArchivePath != "" && onDisk(restore.ArchivePath),
+		})
+	}
+	return rows
+}
+
+// onDisk reports whether a path is still a readable file.
+func onDisk(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
 type restoreView struct {
 	Accounts     []accountView
 	Repositories []destinationView
 	Account      string
 	RepositoryID string
 	Snapshots    []resticrun.Snapshot
-	Restores     []nodestore.Restore
+	Restores     []restoreRow
 	LookupError  string
 
 	// Granular restore: which part of the account is being picked, from
@@ -1184,7 +1219,8 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	view := restoreView{
-		Accounts: accounts, Repositories: destinations, Restores: restores,
+		Accounts: accounts, Repositories: destinations,
+		Restores:     collectableRows(restores),
 		Account:      r.URL.Query().Get("account"),
 		RepositoryID: r.URL.Query().Get("repository"),
 	}
@@ -1514,9 +1550,9 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	s.render(w, r, "jobs.html", "History", "jobs", struct {
 		Jobs        []nodestore.Job
-		Restores    []nodestore.Restore
+		Restores    []restoreRow
 		Destination map[string]string
-	}{jobs, restores, names})
+	}{jobs, collectableRows(restores), names})
 }
 
 // --- settings ---
@@ -1527,10 +1563,63 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if info, err := os.Stat(settings.StagingRoot); err == nil && info.IsDir() {
 		free, _ = stagingFree(settings.StagingRoot)
 	}
+	outputs, err := s.engine.RetainedOutput()
+	if err != nil {
+		s.fail(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	var held uint64
+	for _, output := range outputs {
+		held += output.Bytes
+	}
+
 	s.render(w, r, "settings.html", "Settings", "settings", struct {
 		Settings    nodestore.Settings
 		StagingFree uint64
-	}{settings, free})
+		Outputs     []staging.Output
+		OutputBytes uint64
+		KeepDays    int
+	}{settings, free, outputs, held, keepDays(settings)})
+}
+
+// keepDays is the retention shown in the form, with the default spelt out
+// rather than left as a zero the operator has to interpret.
+func keepDays(settings nodestore.Settings) int {
+	if settings.KeepOutputDays == 0 {
+		return nodestore.DefaultKeepOutputDays
+	}
+	return settings.KeepOutputDays
+}
+
+// handleDeleteOutput removes one finished restore's files from the work
+// directory, when an operator has finished with them.
+func (s *Server) handleDeleteOutput(w http.ResponseWriter, r *http.Request) {
+	key := r.PostFormValue("key")
+	if err := s.engine.DeleteOutput(key); err != nil {
+		s.redirect(w, r, "/settings", "error", err.Error())
+		return
+	}
+	s.redirect(w, r, "/settings", "ok", "Removed. The backups themselves are untouched.")
+}
+
+// handleClearOutput empties the work directory of everything collected.
+func (s *Server) handleClearOutput(w http.ResponseWriter, r *http.Request) {
+	outputs, err := s.engine.RetainedOutput()
+	if err != nil {
+		s.redirect(w, r, "/settings", "error", err.Error())
+		return
+	}
+	var freed uint64
+	for _, output := range outputs {
+		if err := s.engine.DeleteOutput(output.Key); err != nil {
+			s.redirect(w, r, "/settings", "error", err.Error())
+			return
+		}
+		freed += output.Bytes
+	}
+	s.redirect(w, r, "/settings", "ok",
+		fmt.Sprintf("Removed %s of restored files. The backups themselves are untouched.",
+			humanBytes(freed)))
 }
 
 func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
@@ -1538,6 +1627,11 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	settings.MaxConcurrent = atoiOr(r.PostFormValue("max_concurrent"), 1)
 	settings.ResticBinary = strings.TrimSpace(r.PostFormValue("restic"))
 	settings.ResticCACert = strings.TrimSpace(r.PostFormValue("restic_cacert"))
+	// A restore's files are kept so they can be collected; this is how
+	// long before they are swept. Negative keeps them for ever, which is
+	// what this server did before it swept anything at all.
+	settings.KeepOutputDays = atoiOr(r.PostFormValue("keep_output_days"),
+		nodestore.DefaultKeepOutputDays)
 	if hostname := strings.TrimSpace(r.PostFormValue("hostname")); hostname != "" {
 		settings.Hostname = hostname
 	}

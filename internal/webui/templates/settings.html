@@ -30,6 +30,13 @@
         <input type="text" id="restic_cacert" name="restic_cacert" value="{{$data.Settings.ResticCACert}}">
         <small class="cpr-help">Only for a backup server with a private certificate authority.</small>
       </div>
+      <div>
+        <label for="keep_output_days">Keep restored files for</label>
+        <input type="number" id="keep_output_days" name="keep_output_days"
+               value="{{$data.KeepDays}}" min="-1">
+        <small class="cpr-help">Days. A restore leaves its files here to be collected;
+        after this they are swept. −1 keeps them until you delete them.</small>
+      </div>
     </div>
     <div class="cpr-row" style="margin-top:var(--s4)">
       <button class="cpr-btn cpr-primary" type="submit">Save</button>
@@ -47,6 +54,47 @@
   not editable here: the path is recorded inside every backup, and changing it would
   strand the retention rules that keep your old backups tidy.</p>
   </div>
+</div>
+
+<div class="cpr-card">
+  <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
+    <h2 style="margin:0">Restored files waiting to be collected</h2>
+    <span class="cpr-hint" style="margin:0">{{bytes $data.OutputBytes}} in <span class="cpr-mono">{{$data.Settings.StagingRoot}}</span></span>
+  </div>
+  {{if $data.Outputs}}
+  <div class="cpr-tablewrap"><table>
+    <thead><tr><th>What</th><th>Size</th><th>Produced</th><th class="cpr-right">&nbsp;</th></tr></thead>
+    <tbody>
+      {{range $data.Outputs}}
+      <tr>
+        <td class="cpr-acct">{{.Key}}</td>
+        <td class="cpr-mono cpr-num">{{bytes .Bytes}}</td>
+        <td>{{stamp .At}}<div class="cpr-sublabel">{{ago .At}}</div></td>
+        <td class="cpr-right"><div class="cpr-actions">
+          <form method="post" action="?p=settings/output/delete" class="cpr-inline"
+                data-confirm="Delete these restored files? The backups they came from are untouched.">
+            <input type="hidden" name="csrf" value="{{$.CSRF}}">
+            <input type="hidden" name="key" value="{{.Key}}">
+            <button class="cpr-btn cpr-danger">Delete</button>
+          </form>
+        </div></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table></div>
+  <div class="cpr-pad cpr-spread" style="border-top:1px solid var(--line)">
+    <p class="cpr-hint" style="margin:0">A restore leaves what it recovered here so you can
+    collect it. Deleting it here removes only the recovered copy.</p>
+    <form method="post" action="?p=settings/output/clear" class="cpr-inline"
+          data-confirm="Delete every restored file waiting here? The backups themselves are untouched.">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}">
+      <button class="cpr-btn cpr-danger">Delete all</button>
+    </form>
+  </div>
+  {{else}}
+  <div class="cpr-pad"><p class="cpr-hint">Nothing waiting. A restore leaves its files here
+  until you collect them, or until they are swept.</p></div>
+  {{end}}
 </div>
 
 <div class="cpr-card">

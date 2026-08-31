@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // Manager allocates and reclaims staging directories under one root.
@@ -144,6 +146,62 @@ func (m *Manager) list(includeRetained bool) ([]Dir, error) {
 		}
 	}
 	return dirs, nil
+}
+
+// Output is finished work kept for collection: a rebuilt archive, or what
+// a granular restore recovered.
+type Output struct {
+	Dir
+	// Bytes is what it occupies. Measured rather than recorded: the
+	// operator is deciding whether to delete it, and a stale number is
+	// worse than none.
+	Bytes uint64
+	// At is when the output was produced. Retaining renames the
+	// directory, which leaves its modification time alone.
+	At time.Time
+}
+
+// Retained lists finished output, newest first, with what each costs.
+func (m *Manager) Retained() ([]Output, error) {
+	dirs, err := m.list(true)
+	if err != nil {
+		return nil, err
+	}
+	var outputs []Output
+	for _, dir := range dirs {
+		if !dir.Retained {
+			continue
+		}
+		info, err := os.Stat(dir.Path)
+		if err != nil {
+			return nil, fmt.Errorf("staging: stat %s: %w", dir.Path, err)
+		}
+		size, err := treeBytes(dir.Path)
+		if err != nil {
+			return nil, err
+		}
+		outputs = append(outputs, Output{Dir: dir, Bytes: size, At: info.ModTime()})
+	}
+	sort.Slice(outputs, func(i, j int) bool { return outputs[i].At.After(outputs[j].At) })
+	return outputs, nil
+}
+
+// treeBytes is what a directory occupies, following no symlinks.
+func treeBytes(root string) (uint64, error) {
+	var total uint64
+	err := filepath.Walk(root, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode().IsRegular() {
+			total += uint64(info.Size())
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("staging: measure %s: %w", root, err)
+	}
+	return total, nil
 }
 
 // Retain marks a finished directory as output to be collected, so it stops

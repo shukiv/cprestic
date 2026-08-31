@@ -189,6 +189,43 @@ func (e *Engine) RecoverFromRestart() error {
 	if interrupted > 0 {
 		e.log.Warn("marked interrupted work as failed", "count", interrupted)
 	}
+	if err := e.SweepWorkdir(); err != nil {
+		e.log.Error("sweep the work directory", "error", err)
+	}
+	return nil
+}
+
+// SweepWorkdir removes collected output nobody came back for.
+//
+// A restore leaves its result in the work directory on purpose: it is
+// there to be downloaded, and it survives a restart. Nothing expired it,
+// so a server where every account had been restored once kept every one of
+// those trees for ever, on a disk that also has to hold tonight's backup.
+//
+// Work in progress is never touched here — only finished output, and only
+// once it is older than the retention this server is configured with.
+func (e *Engine) SweepWorkdir() error {
+	ttl := e.settings.KeepOutputFor()
+	if ttl <= 0 {
+		return nil
+	}
+	outputs, err := e.staging.Retained()
+	if err != nil {
+		return err
+	}
+	cutoff := time.Now().Add(-ttl)
+	for _, output := range outputs {
+		if output.At.After(cutoff) {
+			continue
+		}
+		dir := output.Dir
+		if err := e.staging.Release(&dir); err != nil {
+			e.log.Error("remove collected output", "key", output.Key, "error", err)
+			continue
+		}
+		e.log.Info("removed collected output nobody came back for",
+			"key", output.Key, "bytes", output.Bytes, "age_hours", time.Since(output.At).Hours())
+	}
 	return nil
 }
 
@@ -482,4 +519,31 @@ func (e *Engine) forgetProgress(jobID string) {
 type progressMark struct {
 	percent float64
 	at      time.Time
+}
+
+// RetainedOutput lists what finished restores have left in the work
+// directory, so an operator can see what is using the disk.
+func (e *Engine) RetainedOutput() ([]staging.Output, error) { return e.staging.Retained() }
+
+// DeleteOutput removes one piece of collected output.
+//
+// Only finished output can be removed this way: work in progress is not
+// listed, and Release refuses any path outside the work directory.
+func (e *Engine) DeleteOutput(key string) error {
+	outputs, err := e.staging.Retained()
+	if err != nil {
+		return err
+	}
+	for _, output := range outputs {
+		if output.Key != key {
+			continue
+		}
+		dir := output.Dir
+		if err := e.staging.Release(&dir); err != nil {
+			return err
+		}
+		e.log.Info("removed collected output", "key", key, "bytes", output.Bytes)
+		return nil
+	}
+	return fmt.Errorf("node: there is no collected output called %q", key)
 }

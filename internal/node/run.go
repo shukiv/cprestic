@@ -318,6 +318,12 @@ func (e *Engine) failRestore(stored nodestore.Restore, reason string) error {
 // window, starts from the edge of that window: a server that was off for a
 // week should run tonight's backup, not seven of them.
 func (e *Engine) Schedule(ctx context.Context, now time.Time) (int, error) {
+	// Cheap — one readdir and a stat per finished output — and it is the
+	// only thing that runs regularly on a server that is never restarted.
+	if err := e.SweepWorkdir(); err != nil {
+		e.log.Error("sweep the work directory", "error", err)
+	}
+
 	policies, err := e.store.Policies()
 	if err != nil {
 		return 0, err

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestAllocateRefusesWithoutEstimate(t *testing.T) {
@@ -272,5 +273,45 @@ func TestReclaimRemovesRetainedOutputToo(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(root); len(entries) != 0 {
 		t.Errorf("root still holds %d directories", len(entries))
+	}
+}
+
+// Finished output is kept so it can be collected, but not for ever: a
+// server where every account had been restored once kept every one of
+// those trees, on a disk that also has to hold tonight's backup.
+func TestRetainedListsWhatIsWaitingWithItsSizeAndAge(t *testing.T) {
+	root := t.TempDir()
+	manager := &Manager{Root: root, MaxConcurrent: 4}
+
+	dir, err := manager.Allocate("restore-customer1", 1<<10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir.Path, "cpmove.tar"), make([]byte, 2048), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Retain(dir); err != nil {
+		t.Fatal(err)
+	}
+	// Work in progress is not output and must never be listed as such.
+	if _, err := manager.Allocate("customer2", 1<<10); err != nil {
+		t.Fatal(err)
+	}
+
+	outputs, err := manager.Retained()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outputs) != 1 {
+		t.Fatalf("retained = %+v, want only the finished output", outputs)
+	}
+	if outputs[0].Key != "restore-customer1" {
+		t.Errorf("key = %q", outputs[0].Key)
+	}
+	if outputs[0].Bytes != 2048 {
+		t.Errorf("bytes = %d, want 2048", outputs[0].Bytes)
+	}
+	if time.Since(outputs[0].At) > time.Minute {
+		t.Errorf("produced at %v, which is not now", outputs[0].At)
 	}
 }

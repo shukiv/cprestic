@@ -174,4 +174,26 @@ type Settings struct {
 	// PkgacctFlags records what the installed pkgacct actually supports,
 	// probed rather than assumed.
 	PkgacctFlags map[string]string `json:"pkgacct_flags,omitempty"`
+	// KeepOutputDays is how long a finished restore's files stay in the
+	// work directory before they are swept. They are there to be
+	// collected; nothing collected them on a server where every account
+	// had been restored once, and the disk filled. Zero means the
+	// default; a negative number keeps them for ever.
+	KeepOutputDays int `json:"keep_output_days,omitempty"`
+}
+
+// DefaultKeepOutputDays is a week: long enough that a restore taken on a
+// Friday is still there on Monday.
+const DefaultKeepOutputDays = 7
+
+// KeepOutputFor is how long finished restore output survives.
+func (s Settings) KeepOutputFor() time.Duration {
+	switch {
+	case s.KeepOutputDays < 0:
+		return 0
+	case s.KeepOutputDays == 0:
+		return DefaultKeepOutputDays * 24 * time.Hour
+	default:
+		return time.Duration(s.KeepOutputDays) * 24 * time.Hour
+	}
 }
