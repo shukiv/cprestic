@@ -34,7 +34,12 @@ type Repository struct {
 	// See docs/DESIGN.md §7.
 	ChunkerSourceRepoID string     `json:"chunker_source_repo_id,omitempty"`
 	InitialisedAt       *time.Time `json:"initialised_at,omitempty"`
-	CreatedAt           time.Time  `json:"created_at"`
+	// RecoveryNotedAt is when an operator confirmed they had written the
+	// repository password down somewhere off this server. Until then the
+	// interface keeps saying so: the disaster these backups exist for is
+	// also the one that destroys the only copy of the key.
+	RecoveryNotedAt *time.Time `json:"recovery_noted_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 // Retention is the keep policy handed to "restic forget".

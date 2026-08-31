@@ -4,6 +4,48 @@
   <h1>Destinations</h1>
   <p class="cpr-sub">Where this server sends its backups.</p>
 </div>
+{{with $data.Revealed}}
+<div class="cpr-card" style="border-color:color-mix(in srgb, var(--warn) 45%, var(--line))">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
+    <h2 style="margin:0">Recovery key for {{.Destination}}</h2>
+  </div>
+  <div class="cpr-pad">
+    <p class="cpr-hint" style="margin-top:0">This is the only thing that can read those backups.
+    The destination holds nothing but ciphertext, and the key that unlocks it lives on this
+    server. If {{.Hostname}} is lost and this is not written down somewhere else, the backups it
+    made cannot be read by anyone — including cprest.</p>
+    <div class="cpr-log" style="font-size:14px; user-select:all">{{.Password}}</div>
+    <p class="cpr-hint">To restore without cprest, on any machine with restic:</p>
+    <div class="cpr-log">export RESTIC_REPOSITORY='{{.URI}}'
+export RESTIC_PASSWORD='&lt;the key above&gt;'
+restic snapshots
+restic restore &lt;snapshot-id&gt; --target /somewhere</div>
+    <div class="cpr-row" style="margin-top:var(--s4)">
+      <form method="post" action="?p=destinations/recovery/card" class="cpr-inline">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <input type="hidden" name="repository" value="{{$data.RevealedID}}">
+        <button class="cpr-btn">Download it as a file</button>
+      </form>
+      <form method="post" action="?p=destinations/recovery/note" class="cpr-inline">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <input type="hidden" name="repository" value="{{$data.RevealedID}}">
+        <button class="cpr-btn cpr-primary">I have stored it somewhere else</button>
+      </form>
+      <a class="cpr-btn cpr-quiet" href="?p=destinations">Hide it</a>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{if $data.Unnoted}}
+<div class="cpr-banner cpr-warn"><div class="cpr-body">
+  <b>{{len $data.Unnoted}} backup{{if ne (len $data.Unnoted) 1}}s have{{else}} has{{end}} a
+  recovery key that exists only on this server.</b> The backups are encrypted before they leave
+  it, so whoever holds the destination cannot read them — and neither can you, without the key.
+  Show it, then keep it somewhere that survives this machine.
+</div></div>
+{{end}}
+
 <div class="cpr-card">
   <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
     <h2 style="margin:0">Configured</h2>
@@ -34,6 +76,13 @@
         <a class="cpr-btn cpr-quiet" href="?p=destinations&amp;edit={{.ID}}"
            data-dialog="add-destination" data-dialog-fetch
            data-dialog-title="Edit “{{.Name}}”">Edit</a>
+        {{if .Repository.ID}}
+        <form method="post" action="?p=destinations/recovery" class="cpr-inline">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="repository" value="{{.Repository.ID}}">
+          <button class="cpr-btn {{if not .Repository.RecoveryNotedAt}}cpr-primary{{else}}cpr-quiet{{end}}">Recovery key</button>
+        </form>
+        {{end}}
         <form method="post" action="?p=destinations/delete" class="cpr-inline"
               data-confirm="Remove this destination from cprest? The backups already stored there are left alone.">
           <input type="hidden" name="csrf" value="{{$.CSRF}}">

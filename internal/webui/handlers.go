@@ -288,6 +288,105 @@ func endpointOf(dest nodestore.Destination) string {
 	}
 }
 
+// unnoted names the destinations whose recovery key has never been
+// written down anywhere but this server.
+func unnoted(views []destinationView) []string {
+	var names []string
+	for _, view := range views {
+		if view.Repository.ID != "" && view.Repository.RecoveryNotedAt == nil {
+			names = append(names, view.Name)
+		}
+	}
+	return names
+}
+
+// handleRecoveryKey shows the password for one repository, once, because
+// it was asked for.
+//
+// It is not on the page by default: a secret that is always rendered is a
+// secret in every proxy log and every screenshot. This is a POST with the
+// token, so it cannot be reached by a link someone was sent.
+func (s *Server) handleRecoveryKey(w http.ResponseWriter, r *http.Request) {
+	card, err := s.engine.Recovery(r.PostFormValue("repository"))
+	if err != nil {
+		s.redirect(w, r, "/destinations", "error", err.Error())
+		return
+	}
+	views, err := s.destinationViews()
+	if err != nil {
+		s.fail(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	s.render(w, r, "destinations.html", "Backup destinations", "destinations", destinationsView{
+		Destinations: views,
+		Hostname:     s.engine.Settings().Hostname,
+		Revealed:     &card,
+		RevealedID:   r.PostFormValue("repository"),
+		Unnoted:      unnoted(views),
+	})
+}
+
+// handleNoteRecovery records that the password has been written down
+// somewhere off this server, which is what stops the warning.
+func (s *Server) handleNoteRecovery(w http.ResponseWriter, r *http.Request) {
+	if err := s.engine.NoteRecoveryKey(r.PostFormValue("repository")); err != nil {
+		s.redirect(w, r, "/destinations", "error", err.Error())
+		return
+	}
+	s.redirect(w, r, "/destinations", "ok",
+		"Noted. Keep it somewhere that survives this server — a password manager, "+
+			"not a file on this machine.")
+}
+
+// handleRecoveryCard hands over the same thing as a file, for putting
+// somewhere else. It is a download rather than a page so it does not sit
+// in browser history.
+func (s *Server) handleRecoveryCard(w http.ResponseWriter, r *http.Request) {
+	card, err := s.engine.Recovery(r.PostFormValue("repository"))
+	if err != nil {
+		s.redirect(w, r, "/destinations", "error", err.Error())
+		return
+	}
+	body := fmt.Sprintf(`cprest recovery key
+===================
+
+Server        %s
+Destination   %s
+Repository    %s
+Address       %s
+
+Repository password
+    %s
+
+This password is the only thing that can read those backups. The
+destination holds nothing but ciphertext, and the key that unlocks it
+lives on %s. If that server is lost and this password is not written down
+somewhere else, the backups it made cannot be read by anyone, including
+cprest.
+
+To restore without cprest, on any machine with restic installed:
+
+    export RESTIC_REPOSITORY='%s'
+    export RESTIC_PASSWORD='%s'
+
+    restic snapshots
+    restic restore <snapshot-id> --target /somewhere
+
+Keep this file somewhere that survives the loss of %s.
+Written %s
+`,
+		card.Hostname, card.Destination, card.Repository, card.URI,
+		card.Password, card.Hostname, card.URI, card.Password,
+		card.Hostname, time.Now().UTC().Format("2006-01-02 15:04 MST"))
+
+	filename := fmt.Sprintf("cprest-recovery-%s-%s.txt", card.Hostname, card.Repository)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write([]byte(body))
+}
+
 // destinationsView is the destinations page.
 type destinationsView struct {
 	Destinations []destinationView
@@ -306,6 +405,15 @@ type destinationsView struct {
 	// Submitted is what they typed, so a rejected form comes back as they
 	// left it.
 	Submitted map[string]string
+	// Revealed is a repository password an operator has just asked to
+	// see, shown on this render and on no other.
+	Revealed *node.RecoveryCard
+	// RevealedID is the repository it belongs to, for the buttons beside
+	// it. The password itself is never put in a form field.
+	RevealedID string
+	// Unnoted are the destinations whose recovery key exists nowhere but
+	// this server.
+	Unnoted []string
 }
 
 // Field is what an input should show: what was submitted, else what is
@@ -343,6 +451,7 @@ func (s *Server) handleDestinations(w http.ResponseWriter, r *http.Request) {
 		Destinations: views,
 		Hostname:     s.engine.Settings().Hostname,
 		Adding:       r.URL.Query().Get("add") != "",
+		Unnoted:      unnoted(views),
 	}
 
 	if id := r.URL.Query().Get("edit"); id != "" {

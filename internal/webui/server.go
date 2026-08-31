@@ -134,6 +134,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /destinations/edit", s.guard(s.handleEditDestination))
 	mux.HandleFunc("POST /destinations/test", s.guard(s.handleTestDestination))
 	mux.HandleFunc("POST /destinations/delete", s.guard(s.handleDeleteDestination))
+	mux.HandleFunc("POST /destinations/recovery", s.guard(s.handleRecoveryKey))
+	mux.HandleFunc("POST /destinations/recovery/note", s.guard(s.handleNoteRecovery))
+	mux.HandleFunc("POST /destinations/recovery/card", s.guard(s.handleRecoveryCard))
 
 	mux.HandleFunc("GET /schedule", s.handleSchedule)
 	mux.HandleFunc("POST /schedule/save", s.guard(s.handleSaveSchedule))

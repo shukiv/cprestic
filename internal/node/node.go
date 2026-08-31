@@ -564,3 +564,76 @@ func (e *Engine) DeleteOutput(key string) error {
 	}
 	return fmt.Errorf("node: there is no collected output called %q", key)
 }
+
+// RepositoryPassword is the password restic needs to read a repository.
+//
+// It exists to be written down. The destination holds nothing but
+// ciphertext, and the key that unlocks it lives on this server: lose the
+// server and lose the key, and the backups it made are unreadable by
+// anyone, including this program. An operator who has this password and
+// access to the destination can restore with restic alone.
+func (e *Engine) RepositoryPassword(repositoryID string) (string, error) {
+	repo, err := e.store.Repository(repositoryID)
+	if err != nil {
+		return "", err
+	}
+	password, err := e.openSecret(repo.PasswordSecretID)
+	if err != nil {
+		return "", err
+	}
+	return string(password), nil
+}
+
+// NoteRecoveryKey records that the password for a repository has been
+// written down somewhere else, which is what stops the interface asking.
+func (e *Engine) NoteRecoveryKey(repositoryID string) error {
+	repo, err := e.store.Repository(repositoryID)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	repo.RecoveryNotedAt = &now
+	_, err = e.store.PutRepository(repo)
+	return err
+}
+
+// RecoveryCard is everything needed to read a repository without this
+// program: where it is, what unlocks it, and the commands that do it.
+type RecoveryCard struct {
+	Destination string
+	Repository  string
+	URI         string
+	Password    string
+	Hostname    string
+}
+
+// Recovery assembles what an operator has to keep somewhere else.
+func (e *Engine) Recovery(repositoryID string) (RecoveryCard, error) {
+	repo, err := e.store.Repository(repositoryID)
+	if err != nil {
+		return RecoveryCard{}, err
+	}
+	dest, err := e.store.Destination(repo.DestinationID)
+	if err != nil {
+		return RecoveryCard{}, err
+	}
+	opened, err := e.OpenRepository(repositoryID, false)
+	if err != nil {
+		return RecoveryCard{}, err
+	}
+	uri, err := opened.Dest.URI(repo.Path)
+	if err != nil {
+		return RecoveryCard{}, err
+	}
+	password, err := e.RepositoryPassword(repositoryID)
+	if err != nil {
+		return RecoveryCard{}, err
+	}
+	return RecoveryCard{
+		Destination: dest.Name,
+		Repository:  repo.Path,
+		URI:         uri,
+		Password:    password,
+		Hostname:    e.settings.Hostname,
+	}, nil
+}

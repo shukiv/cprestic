@@ -1603,3 +1603,113 @@ func TestALongRunIsCalledOut(t *testing.T) {
 		t.Error("the warning does not say what it means")
 	}
 }
+
+// The destination holds ciphertext and the key lives here, so the disaster
+// these backups exist for is also the one that destroys the only copy of
+// the key. The interface says so until it has been written down elsewhere.
+func TestTheRecoveryKeyIsShownAndNagsUntilItIsSaved(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	_, page := get(t, client, "/destinations")
+	added, err := client.PostForm("http://ui/destinations/add", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Local disk"}, "type": {"local"},
+		"root": {t.TempDir()}, "repo_path": {"cp01"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	added.Body.Close()
+	repos, err := engine.Store().Repositories()
+	if err != nil || len(repos) != 1 {
+		t.Fatalf("repositories = %+v (%v)", repos, err)
+	}
+
+	// Until it is saved, the page says so.
+	_, page = get(t, client, "/destinations")
+	if !strings.Contains(page, "exists only on this server") {
+		t.Error("nothing warns that the recovery key is nowhere else")
+	}
+	// And the password is not on the page until it is asked for.
+	password, err := engine.RepositoryPassword(repos[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(page, password) {
+		t.Error("the repository password is rendered on a page nobody asked")
+	}
+
+	// Asking shows it, with what to do with it.
+	shown, err := client.PostForm("http://ui/destinations/recovery", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "repository": {repos[0].ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(shown.Body)
+	shown.Body.Close()
+	revealed := string(body)
+	if !strings.Contains(revealed, password) {
+		t.Error("the recovery key was not shown when it was asked for")
+	}
+	if !strings.Contains(revealed, "RESTIC_REPOSITORY") {
+		t.Error("the page does not say how to use it without cprest")
+	}
+
+	// The file is the same thing, to put somewhere else.
+	card, err := client.PostForm("http://ui/destinations/recovery/card", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "repository": {repos[0].ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cardBody, _ := io.ReadAll(card.Body)
+	card.Body.Close()
+	if !strings.Contains(card.Header.Get("Content-Disposition"), "attachment") {
+		t.Error("the recovery card is not a download")
+	}
+	if !strings.Contains(string(cardBody), password) {
+		t.Error("the recovery card does not carry the key")
+	}
+
+	// Saying it is stored stops the warning.
+	noted, err := client.PostForm("http://ui/destinations/recovery/note", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "repository": {repos[0].ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	noted.Body.Close()
+	if _, page = get(t, client, "/destinations"); strings.Contains(page, "exists only on this server") {
+		t.Error("the warning is still there after the key was stored")
+	}
+}
+
+// Reading a repository password is a change of state as far as secrecy is
+// concerned, so it needs the token like every other POST.
+func TestTheRecoveryKeyNeedsTheToken(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	_, page := get(t, client, "/destinations")
+	added, err := client.PostForm("http://ui/destinations/add", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "name": {"Local disk"}, "type": {"local"},
+		"root": {t.TempDir()}, "repo_path": {"cp01"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	added.Body.Close()
+	repos, _ := engine.Store().Repositories()
+
+	refused, err := client.PostForm("http://ui/destinations/recovery", map[string][]string{
+		"repository": {repos[0].ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(refused.Body)
+	refused.Body.Close()
+	password, _ := engine.RepositoryPassword(repos[0].ID)
+	if strings.Contains(string(body), password) {
+		t.Error("a request with no token was shown the recovery key")
+	}
+}
