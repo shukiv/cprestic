@@ -87,7 +87,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	for _, account := range accounts {
 		switch {
-		case account.Protected():
+		case account.Current():
 			view.Protected++
 		case account.LastBackup == nil:
 			view.Unprotected++
@@ -104,7 +104,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	// Worst first: never backed up, then failing, then stale.
 	for _, account := range accounts {
-		if account.Protected() || account.Running {
+		if account.Current() || account.Running {
 			continue
 		}
 		view.Attention = append(view.Attention, account)
@@ -871,9 +871,9 @@ func (a accountView) State() State {
 	}
 }
 
-// Protected reports whether this account has a backup worth relying on: a
-// successful one, recent enough for the schedule that covers it.
-func (a accountView) Protected() bool { return a.State() == StateProtected }
+// Current reports whether this account has a backup worth relying on: the
+// last run succeeded, and a schedule has produced one since it was due.
+func (a accountView) Current() bool { return a.State() == StateProtected }
 
 // Why explains the state in the words the operator needs, shown under the
 // pill rather than left to be inferred from a colour.
@@ -1031,7 +1031,7 @@ func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	}{Accounts: accounts, Policies: policies, Warnings: warnings}
 	for _, account := range accounts {
 		switch {
-		case account.Protected():
+		case account.Current():
 			view.Protected++
 		case account.LastBackup == nil:
 			view.Unprotected++

@@ -1301,11 +1301,10 @@ func TestCollectedOutputCanBeDeleted(t *testing.T) {
 	}
 }
 
-// "Protected" has to mean something an operator can rely on: a successful
-// backup that a schedule has kept current. A copy that succeeded once and
-// is refreshed by nothing protects a site that has changed every day
-// since, so the page says so rather than calling it protected.
-func TestProtectedMeansRecentAndScheduled(t *testing.T) {
+// A state has to say what actually happened. "Last run succeeded" is a
+// fact an operator can check; a copy nothing will ever refresh gets a
+// state of its own rather than the same green pill.
+func TestAStateSaysWhatHappenedAndWhatItMeans(t *testing.T) {
 	client, _, engine := newUI(t)
 
 	finished := time.Now().Add(-30 * 24 * time.Hour)
@@ -1320,9 +1319,16 @@ func TestProtectedMeansRecentAndScheduled(t *testing.T) {
 	// No schedule covers it, so nothing will ever refresh that copy.
 	_, page := get(t, client, "/accounts")
 	if !strings.Contains(page, "Not scheduled") {
-		t.Error("an account no schedule covers is being called protected")
+		t.Error("an account no schedule covers is being shown as a good backup")
 	}
 	if !strings.Contains(page, "no schedule covers it") {
 		t.Error("the page does not say why")
+	}
+	// Every state explains itself on hover rather than by its colour.
+	if !strings.Contains(page, "nothing will ever take another") {
+		t.Error("the state has no explanation attached")
+	}
+	if strings.Contains(page, ">Protected<") {
+		t.Error("the page still uses a word that promises more than it checks")
 	}
 }

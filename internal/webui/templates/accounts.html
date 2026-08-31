@@ -20,7 +20,7 @@
     </div>
     <div class="cpr-chips" data-filter-state="#accounts">
       <button type="button" class="cpr-chip" aria-pressed="true" data-state="">All {{len $d.Accounts}}</button>
-      <button type="button" class="cpr-chip" aria-pressed="false" data-state="ok">Protected {{$d.Protected}}</button>
+      <button type="button" class="cpr-chip" aria-pressed="false" data-state="ok">Succeeded {{$d.Protected}}</button>
       <button type="button" class="cpr-chip" aria-pressed="false" data-state="bad">Never {{$d.Unprotected}}</button>
     </div>
   </div>
@@ -67,7 +67,7 @@
   </div>
   <div class="cpr-pad" style="border-top:1px solid var(--line); color:var(--muted); font-size:13px">
     <span data-count-for="#accounts">{{len $d.Accounts}}</span> account{{if ne (len $d.Accounts) 1}}s{{end}}
-    · <b>Protected</b> means the last backup succeeded and a schedule has kept it current since
+    · hover a state to see what it means
   </div>
 </div>
 {{else}}
