@@ -119,6 +119,23 @@ func templateFuncs() template.FuncMap {
 			}
 			return template.CSS(fmt.Sprintf("width:%.1f%%", percent))
 		},
+		// pkgacctMeaning explains a probed flag in terms of what it does
+		// to a backup. The names are cPanel's and read as though cprest
+		// were leaving something out; it is the opposite.
+		"pkgacctMeaning": func(name string) string {
+			switch name {
+			case "nocompress":
+				return "pkgacct can write its archive uncompressed, which is what lets " +
+					"restic store only what changed between one night and the next."
+			case "skipdb":
+				return "pkgacct can leave databases out of its archive, so cprest can dump " +
+					"each one separately instead. They are backed up either way."
+			case "skiphomedir":
+				return "pkgacct can leave the home directory out of its archive, so cprest " +
+					"can back it up as files. It is backed up either way."
+			}
+			return ""
+		},
 		"percent": func(value float64) string {
 			// Half rounds up: 42.5% reads as 43%, not 42%, which is what
 			// anyone watching a bar expects of the number beside it.
