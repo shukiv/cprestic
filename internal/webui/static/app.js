@@ -63,9 +63,16 @@
   // asked to create the account.
   var createAccount = document.querySelector("[data-quick-create]");
   var adminFields = document.querySelector("[data-quick-admin]");
-  if (createAccount && adminFields) {
+  var passwordLabel = document.querySelector("[data-quick-password-label]");
+  if (createAccount) {
     createAccount.addEventListener("change", function () {
-      adminFields.hidden = !createAccount.checked;
+      if (adminFields) { adminFields.hidden = !createAccount.checked; }
+      // The same field means two different passwords, so it says which.
+      if (passwordLabel) {
+        passwordLabel.textContent = createAccount.checked
+          ? "Administrator's password on that server"
+          : "Password for that account";
+      }
     });
   }
 

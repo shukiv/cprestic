@@ -64,10 +64,17 @@
   {{end}}
 </div>
 
-{{if not $data.Editing}}
+{{if $data.Editing}}
 <div class="cpr-card">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
-    <h2 style="margin:0">Add a destination in one line</h2>
+    <h2 style="margin:0">Edit “{{$data.Editing.Name}}”</h2>
+  </div>
+  <div class="cpr-pad">{{template "destinationform" .}}</div>
+</div>
+{{else}}
+<div class="cpr-card">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
+    <h2 style="margin:0">Add a destination</h2>
   </div>
   <div class="cpr-pad">
     <form method="post" action="?p=destinations/quick">
@@ -78,7 +85,8 @@
       <small class="cpr-help">Also understood:
         <span class="cpr-mono">sftp://user@host:2222/srv/backups</span>,
         <span class="cpr-mono">https://user:password@backup.example.com</span>,
-        <span class="cpr-mono">/mnt/nas/backups</span>.</small>
+        <span class="cpr-mono">/mnt/nas/backups</span>,
+        <span class="cpr-mono">s3://bucket/folder</span>.</small>
 
       <div class="cpr-grid2">
         <div>
@@ -86,18 +94,18 @@
           <input type="text" id="quick_name" name="name" placeholder="taken from the address">
         </div>
         <div>
-          <label for="quick_password">Password</label>
+          <label for="quick_password" data-quick-password-label>Password for that account</label>
           <input type="password" id="quick_password" name="password" autocomplete="new-password">
-          <small class="cpr-help">Used once and never stored.</small>
+          <small class="cpr-help">Used once to install cprest's own key, then discarded.</small>
         </div>
       </div>
 
       <label class="cpr-check">
         <input type="checkbox" name="create_account" value="1" data-quick-create>
         <span>That account does not exist yet — create it for me
-        <small class="cpr-help">The password above is then an administrator's on that server,
-        usually root's. cprest creates the account, gives it a locked password so its key is
-        the only way in, makes the backup directory, installs the key and checks it works.</small></span>
+        <small class="cpr-help">cprest creates the account, gives it a locked password so its
+        key is the only way in, makes the backup directory, installs the key and checks it
+        works. The password above is then an administrator's on that server.</small></span>
       </label>
 
       <div data-quick-admin hidden>
@@ -112,15 +120,22 @@
       </div>
     </form>
   </div>
+  <div class="cpr-pad" style="border-top:1px solid var(--line)">
+    <details>
+      <summary>Set it up field by field</summary>
+      <div style="margin-top:var(--s4)">{{template "destinationform" .}}</div>
+    </details>
+  </div>
 </div>
 {{end}}
+{{end}}
 
+{{/* Every field of every destination type: what an operator falls back to
+     when one line cannot say it — an S3 bucket's two keys, a second
+     address for retention to run through, a private CA bundle. */}}
+{{define "destinationform"}}
+{{$data := .Data}}
 {{$editing := $data.Editing}}
-<div class="cpr-card">
-  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
-    <h2 style="margin:0">{{if $editing}}Edit “{{$editing.Name}}”{{else}}Or set one up field by field{{end}}</h2>
-  </div>
-  <div class="cpr-pad">
   <form method="post" action="{{if $editing}}?p=destinations/edit{{else}}?p=destinations/add{{end}}">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     {{with $editing}}<input type="hidden" name="id" value="{{.ID}}">{{end}}
@@ -271,6 +286,4 @@
       {{else}}<span class="cpr-hint" style="margin:0">Credentials are encrypted before they are written to disk.</span>{{end}}
     </div>
   </form>
-  </div>
-</div>
 {{end}}
