@@ -5,41 +5,48 @@
   <p class="cpr-sub">When backups run, and how long they are kept.</p>
 </div>
 <div class="cpr-card">
-  <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Schedules</h2></div>
   {{if $data.Policies}}
-  <table>
-    <tr><th>Name</th><th>Runs</th><th>Covers</th><th>Keeps</th><th>Last fired</th><th class="cpr-right">&nbsp;</th></tr>
+  <div class="cpr-tablewrap"><table>
+    <thead><tr><th>Name</th><th>Runs</th><th>Covers</th><th>Keeps</th><th>Last fired</th><th class="cpr-right">&nbsp;</th></tr></thead>
+    <tbody>
     {{range $data.Policies}}
-    <tr>
-      <td>{{.Name}} {{if not .Enabled}}<span class="cpr-pill">paused</span>{{end}}</td>
-      <td class="cpr-mono">{{.ScheduleCron}}</td>
-      <td>{{if .AllAccounts}}every account{{else}}{{join .Accounts ", "}}{{end}}</td>
-      <td class="cpr-muted">{{.Retention.KeepDaily}} daily, {{.Retention.KeepWeekly}} weekly, {{.Retention.KeepMonthly}} monthly</td>
-      <td>{{ago .LastRunAt}}</td>
-      <td class="cpr-right">
+    <tr class="cpr-state {{.Stripe}}">
+      <td class="cpr-acct">{{.Name}}
+        {{if not .Enabled}}<div class="cpr-sublabel">paused</div>{{end}}</td>
+      <td>{{if .When}}{{.When}}<div class="cpr-sublabel cpr-mono">{{.ScheduleCron}}</div>
+        {{else}}<span class="cpr-mono">{{.ScheduleCron}}</span>{{end}}</td>
+      <td>{{.Covers}}{{if .CoversDetail}}<div class="cpr-sublabel">{{.CoversDetail}}</div>{{end}}</td>
+      <td>{{.Retention.KeepDaily}} daily · {{.Retention.KeepWeekly}} weekly · {{.Retention.KeepMonthly}} monthly</td>
+      <td>{{if .LastRunAt}}{{ago .LastRunAt}}{{else}}never{{end}}
+        {{if .NextIn}}<div class="cpr-sublabel">{{.NextIn}}</div>{{end}}</td>
+      <td class="cpr-right"><div class="cpr-actions">
         <form method="post" action="?p=schedule/run" class="cpr-inline">
           <input type="hidden" name="csrf" value="{{$.CSRF}}">
           <input type="hidden" name="id" value="{{.ID}}">
           <button class="cpr-btn cpr-primary">Run now</button>
         </form>
-        <a href="?p=schedule&amp;edit={{.ID}}"><button type="button">Edit</button></a>
+        <a class="cpr-btn cpr-quiet" href="?p=schedule&amp;edit={{.ID}}">Edit</a>
         <form method="post" action="?p=schedule/delete" class="cpr-inline"
               data-confirm="Delete this schedule? Backups already taken are kept.">
           <input type="hidden" name="csrf" value="{{$.CSRF}}">
           <input type="hidden" name="id" value="{{.ID}}">
           <button class="cpr-btn cpr-danger">Delete</button>
         </form>
-      </td>
+      </div></td>
     </tr>
     {{end}}
-  </table>
+    </tbody>
+  </table></div>
   {{else}}
   <div class="cpr-empty"><p><b>No schedule yet.</b><br>Nothing is backed up automatically until you add one.</p></div>
   {{end}}
 </div>
 
-<div class="cpr-card cpr-pad">
-  <h2 style="margin-top:0">{{if $data.Editing}}Edit “{{$data.Editing.Name}}”{{else}}Add a schedule{{end}}</h2>
+<div class="cpr-card">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
+    <h2 style="margin:0">{{if $data.Editing}}Edit “{{$data.Editing.Name}}”{{else}}Add a schedule{{end}}</h2>
+  </div>
+  <div class="cpr-pad">
   {{if not $data.Destinations}}
   <p class="cpr-hint">Add a destination first — a schedule has to have somewhere to write.</p>
   {{else}}
@@ -115,11 +122,12 @@
     {{$enabled := true}}{{with $data.Editing}}{{$enabled = .Enabled}}{{end}}
     <label class="cpr-check"><input type="checkbox" name="enabled" value="1" {{if $enabled}}checked{{end}}><span>Enabled</span></label>
 
-    <div class="cpr-actions">
+    <div class="cpr-row" style="margin-top:var(--s4)">
       <button class="cpr-btn cpr-primary" type="submit">{{if $data.Editing}}Save changes{{else}}Save schedule{{end}}</button>
-      {{if $data.Editing}}<a href="?p=schedule" class="cpr-muted">Cancel</a>{{end}}
+      {{if $data.Editing}}<a class="cpr-btn cpr-quiet" href="?p=schedule">Cancel</a>{{end}}
     </div>
   </form>
   {{end}}
+  </div>
 </div>
 {{end}}

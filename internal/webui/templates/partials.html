@@ -17,3 +17,14 @@
   {{else if eq $s "running"}}<span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>Running</span>
   {{else}}<span class="cpr-pill cpr-idle"><span class="cpr-dot"></span>{{$s}}</span>{{end}}
 {{end}}
+
+{{define "deststate"}}
+  {{if eq .Status "ok"}}<span class="cpr-pill cpr-ok"><span class="cpr-dot"></span>Reachable</span>
+    {{if .LastCheckedAt}}<div class="cpr-sublabel">checked {{ago .LastCheckedAt}}</div>{{end}}
+  {{else if eq .Status "error"}}<span class="cpr-pill cpr-bad"><span class="cpr-dot"></span>Unreachable</span>
+    <div class="cpr-sublabel">{{.LastCheckError}}</div>
+  {{else}}<span class="cpr-pill cpr-idle"><span class="cpr-dot"></span>Not checked</span>{{end}}
+{{end}}
+
+{{/* The severity colour for a row, from a run status. */}}
+{{define "runstripe"}}{{$s := printf "%s" .}}{{if eq $s "success"}}cpr-s-ok{{else if eq $s "failed"}}cpr-s-bad{{else}}cpr-s-warn{{end}}{{end}}

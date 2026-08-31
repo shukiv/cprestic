@@ -344,7 +344,7 @@ func TestSFTPFormAsksForNeitherAKeyNorKnownHosts(t *testing.T) {
 	if !strings.Contains(page, `name="password"`) {
 		t.Error("the form has no password field for installing the key")
 	}
-	if !strings.Contains(page, "generates its own SSH key") {
+	if !strings.Contains(page, "makes its own key") {
 		t.Error("the form does not say that a key will be generated")
 	}
 }

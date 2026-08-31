@@ -4,7 +4,9 @@
   <h1>Settings</h1>
   <p class="cpr-sub">How this server takes its backups.</p>
 </div>
-<div class="cpr-card cpr-pad">
+<div class="cpr-card">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">How backups run</h2></div>
+  <div class="cpr-pad">
   <form method="post" action="?p=settings/save">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <div class="cpr-grid2">
@@ -29,34 +31,44 @@
         <small class="cpr-help">Only for a backup server with a private certificate authority.</small>
       </div>
     </div>
-    <div class="cpr-actions"><button class="cpr-btn cpr-primary" type="submit">Save</button></div>
+    <div class="cpr-row" style="margin-top:var(--s4)">
+      <button class="cpr-btn cpr-primary" type="submit">Save</button>
+    </div>
   </form>
+  </div>
 </div>
 
-<div class="cpr-card cpr-pad">
-  <h2 style="margin-top:0">Staging</h2>
+<div class="cpr-card">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Staging</h2></div>
+  <div class="cpr-pad">
   <p><span class="cpr-mono">{{$data.Settings.StagingRoot}}</span> — {{bytes $data.StagingFree}} free</p>
   <p class="cpr-hint">This is where an account is assembled before it is uploaded. It needs
   roughly as much free space as the largest account being backed up. It is deliberately
   not editable here: the path is recorded inside every backup, and changing it would
   strand the retention rules that keep your old backups tidy.</p>
+  </div>
 </div>
 
-<div class="cpr-card cpr-pad">
-  <h2 style="margin-top:0">This server's pkgacct</h2>
+<div class="cpr-card">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">This server's pkgacct</h2></div>
   {{if $data.Settings.PkgacctFlags}}
-  <table>
+  <div class="cpr-tablewrap"><table>
+    <thead><tr><th>Capability</th><th>Flag</th></tr></thead>
+    <tbody>
     {{range $name, $flag := $data.Settings.PkgacctFlags}}
-    <tr><td>{{$name}}</td><td class="cpr-mono">{{$flag}}</td></tr>
+    <tr><td class="cpr-acct">{{$name}}</td><td class="cpr-mono">{{$flag}}</td></tr>
     {{end}}
-  </table>
+    </tbody>
+  </table></div>
   {{if not (index $data.Settings.PkgacctFlags "nocompress")}}
-  <div class="cpr-warnbox">This cPanel version cannot produce an uncompressed archive.
-  Single-archive backups will store a full copy every time. Use the split payload
-  mode, which is the default.</div>
+  <div class="cpr-pad" style="border-top:1px solid var(--line)">
+    <div class="cpr-warnbox" style="margin:0">This cPanel version cannot produce an uncompressed
+    archive. Single-archive backups will store a full copy every time. Use the split payload
+    mode, which is the default.</div>
+  </div>
   {{end}}
   {{else}}
-  <p class="cpr-hint">Not probed yet. It is checked when the service starts.</p>
+  <div class="cpr-pad"><p class="cpr-hint">Not probed yet. It is checked when the service starts.</p></div>
   {{end}}
 </div>
 {{end}}

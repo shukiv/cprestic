@@ -196,6 +196,33 @@ type destinationView struct {
 	RemoteTarget string
 }
 
+// TypeName is the destination's type in the words the form used to offer
+// it, so the table and the form agree with each other.
+func (d destinationView) TypeName() string {
+	switch destination.Type(d.Type) {
+	case destination.TypeSFTP:
+		return "Another Linux server (SFTP)"
+	case destination.TypeREST:
+		return "Backup server (restic REST)"
+	case destination.TypeS3:
+		return "S3 or S3-compatible"
+	case destination.TypeLocal:
+		return "Local disk or mounted NAS"
+	}
+	return d.Type
+}
+
+// Stripe is the severity colour on the row's leading edge.
+func (d destinationView) Stripe() string {
+	switch d.Status {
+	case "ok":
+		return "cpr-s-ok"
+	case "error":
+		return "cpr-s-bad"
+	}
+	return "cpr-s-warn"
+}
+
 func (s *Server) destinationViews() ([]destinationView, error) {
 	destinations, err := s.engine.Store().Destinations()
 	if err != nil {
@@ -517,6 +544,104 @@ func (s *Server) handleDeleteDestination(w http.ResponseWriter, r *http.Request)
 
 // --- schedules ---
 
+// policyView is a schedule as the schedules page states it: the stored
+// policy, plus the things the page says in words rather than in cron.
+type policyView struct {
+	nodestore.Policy
+	// AccountCount is how many accounts this schedule covers right now.
+	AccountCount int
+	// Next is when it fires next, zero when it never will.
+	Next time.Time
+}
+
+// Stripe is the severity colour on the row's leading edge.
+func (p policyView) Stripe() string {
+	switch {
+	case !p.Enabled:
+		return "cpr-s-warn"
+	case len(p.RepositoryIDs) == 0:
+		return "cpr-s-bad"
+	default:
+		return "cpr-s-ok"
+	}
+}
+
+// When reads the schedule back in words. A hand-written expression that
+// does not fit one of the shapes the form offers returns empty, and the
+// page shows the expression alone.
+func (p policyView) When() string { return humanCron(p.ScheduleCron) }
+
+// NextIn is how long until this schedule fires, empty when it never will.
+func (p policyView) NextIn() string {
+	if p.Next.IsZero() {
+		return ""
+	}
+	return "next in " + humanUntil(time.Until(p.Next))
+}
+
+// Covers names what the schedule backs up.
+func (p policyView) Covers() string {
+	if p.AllAccounts() {
+		return "Every account"
+	}
+	return strings.Join(p.Accounts, ", ")
+}
+
+// CoversDetail counts what that comes to today, which matters for a
+// schedule that says "every account" on a server where accounts come
+// and go.
+func (p policyView) CoversDetail() string {
+	if !p.AllAccounts() {
+		return ""
+	}
+	return fmt.Sprintf("%d account%s", p.AccountCount, plural(p.AccountCount))
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+var weekdays = [7]string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"}
+
+// humanCron reads back the shapes the schedule form offers. Anything else
+// returns empty rather than a wrong reading of someone's own expression.
+func humanCron(expr string) string {
+	fields := strings.Fields(expr)
+	if len(fields) != 5 {
+		return ""
+	}
+	minute, hour, dayOfMonth, month, dayOfWeek := fields[0], fields[1], fields[2], fields[3], fields[4]
+	if month != "*" {
+		return ""
+	}
+	m, minuteIsNumber := atoi(minute)
+	h, hourIsNumber := atoi(hour)
+	switch {
+	case !minuteIsNumber:
+		return ""
+	case hour == "*" && dayOfMonth == "*" && dayOfWeek == "*":
+		return fmt.Sprintf("Every hour at :%02d", m)
+	case !hourIsNumber:
+		return ""
+	case dayOfMonth == "*" && dayOfWeek == "*":
+		return fmt.Sprintf("Every day at %02d:%02d", h, m)
+	case dayOfMonth == "*":
+		if d, ok := atoi(dayOfWeek); ok && d >= 0 && d <= 7 {
+			return fmt.Sprintf("Every %s at %02d:%02d", weekdays[d%7], h, m)
+		}
+	}
+	return ""
+}
+
+func atoi(s string) (int, bool) {
+	n, err := strconv.Atoi(s)
+	return n, err == nil
+}
+
+
 func (s *Server) handleSchedule(w http.ResponseWriter, r *http.Request) {
 	policies, err := s.engine.Store().Policies()
 	if err != nil {
@@ -533,14 +658,29 @@ func (s *Server) handleSchedule(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, http.StatusInternalServerError, err)
 		return
 	}
+	now := time.Now()
+	views := make([]policyView, 0, len(policies))
+	for _, policy := range policies {
+		view := policyView{Policy: policy, AccountCount: len(accounts)}
+		if !policy.AllAccounts() {
+			view.AccountCount = len(policy.Accounts)
+		}
+		if policy.Enabled && len(policy.RepositoryIDs) > 0 {
+			if schedule, err := cron.ParseStandard(policy.ScheduleCron); err == nil {
+				view.Next = schedule.Next(now)
+			}
+		}
+		views = append(views, view)
+	}
+
 	view := struct {
-		Policies     []nodestore.Policy
+		Policies     []policyView
 		Destinations []destinationView
 		Accounts     []accountView
 		Editing      *nodestore.Policy
 		Selected     map[string]bool
 		Chosen       map[string]bool
-	}{Policies: policies, Destinations: destinations, Accounts: accounts}
+	}{Policies: views, Destinations: destinations, Accounts: accounts}
 
 	if id := r.URL.Query().Get("edit"); id != "" {
 		policy, err := s.engine.Store().Policy(id)

@@ -21,6 +21,10 @@ type Snapshot struct {
 	Summary  struct {
 		TotalBytesProcessed uint64 `json:"total_bytes_processed"`
 		TotalFilesProcessed uint64 `json:"total_files_processed"`
+		// DataAdded is what this snapshot actually cost in the
+		// repository. restic reports it from 0.17 on; older
+		// repositories leave it zero and the page omits the column.
+		DataAdded uint64 `json:"data_added"`
 	} `json:"summary"`
 }
 

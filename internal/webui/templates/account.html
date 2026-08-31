@@ -56,12 +56,13 @@
   </div>
   {{if $d.Snapshots}}
   <div class="cpr-tablewrap"><table>
-    <thead><tr><th>Taken</th><th>Read</th><th>Id</th><th class="cpr-right">&nbsp;</th></tr></thead>
+    <thead><tr><th>Taken</th><th>Read</th><th>Stored</th><th>Id</th><th class="cpr-right">&nbsp;</th></tr></thead>
     <tbody>
       {{range $d.Snapshots}}
       <tr>
         <td>{{stamp .Time}}</td>
         <td class="cpr-mono cpr-num">{{bytes .Summary.TotalBytesProcessed}}</td>
+        <td class="cpr-mono cpr-num">{{if .Summary.DataAdded}}{{bytes .Summary.DataAdded}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
         <td class="cpr-mono">{{short .ID}}</td>
         <td class="cpr-right"><div class="cpr-actions">
           <a class="cpr-btn cpr-quiet" href="?p=restore&amp;account={{$d.Account.User}}&amp;repository={{$d.RepositoryID}}">Restore files…</a>
