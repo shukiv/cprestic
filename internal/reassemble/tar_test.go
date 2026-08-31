@@ -145,3 +145,63 @@ func writeRawTar(t *testing.T, path string, headers []tar.Header, bodies []strin
 		t.Fatal(err)
 	}
 }
+
+// A granular restore takes named parts out of an account archive: the DNS
+// zones without the home directory, the certificates without the mail.
+func TestExtractMembersTakesOnlyWhatWasAskedFor(t *testing.T) {
+	root := t.TempDir()
+	archive := filepath.Join(root, "cpmove-studio.tar")
+	writeTestTar(t, archive, map[string]string{
+		"cpmove-studio/dnszones/studio.co.il.db":  "zone",
+		"cpmove-studio/dnszones/other.co.il.db":   "zone",
+		"cpmove-studio/cp/studio":                 "settings",
+		"cpmove-studio/quota":                     "1024",
+		"cpmove-studio/homedir/public_html/i.php": "<?php",
+		"cpmove-studio/mysql/studio_db.sql":       "insert",
+	})
+
+	out := filepath.Join(root, "out")
+	written, err := ExtractMembers(archive, out, []string{"dnszones/", "quota"})
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if written != 3 {
+		t.Errorf("extracted %d files, want 3", written)
+	}
+	for _, want := range []string{
+		"cpmove-studio/dnszones/studio.co.il.db",
+		"cpmove-studio/dnszones/other.co.il.db",
+		"cpmove-studio/quota",
+	} {
+		if _, err := os.Stat(filepath.Join(out, want)); err != nil {
+			t.Errorf("%s was not extracted", want)
+		}
+	}
+	for _, unwanted := range []string{
+		"cpmove-studio/homedir/public_html/i.php",
+		"cpmove-studio/cp/studio",
+		"cpmove-studio/mysql/studio_db.sql",
+	} {
+		if _, err := os.Stat(filepath.Join(out, unwanted)); err == nil {
+			t.Errorf("%s was extracted but nobody asked for it", unwanted)
+		}
+	}
+}
+
+// Nothing matching is a failed restore, not an empty one.
+func TestExtractMembersReportsWhenNothingMatched(t *testing.T) {
+	root := t.TempDir()
+	archive := filepath.Join(root, "cpmove-studio.tar")
+	writeTestTar(t, archive, map[string]string{"cpmove-studio/quota": "1024"})
+
+	written, err := ExtractMembers(archive, filepath.Join(root, "out"), []string{"dnszones/"})
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if written != 0 {
+		t.Errorf("extracted %d files from an archive with none of them", written)
+	}
+	if _, err := ExtractMembers(archive, filepath.Join(root, "out2"), nil); err == nil {
+		t.Error("extracting no members at all should be refused")
+	}
+}

@@ -44,6 +44,9 @@ const (
 	RestoreAccount = "account"
 	// RestoreFiles pulls named paths out of a snapshot.
 	RestoreFiles = "files"
+	// RestoreItems takes one part of an account out of a snapshot — a
+	// mailbox, a database, the DNS records — without rebuilding the rest.
+	RestoreItems = "items"
 )
 
 // RestoreAssignment is one account, or part of one, to bring back.
@@ -58,6 +61,12 @@ type RestoreAssignment struct {
 	// keep their original paths under TargetDir.
 	IncludePaths []string `json:"include_paths,omitempty"`
 	TargetDir    string   `json:"target_dir,omitempty"`
+	// ItemKind and ItemNames describe a RestoreItems job: which part of
+	// the account to take out, and which mailbox, database or path. The
+	// agent maps them onto snapshot paths itself, from the snapshot it
+	// was told to read.
+	ItemKind  string   `json:"item_kind,omitempty"`
+	ItemNames []string `json:"item_names,omitempty"`
 	// Apply hands the rebuilt archive to cPanel's restorepkg, overwriting
 	// the live account. Off unless an operator asked for it.
 	Apply bool `json:"apply"`
@@ -82,8 +91,11 @@ type RestoreReport struct {
 	ArchivePath string `json:"archive_path,omitempty"`
 	// RestoredTo is where a files restore left what it recovered.
 	RestoredTo string `json:"restored_to,omitempty"`
-	Applied    bool   `json:"applied"`
-	Error      string `json:"error,omitempty"`
+	// Detail says what a granular restore actually produced, so "success"
+	// is not the whole of what an operator is told.
+	Detail  string `json:"detail,omitempty"`
+	Applied bool   `json:"applied"`
+	Error   string `json:"error,omitempty"`
 }
 
 // EnrolRequest is sent once at startup so the controller learns what this

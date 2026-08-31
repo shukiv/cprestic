@@ -240,6 +240,8 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 		Kind:         stored.Kind,
 		IncludePaths: stored.IncludePaths,
 		TargetDir:    stored.TargetDir,
+		ItemKind:     stored.ItemKind,
+		ItemNames:    stored.ItemNames,
 		Apply:        stored.Apply,
 		Source:       target,
 		SizeEstimate: account.SizeBytes,
@@ -249,6 +251,9 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 	stored.BytesRestored = report.BytesRestored
 	stored.ArchivePath = report.ArchivePath
 	stored.RestoredTo = report.RestoredTo
+	if report.Detail != "" {
+		stored.Detail = report.Detail
+	}
 	stored.Applied = report.Applied
 	stored.Error = report.Error
 	finished := time.Now().UTC()

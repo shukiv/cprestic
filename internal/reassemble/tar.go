@@ -23,68 +23,120 @@ const maxEntrySize = 1 << 40 // 1 TiB
 
 // extractTar unpacks an archive into dir.
 func extractTar(archivePath, dir string) error {
+	_, err := extractTarFiltered(archivePath, dir, nil)
+	return err
+}
+
+// ExtractMembers unpacks only the named parts of a cpmove archive, and
+// reports how many files that produced.
+//
+// Prefixes are relative to the archive's own top-level directory —
+// "dnszones/" rather than "cpmove-studio/dnszones/" — because that
+// directory is named after the account. A prefix ending in a slash matches
+// a directory and everything under it; anything else matches one file.
+//
+// The count is the point of the return value: a granular restore that
+// extracted nothing has failed, however cleanly it ran.
+func ExtractMembers(archivePath, dir string, prefixes []string) (int, error) {
+	if len(prefixes) == 0 {
+		return 0, fmt.Errorf("reassemble: no archive members were asked for")
+	}
+	return extractTarFiltered(archivePath, dir, func(name string) bool {
+		// Drop the archive's own top-level directory.
+		rel := name
+		if slash := strings.IndexByte(rel, '/'); slash >= 0 {
+			rel = rel[slash+1:]
+		}
+		for _, prefix := range prefixes {
+			if strings.HasSuffix(prefix, "/") {
+				if strings.HasPrefix(rel, prefix) {
+					return true
+				}
+				continue
+			}
+			if rel == prefix {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// PackDir packs a directory into an uncompressed archive, so a granular
+// restore can be handed over as one file.
+func PackDir(dir, archivePath string) error { return createTar(dir, archivePath) }
+
+// extractTarFiltered unpacks the entries keep accepts, or everything when
+// keep is nil, and reports how many regular files it wrote.
+func extractTarFiltered(archivePath, dir string, keep func(name string) bool) (int, error) {
+	written := 0
 	file, err := os.Open(archivePath)
 	if err != nil {
-		return fmt.Errorf("reassemble: open %s: %w", archivePath, err)
+		return 0, fmt.Errorf("reassemble: open %s: %w", archivePath, err)
 	}
 	defer file.Close()
 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("reassemble: create %s: %w", dir, err)
+		return written, fmt.Errorf("reassemble: create %s: %w", dir, err)
 	}
 
 	reader := tar.NewReader(file)
 	for {
 		header, err := reader.Next()
 		if err == io.EOF {
-			return nil
+			return written, nil
 		}
 		if err != nil {
-			return fmt.Errorf("reassemble: read %s: %w", archivePath, err)
+			return written, fmt.Errorf("reassemble: read %s: %w", archivePath, err)
+		}
+
+		if keep != nil && !keep(header.Name) {
+			continue
 		}
 
 		target, err := safeJoin(dir, header.Name)
 		if err != nil {
-			return err
+			return written, err
 		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, entryMode(header, 0o700)); err != nil {
-				return fmt.Errorf("reassemble: create %s: %w", target, err)
+				return written, fmt.Errorf("reassemble: create %s: %w", target, err)
 			}
 		case tar.TypeReg:
 			if header.Size > maxEntrySize {
-				return fmt.Errorf("reassemble: entry %s is %d bytes, refusing to extract",
+				return written, fmt.Errorf("reassemble: entry %s is %d bytes, refusing to extract",
 					header.Name, header.Size)
 			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-				return fmt.Errorf("reassemble: create %s: %w", filepath.Dir(target), err)
+				return written, fmt.Errorf("reassemble: create %s: %w", filepath.Dir(target), err)
 			}
 			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, entryMode(header, 0o600))
 			if err != nil {
-				return fmt.Errorf("reassemble: create %s: %w", target, err)
+				return written, fmt.Errorf("reassemble: create %s: %w", target, err)
 			}
 			_, copyErr := io.Copy(out, io.LimitReader(reader, maxEntrySize))
 			closeErr := out.Close()
 			if copyErr != nil {
-				return fmt.Errorf("reassemble: write %s: %w", target, copyErr)
+				return written, fmt.Errorf("reassemble: write %s: %w", target, copyErr)
 			}
 			if closeErr != nil {
-				return fmt.Errorf("reassemble: close %s: %w", target, closeErr)
+				return written, fmt.Errorf("reassemble: close %s: %w", target, closeErr)
 			}
+			written++
 		case tar.TypeSymlink:
 			// A symlink is only recreated when it stays inside the tree.
 			// One pointing at /etc/shadow would turn a later write into a
 			// very bad day.
 			if _, err := safeJoin(dir, filepath.Join(filepath.Dir(header.Name), header.Linkname)); err != nil {
-				return fmt.Errorf("reassemble: symlink %s points outside the archive", header.Name)
+				return written, fmt.Errorf("reassemble: symlink %s points outside the archive", header.Name)
 			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-				return fmt.Errorf("reassemble: create %s: %w", filepath.Dir(target), err)
+				return written, fmt.Errorf("reassemble: create %s: %w", filepath.Dir(target), err)
 			}
 			if err := os.Symlink(header.Linkname, target); err != nil && !os.IsExist(err) {
-				return fmt.Errorf("reassemble: symlink %s: %w", target, err)
+				return written, fmt.Errorf("reassemble: symlink %s: %w", target, err)
 			}
 		default:
 			// Devices, fifos and hard links are not part of an account

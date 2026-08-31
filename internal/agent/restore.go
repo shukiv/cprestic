@@ -83,6 +83,12 @@ func (a *Agent) RunRestore(ctx context.Context, assignment protocol.RestoreAssig
 	switch assignment.Kind {
 	case protocol.RestoreFiles:
 		return a.restoreFiles(restoreCtx, log, assignment, repo, dir, report)
+	case protocol.RestoreItems:
+		// A granular restore keeps what it produced, the same way a
+		// rebuilt account archive does: it is there to be collected.
+		result, keep := a.restoreItems(restoreCtx, log, assignment, repo, dir, report)
+		retain = keep
+		return result
 	case protocol.RestoreAccount, "":
 		result, err := a.restoreAccount(restoreCtx, log, assignment, repo, dir)
 		if err != nil {

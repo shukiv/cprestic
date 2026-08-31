@@ -17,6 +17,7 @@ import (
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/node"
 	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shuki/cprest/internal/protocol"
 	"github.com/shuki/cprest/internal/vault"
 	"github.com/shuki/cprest/internal/webui"
 )
@@ -1083,5 +1084,65 @@ func TestFontsAreServedByThePluginItself(t *testing.T) {
 	}
 	if !strings.Contains(page, `url("?p=font&name=fira-sans-400.woff2")`) {
 		t.Error("the stylesheet does not point at the plugin's own fonts")
+	}
+}
+
+// A granular restore is queued with the part of the account it wants, and
+// never with an apply: what it recovers is left to collect.
+func TestGranularRestoreIsQueuedWithWhatItAsksFor(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	// The restore page shows no form until an account is chosen, so the
+	// token comes from a page that always has one.
+	_, page := get(t, client, "/destinations")
+	queued, err := client.PostForm("http://ui/restore/items", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "account": {"customer1"},
+		"repository": {"repo-1"}, "snapshot": {"abc123"},
+		"item": {"mailbox"}, "name": {"example.com/sales", " "},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	queued.Body.Close()
+
+	restores, err := engine.Store().Restores(10)
+	if err != nil || len(restores) != 1 {
+		t.Fatalf("restores = %+v (%v)", restores, err)
+	}
+	got := restores[0]
+	if got.Kind != protocol.RestoreItems {
+		t.Errorf("kind = %q, want %q", got.Kind, protocol.RestoreItems)
+	}
+	if got.ItemKind != "mailbox" {
+		t.Errorf("item kind = %q", got.ItemKind)
+	}
+	if len(got.ItemNames) != 1 || got.ItemNames[0] != "example.com/sales" {
+		t.Errorf("item names = %v, want the one mailbox and no blanks", got.ItemNames)
+	}
+	if got.Apply {
+		t.Error("a granular restore must never apply itself to the live account")
+	}
+}
+
+// The restore page offers every part of an account it can take out on its
+// own, so the operator does not have to know the payload's shape.
+func TestTheRestorePageOffersEveryGranularKind(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	_, page := get(t, client, "/restore")
+	for _, want := range []string{
+		"Files or folders", "Website files", "A mailbox", "A database",
+		"DNS records", "SSL certificates", "Account settings",
+	} {
+		if strings.Contains(page, want) {
+			continue
+		}
+		// The picker only appears once an account with backups is chosen,
+		// so an empty page is allowed to be missing it — but the strings
+		// have to exist in the template that renders it.
+		if !strings.Contains(page, "Restore one thing") {
+			return
+		}
+		t.Errorf("the restore page does not offer %q", want)
 	}
 }

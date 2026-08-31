@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -16,10 +17,12 @@ import (
 
 	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/destination"
+	"github.com/shuki/cprest/internal/granular"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/node"
 	"github.com/shuki/cprest/internal/nodestore"
 	"github.com/shuki/cprest/internal/protocol"
+	"github.com/shuki/cprest/internal/reassemble"
 	"github.com/shuki/cprest/internal/resticrun"
 )
 
@@ -641,7 +644,6 @@ func atoi(s string) (int, bool) {
 	return n, err == nil
 }
 
-
 func (s *Server) handleSchedule(w http.ResponseWriter, r *http.Request) {
 	policies, err := s.engine.Store().Policies()
 	if err != nil {
@@ -1121,7 +1123,37 @@ type restoreView struct {
 	Snapshots    []resticrun.Snapshot
 	Restores     []nodestore.Restore
 	LookupError  string
+
+	// Granular restore: which part of the account is being picked, from
+	// which snapshot, and what that snapshot holds at the path being
+	// looked at. Populated only when a kind is chosen, so listing a
+	// snapshot costs nothing until someone asks.
+	Kinds      []granular.Kind
+	Kind       granular.Kind
+	SnapshotID string
+	Path       string
+	Up         string
+	Entries    []browseEntry
+	BrowseErr  string
 }
+
+// browseEntry is one line of a snapshot, as the picker shows it.
+type browseEntry struct {
+	Name string
+	Path string
+	Size uint64
+	Dir  bool
+	// Name of the item this entry would restore, in the form the kind
+	// expects: a path for files, "domain/box" for a mailbox, a bare name
+	// for a database.
+	Item string
+}
+
+// KindTitle lets the template name a kind without knowing the package.
+func (v restoreView) KindTitle(k granular.Kind) string { return k.Title() }
+
+// Selected reports whether a kind is the one being picked.
+func (v restoreView) Selected(k granular.Kind) bool { return v.Kind == k }
 
 func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	accounts, _, err := s.accountViews(r)
@@ -1168,7 +1200,188 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 			view.Snapshots = snapshots
 		}
 	}
+
+	view.Kinds = granular.Kinds
+	view.Kind = granular.Kind(r.URL.Query().Get("item"))
+	view.SnapshotID = r.URL.Query().Get("snapshot")
+	if view.SnapshotID == "" && len(view.Snapshots) > 0 {
+		view.SnapshotID = view.Snapshots[0].ID
+	}
+	if view.Kind != "" && view.SnapshotID != "" {
+		s.fillPicker(r, &view)
+	}
 	s.render(w, r, "restore.html", "Restore", "restore", view)
+}
+
+// fillPicker lists the part of the snapshot the chosen kind is picked
+// from. Only kinds that need a name are listed: the rest restore one known
+// thing and have nothing to choose.
+func (s *Server) fillPicker(r *http.Request, view *restoreView) {
+	snapshot, ok := findSnapshot(view.Snapshots, view.SnapshotID)
+	if !ok {
+		view.BrowseErr = "That backup is not in this destination."
+		return
+	}
+	parts, err := reassemble.Classify(snapshot.Paths)
+	if err != nil {
+		view.BrowseErr = err.Error()
+		return
+	}
+
+	var root string
+	switch view.Kind {
+	case granular.KindFiles:
+		root = parts.Homedir
+	case granular.KindMailbox:
+		root = path.Join(parts.Homedir, "mail")
+	case granular.KindDatabase:
+		root = parts.Databases
+	default:
+		return
+	}
+	if root == "" {
+		view.BrowseErr = "This backup does not contain that part of the account."
+		return
+	}
+
+	view.Path = view.Path0(r, root)
+	entries, err := s.engine.Browse(r.Context(), view.RepositoryID, snapshot.ID, view.Path)
+	if err != nil {
+		view.BrowseErr = err.Error()
+		return
+	}
+	view.Up = parentWithin(view.Path, root)
+	if view.Kind == granular.KindMailbox && view.Path == root {
+		// cPanel keeps the account's own mailbox directly in ~/mail and
+		// every additional address under its domain, so the two are
+		// offered separately rather than mixed into one listing.
+		view.Entries = append(view.Entries, browseEntry{
+			Name: "the account's own mailbox and every address on it",
+			Path: root, Dir: false, Item: ".",
+		})
+	}
+	for _, entry := range entries {
+		// restic lists the directory itself alongside its contents.
+		if entry.Path == view.Path {
+			continue
+		}
+		if view.Kind == granular.KindMailbox && view.Path == root &&
+			(!entry.IsDir() || maildirInternal(entry.Name)) {
+			// The rest of ~/mail is the account's own maildir — folders,
+			// index files, quota state — which is offered above as one
+			// thing rather than a file at a time. Only domains are listed.
+			continue
+		}
+		view.Entries = append(view.Entries, browseEntry{
+			Name: entry.Name,
+			Path: entry.Path,
+			Size: entry.Size,
+			Dir:  entry.IsDir(),
+			Item: itemName(view.Kind, entry, parts),
+		})
+	}
+	sort.Slice(view.Entries, func(i, j int) bool {
+		if view.Entries[i].Dir != view.Entries[j].Dir {
+			return view.Entries[i].Dir
+		}
+		return view.Entries[i].Name < view.Entries[j].Name
+	})
+}
+
+// Path0 keeps the browse path inside the root it was rooted at, so a
+// crafted query cannot list another account's home directory.
+func (v restoreView) Path0(r *http.Request, root string) string {
+	asked := r.URL.Query().Get("path")
+	if asked == "" {
+		return root
+	}
+	clean := path.Clean(asked)
+	if clean != root && !strings.HasPrefix(clean, root+"/") {
+		return root
+	}
+	return clean
+}
+
+// itemName is what the restore form sends for an entry, which differs by
+// kind: a database is a name, a mailbox is domain/box, a file is its path.
+func itemName(kind granular.Kind, entry resticrun.Entry, parts reassemble.Parts) string {
+	switch kind {
+	case granular.KindDatabase:
+		if entry.IsDir() || !strings.HasSuffix(entry.Name, ".sql") {
+			return ""
+		}
+		return strings.TrimSuffix(entry.Name, ".sql")
+	case granular.KindMailbox:
+		mail := path.Join(parts.Homedir, "mail")
+		rel := strings.TrimPrefix(entry.Path, mail+"/")
+		if rel == entry.Path || rel == "" {
+			return ""
+		}
+		return rel
+	default:
+		return entry.Path
+	}
+}
+
+// maildirInternal reports whether a name in ~/mail is part of the
+// account's own maildir rather than a domain.
+func maildirInternal(name string) bool {
+	switch name {
+	case "cur", "new", "tmp":
+		return true
+	}
+	return strings.HasPrefix(name, ".")
+}
+
+func findSnapshot(snapshots []resticrun.Snapshot, id string) (resticrun.Snapshot, bool) {
+	for _, snapshot := range snapshots {
+		if snapshot.ID == id || snapshot.ShortID == id {
+			return snapshot, true
+		}
+	}
+	return resticrun.Snapshot{}, false
+}
+
+// parentWithin is the directory above path, or empty at the root.
+func parentWithin(current, root string) string {
+	if current == root || current == "" {
+		return ""
+	}
+	parent := path.Dir(current)
+	if parent != root && !strings.HasPrefix(parent, root+"/") {
+		return root
+	}
+	return parent
+}
+
+// handleRestoreItems queues a granular restore: one mailbox, one database,
+// the DNS records. What comes back is left on this server to collect.
+func (s *Server) handleRestoreItems(w http.ResponseWriter, r *http.Request) {
+	account := r.PostFormValue("account")
+	back := "/restore?account=" + url.QueryEscape(account) +
+		"&repository=" + url.QueryEscape(r.PostFormValue("repository")) +
+		"&item=" + url.QueryEscape(r.PostFormValue("item"))
+
+	restore := nodestore.Restore{
+		Account:      account,
+		RepositoryID: r.PostFormValue("repository"),
+		SnapshotID:   r.PostFormValue("snapshot"),
+		Kind:         protocol.RestoreItems,
+		ItemKind:     r.PostFormValue("item"),
+	}
+	for _, name := range r.PostForm["name"] {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			restore.ItemNames = append(restore.ItemNames, trimmed)
+		}
+	}
+
+	if _, err := s.engine.QueueRestore(restore); err != nil {
+		s.redirect(w, r, back, "error", err.Error())
+		return
+	}
+	s.redirect(w, r, back, "ok",
+		"Queued. What it recovers is left on this server to collect — "+
+			"nothing on the live account is touched.")
 }
 
 func (s *Server) handleStartRestore(w http.ResponseWriter, r *http.Request) {

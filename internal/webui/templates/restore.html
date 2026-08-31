@@ -93,6 +93,92 @@
 </div>
 {{end}}
 
+{{if and $data.Account $data.Snapshots}}
+{{$q := printf "account=%s&amp;repository=%s&amp;snapshot=%s" $data.Account $data.RepositoryID $data.SnapshotID}}
+<div class="cpr-card">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
+    <h2 style="margin:0">Restore one thing</h2>
+  </div>
+  <div class="cpr-pad">
+    <p class="cpr-hint" style="margin:0 0 var(--s3)">Take a single mailbox, database, file or
+    setting out of a backup without rebuilding the account. What comes back is left on this
+    server to collect; nothing on the live account is touched.</p>
+
+    <div class="cpr-chips">
+      {{range $data.Kinds}}
+      <a class="cpr-chip" aria-pressed="{{if $data.Selected .}}true{{else}}false{{end}}"
+         href="?p=restore&amp;{{$q}}&amp;item={{.}}">{{$data.KindTitle .}}</a>
+      {{end}}
+    </div>
+
+    {{if $data.Kind}}
+    <div style="margin-top:var(--s4)">
+      <form method="get" class="cpr-row">
+        <input type="hidden" name="p" value="restore">
+        <input type="hidden" name="account" value="{{$data.Account}}">
+        <input type="hidden" name="repository" value="{{$data.RepositoryID}}">
+        <input type="hidden" name="item" value="{{$data.Kind}}">
+        <label for="snapshot" style="margin:0">From the backup taken</label>
+        <select id="snapshot" name="snapshot" onchange="this.form.submit()" style="width:auto">
+          {{range $data.Snapshots}}
+          <option value="{{.ID}}" {{if eq .ID $data.SnapshotID}}selected{{end}}>{{stamp .Time}}</option>
+          {{end}}
+        </select>
+      </form>
+    </div>
+
+    {{if $data.BrowseErr}}
+    <div class="cpr-banner cpr-bad" style="margin-top:var(--s4)">
+      <div class="cpr-body">{{$data.BrowseErr}}</div>
+    </div>
+    {{else if $data.Entries}}
+    <div class="cpr-tablewrap" style="margin-top:var(--s4)"><table>
+      <thead><tr><th>Name</th><th>Size</th><th class="cpr-right">&nbsp;</th></tr></thead>
+      <tbody>
+        {{if $data.Up}}
+        <tr><td colspan="3"><a class="cpr-link"
+          href="?p=restore&amp;{{$q}}&amp;item={{$data.Kind}}&amp;path={{$data.Up}}">↑ up one level</a></td></tr>
+        {{end}}
+        {{range $data.Entries}}
+        <tr>
+          <td class="cpr-acct">
+            {{if .Dir}}<a class="cpr-link"
+              href="?p=restore&amp;{{$q}}&amp;item={{$data.Kind}}&amp;path={{.Path}}">{{.Name}}/</a>
+            {{else}}{{.Name}}{{end}}</td>
+          <td class="cpr-mono cpr-num">{{if .Size}}{{bytes .Size}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
+          <td class="cpr-right">{{if .Item}}<div class="cpr-actions">
+            <form method="post" action="?p=restore/items" class="cpr-inline">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <input type="hidden" name="account" value="{{$data.Account}}">
+              <input type="hidden" name="repository" value="{{$data.RepositoryID}}">
+              <input type="hidden" name="snapshot" value="{{$data.SnapshotID}}">
+              <input type="hidden" name="item" value="{{$data.Kind}}">
+              <input type="hidden" name="name" value="{{.Item}}">
+              <button class="cpr-btn">Restore this</button>
+            </form>
+          </div>{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table></div>
+    {{else if $data.Kind.NeedsNames}}
+    <p class="cpr-hint" style="margin-top:var(--s4)">Nothing here in this backup.</p>
+    {{else}}
+    <form method="post" action="?p=restore/items" class="cpr-row" style="margin-top:var(--s4)">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}">
+      <input type="hidden" name="account" value="{{$data.Account}}">
+      <input type="hidden" name="repository" value="{{$data.RepositoryID}}">
+      <input type="hidden" name="snapshot" value="{{$data.SnapshotID}}">
+      <input type="hidden" name="item" value="{{$data.Kind}}">
+      <button class="cpr-btn cpr-primary">Restore {{$data.KindTitle $data.Kind}}</button>
+      <span class="cpr-hint" style="margin:0">Taken out of the account archive in that backup.</span>
+    </form>
+    {{end}}
+    {{end}}
+  </div>
+</div>
+{{end}}
+
 <div class="cpr-card">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Recent restores</h2></div>
   {{if $data.Restores}}
@@ -103,7 +189,7 @@
     <tr class="cpr-state {{template "runstripe" .Status}}" {{if not .Status.Terminal}}data-running="1"{{end}}>
       <td style="white-space:nowrap">{{stamp .QueuedAt}}</td>
       <td class="cpr-acct">{{.Account}}</td>
-      <td>{{.Kind}}{{if .Applied}} <span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>applied</span>{{end}}</td>
+      <td>{{if .ItemKind}}{{.ItemKind}}{{else}}{{.Kind}}{{end}}{{if .Applied}} <span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>applied</span>{{end}}</td>
       <td>{{template "runstate" .Status}}</td>
       <td>
         {{if .Detail}}<div class="cpr-mono" style="font-size:12px; color:var(--muted)">{{.Detail}}</div>{{end}}

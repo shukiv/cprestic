@@ -144,7 +144,7 @@ func TestRunSplitRebuildsCpmoveTree(t *testing.T) {
 		t.Error("no bytes reported restored")
 	}
 
-	// The parts must land in the slots restorepkg expects, inside the
+	// The Parts must land in the slots restorepkg expects, inside the
 	// archive's own top-level directory.
 	tree := filepath.Join(workDir, "tree", "cpmove-customer1")
 	for path, want := range map[string]string{
@@ -234,7 +234,7 @@ func TestClassifyPaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("classifyPaths: %v", err)
 	}
-	if split.mode() != pkgacct.ModeSplit || split.homedir != "/home/c1" {
+	if split.mode() != pkgacct.ModeSplit || split.Homedir != "/home/c1" {
 		t.Errorf("split = %+v", split)
 	}
 

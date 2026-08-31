@@ -108,6 +108,10 @@ type Restore struct {
 	Kind         string   `json:"kind"`
 	IncludePaths []string `json:"include_paths,omitempty"`
 	TargetDir    string   `json:"target_dir,omitempty"`
+	// ItemKind and ItemNames record a granular restore: the part of the
+	// account asked for, and which one.
+	ItemKind  string   `json:"item_kind,omitempty"`
+	ItemNames []string `json:"item_names,omitempty"`
 	// Apply hands the rebuilt archive to restorepkg, overwriting the live
 	// account. Off unless explicitly asked for.
 	Apply         bool       `json:"apply"`

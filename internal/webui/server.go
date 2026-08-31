@@ -150,6 +150,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /restore", s.handleRestore)
 	mux.HandleFunc("POST /restore/start", s.guard(s.handleStartRestore))
+	mux.HandleFunc("POST /restore/items", s.guard(s.handleRestoreItems))
 
 	mux.HandleFunc("GET /jobs", s.handleJobs)
 	mux.HandleFunc("GET /settings", s.handleSettings)

@@ -71,7 +71,7 @@
     <tr class="cpr-state {{template "runstripe" .Status}}" {{if not .Status.Terminal}}data-running="1"{{end}}>
       <td style="white-space:nowrap">{{stamp .QueuedAt}}</td>
       <td class="cpr-acct">{{.Account}}</td>
-      <td>{{.Kind}}{{if .Applied}} <span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>applied</span>{{end}}</td>
+      <td>{{if .ItemKind}}{{.ItemKind}}{{else}}{{.Kind}}{{end}}{{if .Applied}} <span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>applied</span>{{end}}</td>
       <td>{{template "runstate" .Status}}</td>
       <td>
         {{if .Detail}}<div class="cpr-mono" style="font-size:12px; color:var(--muted)">{{.Detail}}</div>{{end}}

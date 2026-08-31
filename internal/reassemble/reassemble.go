@@ -74,15 +74,21 @@ func Run(ctx context.Context, restorer Restorer, req Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	parts, err := classifyPaths(snapshot.Paths)
+	found, err := classifyPaths(snapshot.Paths)
 	if err != nil {
 		return Result{}, err
 	}
 
-	if parts.mode() == pkgacct.ModeMonolithic {
-		return restoreMonolithic(ctx, restorer, req, snapshot, parts)
+	if found.mode() == pkgacct.ModeMonolithic {
+		return restoreMonolithic(ctx, restorer, req, snapshot, found)
 	}
-	return restoreSplit(ctx, restorer, req, snapshot, parts)
+	return restoreSplit(ctx, restorer, req, snapshot, found)
+}
+
+// FindSnapshot resolves the snapshot a request names, and checks it
+// belongs to the account asking for it.
+func FindSnapshot(ctx context.Context, restorer Restorer, req Request) (resticrun.Snapshot, error) {
+	return findSnapshot(ctx, restorer, req)
 }
 
 func findSnapshot(ctx context.Context, restorer Restorer, req Request) (resticrun.Snapshot, error) {
@@ -111,16 +117,16 @@ func findSnapshot(ctx context.Context, restorer Restorer, req Request) (resticru
 		req.SnapshotID, req.Account)
 }
 
-// parts maps a snapshot's recorded paths back to the roles they played.
-type parts struct {
-	metadata  string
-	homedir   string
-	databases string
-	archive   string
+// Parts maps a snapshot's recorded paths back to the roles they played.
+type Parts struct {
+	Metadata  string
+	Homedir   string
+	Databases string
+	Archive   string
 }
 
-func (p parts) mode() pkgacct.Mode {
-	if p.archive != "" {
+func (p Parts) mode() pkgacct.Mode {
+	if p.Archive != "" {
 		return pkgacct.ModeMonolithic
 	}
 	return pkgacct.ModeSplit
@@ -131,53 +137,56 @@ func (p parts) mode() pkgacct.Mode {
 // The agent stages metadata and database dumps in named subdirectories and
 // backs up the home directory in place, so the roles are recoverable from
 // the paths themselves. Nothing about the staging root is assumed.
-func classifyPaths(paths []string) (parts, error) {
-	var found parts
+// Classify is how a caller recovers the roles of a snapshot's paths.
+func Classify(paths []string) (Parts, error) { return classifyPaths(paths) }
+
+func classifyPaths(paths []string) (Parts, error) {
+	var found Parts
 	for _, path := range paths {
 		switch {
 		case strings.HasSuffix(path, "/metadata"):
-			found.metadata = path
+			found.Metadata = path
 		case strings.HasSuffix(path, "/databases"):
-			found.databases = path
+			found.Databases = path
 		case strings.HasSuffix(path, ".tar"), strings.HasSuffix(path, ".tar.gz"):
-			found.archive = path
+			found.Archive = path
 		default:
-			if found.homedir != "" {
-				return parts{}, fmt.Errorf(
+			if found.Homedir != "" {
+				return Parts{}, fmt.Errorf(
 					"reassemble: snapshot has two candidate home directories, %s and %s",
-					found.homedir, path)
+					found.Homedir, path)
 			}
-			found.homedir = path
+			found.Homedir = path
 		}
 	}
 
 	switch {
-	case found.archive != "" && (found.metadata != "" || found.homedir != ""):
-		return parts{}, fmt.Errorf("reassemble: snapshot mixes a monolithic archive with split parts")
-	case found.archive != "":
+	case found.Archive != "" && (found.Metadata != "" || found.Homedir != ""):
+		return Parts{}, fmt.Errorf("reassemble: snapshot mixes a monolithic archive with split Parts")
+	case found.Archive != "":
 		return found, nil
-	case found.metadata == "":
-		return parts{}, fmt.Errorf("reassemble: snapshot has no metadata part")
-	case found.homedir == "":
-		return parts{}, fmt.Errorf("reassemble: snapshot has no home directory part")
+	case found.Metadata == "":
+		return Parts{}, fmt.Errorf("reassemble: snapshot has no metadata part")
+	case found.Homedir == "":
+		return Parts{}, fmt.Errorf("reassemble: snapshot has no home directory part")
 	}
 	return found, nil
 }
 
 func restoreMonolithic(ctx context.Context, restorer Restorer, req Request,
-	snapshot resticrun.Snapshot, found parts) (Result, error) {
+	snapshot resticrun.Snapshot, found Parts) (Result, error) {
 
 	dir := filepath.Join(req.WorkDir, "archive")
 	restored, err := restorer.Restore(ctx, req.Repo, resticrun.RestoreSpec{
 		SnapshotID: snapshot.ID,
-		Subpath:    filepath.Dir(found.archive),
+		Subpath:    filepath.Dir(found.Archive),
 		Target:     dir,
 	})
 	if err != nil {
 		return Result{}, fmt.Errorf("reassemble: restore archive: %w", err)
 	}
 
-	archive := filepath.Join(dir, filepath.Base(found.archive))
+	archive := filepath.Join(dir, filepath.Base(found.Archive))
 	if _, err := os.Stat(archive); err != nil {
 		return Result{}, fmt.Errorf("reassemble: restored archive is missing: %w", err)
 	}
@@ -189,7 +198,7 @@ func restoreMonolithic(ctx context.Context, restorer Restorer, req Request,
 }
 
 func restoreSplit(ctx context.Context, restorer Restorer, req Request,
-	snapshot resticrun.Snapshot, found parts) (Result, error) {
+	snapshot resticrun.Snapshot, found Parts) (Result, error) {
 
 	var bytesRestored uint64
 	restore := func(subpath, target string) error {
@@ -208,7 +217,7 @@ func restoreSplit(ctx context.Context, restorer Restorer, req Request,
 	// 1. The metadata part holds the pkgacct archive with everything except
 	//    the home directory and the databases.
 	metadataDir := filepath.Join(req.WorkDir, "metadata")
-	if err := restore(found.metadata, metadataDir); err != nil {
+	if err := restore(found.Metadata, metadataDir); err != nil {
 		return Result{}, fmt.Errorf("reassemble: restore metadata: %w", err)
 	}
 
@@ -229,11 +238,11 @@ func restoreSplit(ctx context.Context, restorer Restorer, req Request,
 	}
 
 	// 3. Each remaining part is restored straight into its slot.
-	if err := restore(found.homedir, filepath.Join(root, HomedirDir)); err != nil {
+	if err := restore(found.Homedir, filepath.Join(root, HomedirDir)); err != nil {
 		return Result{}, fmt.Errorf("reassemble: restore home directory: %w", err)
 	}
-	if found.databases != "" {
-		if err := restore(found.databases, filepath.Join(root, DatabaseDir)); err != nil {
+	if found.Databases != "" {
+		if err := restore(found.Databases, filepath.Join(root, DatabaseDir)); err != nil {
 			return Result{}, fmt.Errorf("reassemble: restore databases: %w", err)
 		}
 	}
