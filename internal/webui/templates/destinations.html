@@ -5,6 +5,13 @@
   <p class="cpr-sub">Where this server sends its backups.</p>
 </div>
 <div class="cpr-card">
+  <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
+    <h2 style="margin:0">Configured</h2>
+    {{/* A link, so this works with no JavaScript: it opens the same form
+         as its own page. The script turns it into the sheet. */}}
+    <a class="cpr-btn cpr-primary" href="?p=destinations&amp;add=1"
+       data-dialog="add-destination">Add a destination</a>
+  </div>
   {{if $data.Destinations}}
   <div class="cpr-tablewrap"><table>
     <thead><tr><th>Name</th><th>Address</th><th>Repository</th><th>State</th><th class="cpr-right">&nbsp;</th></tr></thead>
@@ -60,7 +67,11 @@
   </div>
   {{end}}
   {{else}}
-  <div class="cpr-empty"><p><b>No destination yet.</b><br>Nothing can be backed up until this server has somewhere to send it.</p></div>
+  <div class="cpr-empty">
+    <p><b>No destination yet.</b><br>Nothing can be backed up until this server has somewhere to send it.</p>
+    <a class="cpr-btn cpr-primary" href="?p=destinations&amp;add=1"
+       data-dialog="add-destination">Add a destination</a>
+  </div>
   {{end}}
 </div>
 
@@ -71,55 +82,15 @@
   </div>
   <div class="cpr-pad">{{template "destinationform" .}}</div>
 </div>
-{{else}}
+{{else if $data.Adding}}
+{{/* Followed the link with no JavaScript, or came here by link: the same
+     form, on a page of its own. */}}
 <div class="cpr-card">
-  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
+  <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
     <h2 style="margin:0">Add a destination</h2>
+    <a class="cpr-btn cpr-quiet" href="?p=destinations">Cancel</a>
   </div>
-  <div class="cpr-pad">
-    <form method="post" action="?p=destinations/quick">
-      <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <label for="target">Where the backups go</label>
-      <input type="text" id="target" name="target" required
-             placeholder="cpbackup@backup.example.com:/backups">
-      <small class="cpr-help">Also understood:
-        <span class="cpr-mono">sftp://user@host:2222/srv/backups</span>,
-        <span class="cpr-mono">https://user:password@backup.example.com</span>,
-        <span class="cpr-mono">/mnt/nas/backups</span>,
-        <span class="cpr-mono">s3://bucket/folder</span>.</small>
-
-      <div class="cpr-grid2">
-        <div>
-          <label for="quick_name">Name <span class="cpr-muted">(optional)</span></label>
-          <input type="text" id="quick_name" name="name" placeholder="taken from the address">
-        </div>
-        <div>
-          <label for="quick_password" data-quick-password-label>Password for that account</label>
-          <input type="password" id="quick_password" name="password" autocomplete="new-password">
-          <small class="cpr-help">Used once to install cprest's own key, then discarded.</small>
-        </div>
-      </div>
-
-      <label class="cpr-check">
-        <input type="checkbox" name="create_account" value="1" data-quick-create>
-        <span>That account does not exist yet — create it for me
-        <small class="cpr-help">cprest creates the account, gives it a locked password so its
-        key is the only way in, makes the backup directory, installs the key and checks it
-        works. The password above is then an administrator's on that server.</small></span>
-      </label>
-
-      <div data-quick-admin hidden>
-        <label for="admin_user">Administrator to log in as</label>
-        <input type="text" id="admin_user" name="admin_user" value="root">
-      </div>
-
-      <div class="cpr-row" style="margin-top:var(--s4)">
-        <button class="cpr-btn cpr-primary" type="submit">Add and test</button>
-        <span class="cpr-hint" style="margin:0">cprest makes its own key either way. Credentials
-        are encrypted before they are written to disk.</span>
-      </div>
-    </form>
-  </div>
+  <div class="cpr-pad">{{template "addform" .}}</div>
   <div class="cpr-pad" style="border-top:1px solid var(--line)">
     <details>
       <summary>Set it up field by field</summary>
@@ -127,6 +98,24 @@
     </details>
   </div>
 </div>
+{{else}}
+{{/* The sheet: the list stays the page, and adding happens over it rather
+     than pushing the list down the screen. */}}
+<dialog id="add-destination" class="cpr-sheet" aria-label="Add a destination">
+  <div class="cpr-sheet-head">
+    <h2 style="margin:0">Add a destination</h2>
+    <button type="button" class="cpr-btn cpr-quiet" data-dialog-close aria-label="Close">✕</button>
+  </div>
+  <div class="cpr-sheet-body">
+    {{template "addform" .}}
+    <div style="margin-top:var(--s5); border-top:1px solid var(--line); padding-top:var(--s3)">
+      <details>
+        <summary>Set it up field by field</summary>
+        <div style="margin-top:var(--s4)">{{template "destinationform" .}}</div>
+      </details>
+    </div>
+  </div>
+</dialog>
 {{end}}
 {{end}}
 
@@ -286,4 +275,44 @@
       {{else}}<span class="cpr-hint" style="margin:0">Credentials are encrypted before they are written to disk.</span>{{end}}
     </div>
   </form>
+{{end}}
+
+{{/* The line an operator already has in their head. Everything a line
+     cannot say is in the full form, one disclosure away. */}}
+{{define "addform"}}
+<form method="post" action="?p=destinations/quick">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <label for="target">Where the backups go</label>
+  <input type="text" id="target" name="target" required
+         placeholder="cpbackup@backup.example.com:/backups" data-quick-target>
+  <small class="cpr-help" data-quick-reading>Also understood:
+    <span class="cpr-mono">sftp://user@host:2222/srv/backups</span>,
+    <span class="cpr-mono">https://user:password@backup.example.com</span>,
+    <span class="cpr-mono">/mnt/nas/backups</span>,
+    <span class="cpr-mono">s3://bucket/folder</span>.</small>
+
+  <label for="quick_name">Name <span class="cpr-muted">(optional)</span></label>
+  <input type="text" id="quick_name" name="name" placeholder="taken from the address">
+
+  <label for="quick_password" data-quick-password-label>Password for that account</label>
+  <input type="password" id="quick_password" name="password" autocomplete="new-password">
+  <small class="cpr-help">Used once to install cprest's own key, then discarded.</small>
+
+  <label class="cpr-check">
+    <input type="checkbox" name="create_account" value="1" data-quick-create>
+    <span>That account does not exist yet — create it for me
+    <small class="cpr-help">cprest creates the account, gives it a locked password so its key
+    is the only way in, makes the backup directory, installs the key and checks it works. The
+    password above is then an administrator's on that server.</small></span></label>
+
+  <div data-quick-admin hidden>
+    <label for="admin_user">Administrator to log in as</label>
+    <input type="text" id="admin_user" name="admin_user" value="root">
+  </div>
+
+  <div class="cpr-row" style="margin-top:var(--s4)">
+    <button class="cpr-btn cpr-primary" type="submit">Add and test</button>
+    <span class="cpr-hint" style="margin:0">Credentials are encrypted before they are written to disk.</span>
+  </div>
+</form>
 {{end}}

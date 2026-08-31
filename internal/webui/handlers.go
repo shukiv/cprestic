@@ -298,7 +298,16 @@ func (s *Server) handleDestinations(w http.ResponseWriter, r *http.Request) {
 		Destinations []destinationView
 		Hostname     string
 		Editing      *destinationView
-	}{Destinations: views, Hostname: s.engine.Settings().Hostname}
+		// Adding renders the add form as a page of its own rather than
+		// as a sheet over the list. That is what a browser with no
+		// JavaScript follows the button to, and what a bookmarked or
+		// shared "add a destination" link opens.
+		Adding bool
+	}{
+		Destinations: views,
+		Hostname:     s.engine.Settings().Hostname,
+		Adding:       r.URL.Query().Get("add") != "",
+	}
 
 	if id := r.URL.Query().Get("edit"); id != "" {
 		for i := range views {

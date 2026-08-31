@@ -1449,3 +1449,32 @@ func TestAnUnreadableLineIsRefused(t *testing.T) {
 		t.Errorf("a line that names no path was saved as %+v", destinations)
 	}
 }
+
+// Adding a destination happens over the list, not below it — but the
+// button is a link first, so a browser with no JavaScript reaches the same
+// form on a page of its own.
+func TestAddingADestinationWorksWithAndWithoutTheSheet(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	_, page := get(t, client, "/destinations")
+	if !strings.Contains(page, `<dialog id="add-destination"`) {
+		t.Error("the page has no sheet to add a destination in")
+	}
+	if !strings.Contains(page, `href="?p=destinations&amp;add=1"`) {
+		t.Error("the button is not a link, so it does nothing without JavaScript")
+	}
+
+	// What that link opens on its own.
+	status, standalone := get(t, client, "/destinations?add=1")
+	if status != http.StatusOK {
+		t.Fatalf("GET /destinations?add=1 = %d", status)
+	}
+	if strings.Contains(standalone, `<dialog id="add-destination"`) {
+		t.Error("the form is in a sheet on the page that exists because there is no sheet")
+	}
+	for _, want := range []string{"Where the backups go", "Set it up field by field", "Add and test"} {
+		if !strings.Contains(standalone, want) {
+			t.Errorf("the add page is missing %q", want)
+		}
+	}
+}

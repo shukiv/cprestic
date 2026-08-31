@@ -435,3 +435,25 @@
   display:flex; justify-content:flex-end; padding:var(--s3) var(--s4);
   border-top:1px solid var(--line); background:var(--surface-2);
 }
+
+/* --- the add sheet --------------------------------------------------- */
+/* The list is the page. Adding happens over it rather than pushing it
+   down the screen — and it is a dialog, so the browser handles the top
+   layer, the backdrop and Escape. Without JavaScript the button is a link
+   to the same form on a page of its own; nothing here is required for it
+   to work. */
+.cprest .cpr-sheet {
+  position:fixed; inset:0 0 0 auto; margin:0;
+  width:min(520px, 94vw); max-width:none; height:100%; max-height:none;
+  padding:0; border:0; border-left:1px solid var(--line-strong); border-radius:0;
+  background:var(--surface); color:var(--ink);
+  box-shadow:-8px 0 28px rgba(10,14,20,.22);
+  display:flex; flex-direction:column;
+}
+.cprest .cpr-sheet::backdrop { background:rgba(10,14,20,.45); }
+.cprest .cpr-sheet-head {
+  display:flex; align-items:center; justify-content:space-between; gap:var(--s3);
+  padding:var(--s4) var(--s5); border-bottom:1px solid var(--line); flex:none;
+}
+.cprest .cpr-sheet-body { padding:var(--s5); overflow:auto; flex:1; }
+.cprest .cpr-sheet-body form * + label { margin-top:var(--s4); }

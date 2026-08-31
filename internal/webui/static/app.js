@@ -193,9 +193,20 @@
     if (opener) {
       var dialog = document.getElementById(opener.dataset.dialog);
       if (dialog && dialog.showModal) {
+        // Only then: without this the link still goes to the same form on
+        // a page of its own, which is what a browser with no JavaScript
+        // gets and what a shared link opens.
         event.preventDefault();
         dialog.showModal();
+        var first = dialog.querySelector("input:not([type=hidden]), select, textarea");
+        if (first) { first.focus(); }
       }
+      return;
+    }
+    // Clicking the backdrop is how a sheet is dismissed by everyone who
+    // has ever used one.
+    if (event.target.tagName === "DIALOG" && event.target.classList.contains("cpr-sheet")) {
+      event.target.close();
       return;
     }
     var closer = event.target.closest("[data-dialog-close]");
