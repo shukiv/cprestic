@@ -88,6 +88,35 @@ type RetentionGroup struct {
 	Newest  *time.Time `json:"newest,omitempty"`
 }
 
+// AccountIdentity is which unix account a cPanel name currently means.
+//
+// A cPanel username is a label, not an identity. Delete an account and
+// create another with the same name -- which a host does when a customer
+// leaves and the next one asks for the same name -- and the second
+// customer is, to every part of this program that goes by name, the
+// first one. Their self-service page would list the previous customer's
+// backups and let them download them.
+//
+// The unix uid is the thing that actually changes. This records which uid
+// a name meant when its backups were taken, so that when the name is
+// recycled the new owner sees only what was taken since.
+type AccountIdentity struct {
+	Account string `json:"account"`
+	// UID is the unix account the name meant when last seen.
+	UID int `json:"uid"`
+	// SinceAt is when this uid was first seen for this name. After a
+	// recycle it is the moment the new account appeared, and nothing
+	// older than it belongs to whoever holds the name now.
+	SinceAt time.Time `json:"since_at"`
+	// Recycled records that the name has changed hands at least once. An
+	// identity that has never changed hands does not filter anything:
+	// its SinceAt is only when this program first noticed the account,
+	// not a boundary between two owners.
+	Recycled  bool      `json:"recycled,omitempty"`
+	LastSeen  time.Time `json:"last_seen"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // Retention is the keep policy handed to "restic forget".
 type Retention struct {
 	KeepLast    int `json:"keep_last,omitempty"`

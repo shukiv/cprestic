@@ -302,7 +302,7 @@ func (s *Server) handleUserHome(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		row := userRepository{ID: dest.Repository.ID, Name: dest.Name}
-		snapshots, err := s.engine.Snapshots(r.Context(), dest.Repository.ID, view.Account)
+		snapshots, err := s.engine.UserSnapshots(r.Context(), dest.Repository.ID, view.Account)
 		if err != nil {
 			s.log.Error("list account snapshots", "account", view.Account,
 				"repository", dest.Repository.ID, "error", err)
@@ -355,7 +355,7 @@ func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
 		Kind:       granular.Kind(r.URL.Query().Get("item")),
 	}
 
-	snapshots, err := s.engine.Snapshots(r.Context(), view.Repository, view.Account)
+	snapshots, err := s.engine.UserSnapshots(r.Context(), view.Repository, view.Account)
 	if err != nil {
 		s.log.Error("browse account snapshots", "account", view.Account,
 			"repository", view.Repository, "error", err)
@@ -449,6 +449,16 @@ func (s *Server) handleUserRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	restore.ItemKind = string(asked)
+
+	// The backup has to be one of theirs. A name that has changed hands
+	// still has the previous owner's snapshots in the repository, and
+	// hiding them from the page while restoring them on request would be
+	// no protection at all.
+	if err := s.engine.OwnsSnapshot(r.Context(), restore.RepositoryID, account,
+		restore.SnapshotID); err != nil {
+		s.redirect(w, r, "/", "error", "That backup is not one of yours.")
+		return
+	}
 	for _, name := range r.PostForm["name"] {
 		if trimmed := name; trimmed != "" {
 			restore.ItemNames = append(restore.ItemNames, trimmed)

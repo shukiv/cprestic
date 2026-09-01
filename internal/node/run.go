@@ -165,6 +165,13 @@ func (e *Engine) runBackup(ctx context.Context, stored nodestore.Job) error {
 		if err != nil {
 			return e.failJob(stored, fmt.Sprintf("account: %v", err))
 		}
+		// Which unix account this name means, recorded as it is seen. A
+		// name that has changed hands since the last backup is a
+		// different customer, and this is where that is noticed.
+		if _, err := e.noteIdentity(stored.Account); err != nil {
+			e.log.Warn("record which account this name means",
+				"account", stored.Account, "error", err)
+		}
 	}
 	assignment, err := e.assignmentFor(stored, policy, account)
 	if err != nil {

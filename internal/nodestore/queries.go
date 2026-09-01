@@ -499,3 +499,41 @@ func (s *Store) PendingWork() (*Restore, *Job, error) {
 	}
 	return nil, nil, nil
 }
+
+// --- account identities ---
+
+// PutIdentity records which unix account a cPanel name means.
+func (s *Store) PutIdentity(identity AccountIdentity) (AccountIdentity, error) {
+	now := time.Now().UTC()
+	if identity.CreatedAt.IsZero() {
+		identity.CreatedAt = now
+	}
+	identity.LastSeen = now
+	return identity, s.put(bucketIdentities, identity.Account, identity)
+}
+
+// Identity reads one back.
+func (s *Store) Identity(account string) (AccountIdentity, error) {
+	var identity AccountIdentity
+	return identity, s.get(bucketIdentities, account, &identity)
+}
+
+// Identities lists them all.
+func (s *Store) Identities() ([]AccountIdentity, error) {
+	var identities []AccountIdentity
+	err := s.forEach(bucketIdentities, func(_ string, raw []byte) error {
+		var identity AccountIdentity
+		if err := json.Unmarshal(raw, &identity); err != nil {
+			return err
+		}
+		identities = append(identities, identity)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(identities, func(i, j int) bool {
+		return identities[i].Account < identities[j].Account
+	})
+	return identities, nil
+}

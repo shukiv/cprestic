@@ -44,6 +44,62 @@ var systemPaths = []string{
 	"/var/cpanel/ssl",                // the server's certificates
 	"/etc/cpupdate.conf",             // update policy
 	"/var/cpanel/nameserverips.yaml", //
+
+	// DNS signing material. This is the one thing here that cannot be
+	// regenerated: a zone whose DNSSEC keys are lost has to be
+	// unsigned at the registrar before it resolves again, which is a
+	// support ticket per domain and an outage until it is done.
+	"/var/cpanel/dnssec_keys",
+	"/var/named/dnssec-keys",
+	"/etc/rndc.key",
+	"/etc/named",
+
+	// Who exists on the machine. cPanel rebuilds its own accounts from
+	// their archives, but the system users around them -- and the uids
+	// the restored homes are owned by -- are only written down here.
+	"/etc/passwd",
+	"/etc/group",
+	"/etc/shadow",
+
+	// Scheduled work that belongs to no account: an account's own crontab
+	// travels in its archive, root's does not.
+	"/var/spool/cron",
+	"/etc/crontab",
+	"/etc/cron.d",
+
+	// Where mail for a domain is delivered. cPanel can regenerate these
+	// from account data, but a replacement server that has them is
+	// delivering mail correctly before it has finished restoring.
+	"/etc/localdomains",
+	"/etc/remotedomains",
+	"/etc/userdomains",
+
+	// The rest of the server's own configuration.
+	"/var/cpanel/conf",               // service configuration
+	"/var/cpanel/authn",              // external authentication links
+	"/var/cpanel/apps",               // AppConfig registrations
+	"/var/cpanel/roles",              // which roles this server runs
+	"/var/cpanel/version",            // which cPanel this was
+	"/etc/cpanel_exim_system_filter", // the exim system filter
+	"/etc/proftpd.conf",              // whichever ftp server is installed
+	"/etc/pure-ftpd.conf",            //
+}
+
+// SystemNotCarried is what a system backup deliberately leaves out, so
+// the interface can say so rather than implying the archive is a whole
+// machine.
+//
+// Everything here is either restored as part of an account, reinstalled
+// by cPanel itself, or -- in one case -- the key to the backups, which
+// cannot be kept inside them.
+var SystemNotCarried = []string{
+	"Anything that belongs to an account: its home directory, databases, " +
+		"DNS zones, mail and settings all travel in that account's own backup.",
+	"cPanel's own installed files. A replacement server installs cPanel first; " +
+		"this restores what was configured on top of it.",
+	"Third-party software installed outside cPanel, and anything under /usr or /opt.",
+	"cprest's own configuration in /etc/cprest, including the key that decrypts " +
+		"these backups. A backup that contained the key to itself would protect nothing.",
 }
 
 // StageSystem copies the server's own configuration into the staging
