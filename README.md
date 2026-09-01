@@ -1,4 +1,9 @@
-# cprest
+# cP:Restic
+
+<!-- cP is #CF470C: cPanel's two letters in cPanel's orange, then what does
+     the work. "cprest" stays the name of the binaries, the paths and the
+     Go module — renaming those would strand every server already running
+     it, for a mark. -->
 
 cPanel fleet backup orchestration on top of [restic](https://restic.net/).
 

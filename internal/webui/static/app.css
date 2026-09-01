@@ -95,8 +95,6 @@
   padding:0 var(--s5); display:flex; align-items:center; gap:var(--s6);
   position:sticky; top:0; z-index:20;
 }
-.cprest .cpr-brand { font-weight:700; letter-spacing:-.01em; padding:var(--s4) 0; white-space:nowrap; }
-.cprest .cpr-brand span { color:var(--muted); font-weight:400; }
 .cprest nav { display:flex; gap:var(--s5); overflow-x:auto; }
 .cprest nav button {
   appearance:none; background:none; border:0; cursor:pointer; font:inherit;
@@ -467,3 +465,13 @@
 }
 .cprest .cpr-sheet-body { padding:var(--s5); overflow:auto; flex:1; }
 .cprest .cpr-sheet-body form * + label { margin-top:var(--s4); }
+
+/* --- the name ------------------------------------------------------- */
+/* cP:Restic — cPanel's two letters in cPanel's orange, then what does the
+   work. The colour is the product's own and does not come from the theme
+   tokens: it is the same in light and dark, as a mark should be. */
+.cprest .cpr-brand {
+  font-weight:700; letter-spacing:-.01em; white-space:nowrap;
+  padding:var(--s4) 0; margin-right:var(--s5); flex:none;
+}
+.cprest .cpr-brand-cp { color:#CF470C; }

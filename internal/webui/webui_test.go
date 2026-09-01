@@ -1971,3 +1971,21 @@ func TestTheRestorePageExplainsHowToPickFiles(t *testing.T) {
 		t.Error("the page still asks for paths to be typed from memory")
 	}
 }
+
+// The name is cP:Restic, and the cP is cPanel's orange. A stylesheet rule
+// that greys every span inside the brand once made it the wrong colour,
+// which is invisible in markup and only shows on the page.
+func TestTheBrandIsOnThePageInItsOwnColour(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	_, page := get(t, client, "/")
+	if !strings.Contains(page, `<span class="cpr-brand-cp">cP</span>:Restic`) {
+		t.Error("the interface does not carry the name")
+	}
+	if !strings.Contains(page, ".cprest .cpr-brand-cp { color:#CF470C; }") {
+		t.Error("the cP is not in its own colour")
+	}
+	if strings.Contains(page, ".cprest .cpr-brand span { color:var(--muted)") {
+		t.Error("a rule is still greying out everything inside the brand")
+	}
+}

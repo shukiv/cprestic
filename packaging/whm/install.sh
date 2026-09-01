@@ -112,7 +112,7 @@ url=/cgi/cprest.cgi
 entryurl=cprest.cgi
 user=root
 acls=software-cprest
-displayname=cprest Backups
+displayname=cP:Restic Backups
 searchtext=backup restore restic
 target=_self
 APPCONFIG
@@ -123,7 +123,7 @@ APPCONFIG
 # ACL by discarding the ACL, which leaves a plugin that exists and is
 # invisible — so check rather than trust.
 REGISTERED=$(whmapi1 get_appconfig_application_list 2>/dev/null |
-    sed -n '/name: cprest$/,$p; /displayname: cprest Backups/,/name: cprest/p')
+    sed -n '/name: cprest$/,$p; /displayname: cP:Restic Backups/,/name: cprest/p')
 for key in entryurl acls; do
     if ! printf '%s' "$REGISTERED" | grep -q "$key"; then
         cat >&2 <<PROBLEM
@@ -140,9 +140,9 @@ done
 
 cat <<DONE
 
-cprest is installed.
+cP:Restic is installed.
 
-  Open WHM and look for "cprest Backups" in the plugins section.
+  Open WHM and look for "cP:Restic Backups" in the plugins section.
 
 Registered as:
 $(sed 's/^/  /' "$APPCONFIG_DIR/cprest.conf")

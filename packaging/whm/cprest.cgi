@@ -1,5 +1,5 @@
 #!/usr/local/cpanel/3rdparty/bin/perl
-#WHMADDON:cprest:cprest Backups
+#WHMADDON:cprest:cP:Restic Backups
 #ACLS:all
 #
 # The cprest WHM plugin.
@@ -120,7 +120,7 @@ sub request {
 sub chrome {
     my ($fragment) = @_;
     print "Content-type: text/html\r\n\r\n";
-    Whostmgr::HTMLInterface::defheader( 'cprest Backups', '', '/cgi/cprest.cgi' );
+    Whostmgr::HTMLInterface::defheader( 'cP:Restic Backups', '', '/cgi/cprest.cgi' );
     print $fragment;
     Whostmgr::HTMLInterface::deffooter();
 }

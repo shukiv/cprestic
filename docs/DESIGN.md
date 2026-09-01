@@ -1,4 +1,4 @@
-# cprest — Design
+# cP:Restic — Design
 
 cPanel fleet backup orchestration built on [restic](https://restic.net/).
 
