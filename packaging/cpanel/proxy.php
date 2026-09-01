@@ -37,7 +37,42 @@ function cprest_feature_enabled(): bool {
     return $enabled;
 }
 
+/**
+ * A team user is not the account owner, and the service cannot tell.
+ *
+ * cPanel team users are entries in the account's own team file, not unix
+ * accounts: they share the owner's uid, so SO_PEERCRED -- the whole basis
+ * of who the service thinks is asking -- sees the owner. cPanel sets
+ * TEAM_USER in the session, and this page is the only place that can see
+ * it.
+ *
+ * Backups are not divisible along team roles: restoring an account
+ * touches its files, its databases and its mail, so a team user with only
+ * the Web role restoring "their" part would be restoring everything. Until
+ * that is worked out properly, this refuses them rather than quietly
+ * giving every team member the run of the account.
+ */
+function cprest_team_user(): string {
+    foreach (['TEAM_USER', 'REMOTE_TEAM_USER'] as $name) {
+        $value = $_SERVER[$name] ?? getenv($name);
+        if (is_string($value) && $value !== '') {
+            return $value;
+        }
+    }
+    return '';
+}
+
 function cprest_page(string $path): void {
+    $teamUser = cprest_team_user();
+    if ($teamUser !== '') {
+        http_response_code(403);
+        header('Cache-Control: no-store, max-age=0');
+        echo '<p>cP:Restic can only be used by the account owner, not by a team user. '
+           . 'Restoring a backup replaces files, databases and mail together, so it is not '
+           . 'something a team role can be given a part of. Ask the account owner to do it.</p>';
+        return;
+    }
+
     // Feature Manager must be an authorization boundary, not just a hidden
     // tile. Without this check an account denied the feature can type the
     // .live.php URL directly and still ask the root service for restores.
