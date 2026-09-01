@@ -142,3 +142,33 @@ func TestAnUnhelpfulDatabaseMapFallsBackRatherThanBackingUpNothing(t *testing.T)
 		}
 	}
 }
+
+func TestPostgreSQLIsDetectedInCurrentAndLegacyDatabaseMaps(t *testing.T) {
+	databaseDir := t.TempDir()
+	host := newFakeHost(t, "customer1")
+	host.DatabasesDir = databaseDir
+	path := filepath.Join(databaseDir, "customer1.json")
+
+	for name, body := range map[string]string{
+		"current nested map": `{"MYSQL":{"owner":"customer1","dbs":{}},` +
+			`"PGSQL":{"owner":"customer1","dbs":{"customer1_app":"127.0.0.1"}}}`,
+		"legacy direct map": `{"MYSQL":{"owner":"customer1","dbs":{}},` +
+			`"PGSQL":{"customer1_app":[]}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if present, recorded := host.recordedPostgreSQL("customer1"); !recorded || !present {
+				t.Fatalf("recordedPostgreSQL = %v, %v; want true, true", present, recorded)
+			}
+		})
+	}
+
+	if err := os.WriteFile(path, []byte(`{"PGSQL":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if present, recorded := host.recordedPostgreSQL("customer1"); !recorded || present {
+		t.Fatalf("empty PGSQL = %v, %v; want false, true", present, recorded)
+	}
+}

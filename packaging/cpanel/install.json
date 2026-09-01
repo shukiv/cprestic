@@ -1,0 +1,16 @@
+[
+  {
+    "icon": "cprest.svg",
+    "group_id": "files",
+    "order": 1,
+    "name": "cP:Restic",
+    "type": "link",
+    "id": "cprest",
+    "uri": "cprest/index.live.php",
+    "target": "_self",
+    "featuremanager": 1,
+    "feature": "cprest",
+    "description": "Restore files and databases from a cP:Restic backup.",
+    "key": "cprest"
+  }
+]

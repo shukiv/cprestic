@@ -2,6 +2,8 @@ package cpanel
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -161,11 +163,21 @@ func (r *Real) Account(ctx context.Context, user string) (AccountInfo, error) {
 	if err != nil {
 		return AccountInfo{}, err
 	}
+	hasPostgreSQL, postgresRecorded := r.recordedPostgreSQL(user)
+	if !postgresRecorded {
+		// Split mode cannot independently dump PostgreSQL. When cPanel's
+		// authoritative map is absent or unreadable, a larger monolithic
+		// backup is safer than silently asserting that PostgreSQL is absent.
+		hasPostgreSQL = true
+	}
 	size, err := directorySize(home)
 	if err != nil {
 		return AccountInfo{}, err
 	}
-	return AccountInfo{User: user, HomeDir: home, Databases: databases, SizeBytes: size}, nil
+	return AccountInfo{
+		User: user, HomeDir: home, Databases: databases,
+		HasPostgreSQL: hasPostgreSQL, SizeBytes: size,
+	}, nil
 }
 
 // databases lists the account's MySQL databases.
@@ -217,7 +229,7 @@ func (r *Real) databaseUsersByName(ctx context.Context, account string) ([]strin
 	// account is checked by plainAccountName before this is reached, so
 	// it cannot carry a quote; there is no parameter binding in the
 	// mysql client and this is the whole reason that check exists.
-	list := exec.CommandContext(ctx, r.mysql(), "--batch", "--skip-column-names", "--execute",
+	list := exec.CommandContext(ctx, r.mysql(), "--batch", "--raw", "--skip-column-names", "--execute",
 		fmt.Sprintf("SELECT DISTINCT user FROM mysql.user "+
 			"WHERE user = '%s' OR user LIKE '%s\\_%%'", account, account))
 	output, err := list.Output()
@@ -266,12 +278,16 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 	if err != nil {
 		return pkgacct.Payload{}, err
 	}
+	mode, fallbackReason, err := safeDatabaseMode(req)
+	if err != nil {
+		return pkgacct.Payload{}, err
+	}
 	payload, err := pkgacct.Plan(pkgacct.PlanRequest{
 		Account:       req.Account.User,
 		HomeDir:       req.Account.HomeDir,
 		Databases:     req.Account.Databases,
 		StagingDir:    req.StagingDir,
-		Mode:          req.Mode,
+		Mode:          mode,
 		Caps:          caps,
 		SkipHomedir:   req.SkipHomedir,
 		SkipDatabases: req.SkipDatabases,
@@ -279,6 +295,13 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 	})
 	if err != nil {
 		return pkgacct.Payload{}, err
+	}
+	if fallbackReason != "" {
+		payload.Degraded = true
+		if payload.Reason != "" {
+			payload.Reason += "; "
+		}
+		payload.Reason += fallbackReason
 	}
 
 	// pkgacct writes its archive into a directory it is given and does not
@@ -292,7 +315,7 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 		}
 	}
 
-	args := pkgacct.CommandArgs(req.Account.User, req.StagingDir, req.Mode, caps, req.SkipEmail)
+	args := pkgacct.CommandArgs(req.Account.User, req.StagingDir, mode, caps, req.SkipEmail)
 	cmd := exec.CommandContext(ctx, r.pkgacct(), args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -300,7 +323,7 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 			err, lastLine(output))
 	}
 
-	if req.Mode == pkgacct.ModeSplit {
+	if mode == pkgacct.ModeSplit {
 		if err := r.dumpDatabases(ctx, req, payload); err != nil {
 			return pkgacct.Payload{}, err
 		}
@@ -312,6 +335,24 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 		return pkgacct.Payload{}, fmt.Errorf("%w (pkgacct said: %s)", err, lastLine(output))
 	}
 	return payload, nil
+}
+
+// safeDatabaseMode prevents split mode's MySQL-only dump path from dropping
+// PostgreSQL databases. A complete account can fall back to pkgacct's own
+// archive. A request that deliberately omitted the home directory cannot:
+// monolithic pkgacct would violate that request, so it fails explicitly.
+func safeDatabaseMode(req StageRequest) (pkgacct.Mode, string, error) {
+	if req.Mode != pkgacct.ModeSplit || req.SkipDatabases || !req.Account.HasPostgreSQL {
+		return req.Mode, "", nil
+	}
+	if req.SkipHomedir {
+		return "", "", fmt.Errorf(
+			"cpanel: cannot create a databases-only split backup for %s: "+
+				"the account has PostgreSQL databases and split mode only dumps MySQL",
+			req.Account.User)
+	}
+	return pkgacct.ModeMonolithic,
+		"account has PostgreSQL databases; using cPanel's complete archive instead of MySQL-only split mode", nil
 }
 
 // dumpDatabaseUsers writes the account's database users and their grants.
@@ -337,30 +378,46 @@ func (r *Real) dumpDatabaseUsers(ctx context.Context, req StageRequest, dir stri
 			return err
 		}
 	}
-	users, err := r.qualifyDatabaseUsers(ctx, named)
-	if err != nil {
-		return err
-	}
 
+	// The file is written the way cPanel writes its own, because
+	// restorepkg is what reads it. A restore proved this: a file of
+	// modern CREATE USER statements is valid SQL, sits in the right
+	// place, and restorepkg ignores every line of it -- the account came
+	// back with its tables and without the user that reads them.
 	var script strings.Builder
-	script.WriteString("-- Database users and grants for " + account + "\n")
-	for _, user := range users {
-		if user == "" {
+	script.WriteString("-- cPanel mysql backup\n")
+	auth := map[string]map[string]databaseAuth{}
+
+	for _, name := range named {
+		if !plainDatabaseUser(name) {
 			continue
 		}
-		for _, statement := range []string{"SHOW CREATE USER " + user, "SHOW GRANTS FOR " + user} {
-			out, err := exec.CommandContext(ctx, r.mysql(),
-				"--batch", "--skip-column-names", "--execute", statement).Output()
+		accounts, err := r.databaseUserAccounts(ctx, name)
+		if err != nil {
+			return err
+		}
+		for _, who := range accounts {
+			// GRANT USAGE carries the password, which is how cPanel's
+			// own file carries it and the only line restorepkg reads it
+			// from.
+			script.WriteString(fmt.Sprintf(
+				"GRANT USAGE ON *.* TO '%s'@'%s' IDENTIFIED BY PASSWORD '%s';\n",
+				who.User, who.Host, who.Hash))
+
+			grants, err := r.grantsFor(ctx, fmt.Sprintf("`%s`@`%s`", who.User, who.Host))
 			if err != nil {
-				// A user that cannot be read is worth saying so about,
-				// rather than leaving a gap in the file that looks like
-				// an account with no grants.
-				return fmt.Errorf("cpanel: %s: %w", statement, err)
+				return err
 			}
-			for _, row := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-				if row = strings.TrimSpace(row); row != "" {
-					script.WriteString(row + ";\n")
-				}
+			for _, grant := range grants {
+				script.WriteString(grant + ";\n")
+			}
+
+			if auth[who.User] == nil {
+				auth[who.User] = map[string]databaseAuth{}
+			}
+			auth[who.User][who.Host] = databaseAuth{
+				PassHash: hex.EncodeToString([]byte(who.Hash)),
+				Plugin:   who.Plugin,
 			}
 		}
 	}
@@ -369,7 +426,92 @@ func (r *Real) dumpDatabaseUsers(ctx context.Context, req StageRequest, dir stri
 	if err := os.WriteFile(path, []byte(script.String()), 0o600); err != nil {
 		return fmt.Errorf("cpanel: write database users: %w", err)
 	}
+	// cPanel keeps the authentication plugin and the hash beside the
+	// grants, because "IDENTIFIED BY PASSWORD" is not valid on MySQL 8
+	// and its restore reads the real values from here.
+	encoded, err := json.Marshal(auth)
+	if err != nil {
+		return fmt.Errorf("cpanel: encode database authentication: %w", err)
+	}
+	if err := os.WriteFile(path+"-auth.json", encoded, 0o600); err != nil {
+		return fmt.Errorf("cpanel: write database authentication: %w", err)
+	}
 	return nil
+}
+
+// databaseAuth is one user's credentials as cPanel records them beside the
+// grants: the hash as hex of its printable form, and the plugin that
+// interprets it.
+type databaseAuth struct {
+	PassHash string `json:"pass_hash"`
+	Plugin   string `json:"auth_plugin"`
+}
+
+// databaseUserAccount is one user@host and what authenticates it.
+type databaseUserAccount struct {
+	User   string
+	Host   string
+	Hash   string
+	Plugin string
+}
+
+// databaseUserAccounts reads every host a database user exists on. One
+// name can have several, and a grant restored against the wrong one is an
+// application that cannot connect.
+func (r *Real) databaseUserAccounts(ctx context.Context, name string) ([]databaseUserAccount, error) {
+	// name is checked by plainDatabaseUser before this is reached; the
+	// mysql client has no parameter binding, which is why that check
+	// exists.
+	out, err := exec.CommandContext(ctx, r.mysql(), "--batch", "--raw", "--skip-column-names",
+		"--execute", fmt.Sprintf(
+			"SELECT user, host, authentication_string, plugin FROM mysql.user WHERE user = '%s'",
+			name)).Output()
+	if err != nil {
+		return nil, fmt.Errorf("cpanel: look up database user %s: %w", name, err)
+	}
+	var accounts []databaseUserAccount
+	for _, row := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if strings.TrimSpace(row) == "" {
+			continue
+		}
+		fields := strings.Split(row, "\t")
+		if len(fields) < 4 {
+			return nil, fmt.Errorf("cpanel: unreadable row for database user %s", name)
+		}
+		accounts = append(accounts, databaseUserAccount{
+			User: fields[0], Host: fields[1], Hash: fields[2], Plugin: fields[3],
+		})
+	}
+	return accounts, nil
+}
+
+// grantsFor reads a user's privileges, leaving out the USAGE line that
+// carries no privilege of its own -- that one is written separately,
+// because it is where the password goes.
+func (r *Real) grantsFor(ctx context.Context, who string) ([]string, error) {
+	// --raw matters: without it the client escapes the backslash in a
+	// database name like `account\_shop`, and the restored grant then
+	// names a database that does not exist.
+	out, err := exec.CommandContext(ctx, r.mysql(), "--batch", "--raw", "--skip-column-names",
+		"--execute", "SHOW GRANTS FOR "+who).Output()
+	if err != nil {
+		return nil, fmt.Errorf("cpanel: read grants for %s: %w", who, err)
+	}
+	var grants []string
+	for _, row := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		row = strings.TrimSpace(row)
+		if row == "" || strings.HasPrefix(row, "GRANT USAGE ON *.* TO") {
+			continue
+		}
+		// cPanel's own file quotes the account with single quotes.
+		row = strings.ReplaceAll(row, "TO `", "TO '")
+		row = strings.ReplaceAll(row, "`@`", "'@'")
+		if strings.HasSuffix(row, "`") {
+			row = strings.TrimSuffix(row, "`") + "'"
+		}
+		grants = append(grants, strings.TrimSuffix(row, ";"))
+	}
+	return grants, nil
 }
 
 // plainAccountName keeps a name that reaches a SQL statement to what a
@@ -489,25 +631,66 @@ func (r *Real) Apply(ctx context.Context, archivePath string, options ApplyOptio
 		return fmt.Errorf("cpanel: restore archive %s is a directory", archivePath)
 	}
 
-	args := []string{"--restricted"}
-	if options.Unrestricted {
-		args = []string{"--unrestricted"}
-	}
-	if options.Overwrite {
-		// Without this restorepkg leaves an account that is already here
-		// as it is, and a restore the operator asked for does nothing
-		// while reporting success.
-		args = append(args, "--force")
+	// cPanel refuses --force with --restricted: "You may not force
+	// Restricted Restore." Restoring into an account that is already
+	// here is --skipaccount instead, which is what --force means once
+	// the account exists -- cPanel's own help says --force implies it.
+	var args []string
+	switch {
+	case options.Unrestricted:
+		args = append(args, "--unrestricted")
+		if options.Overwrite {
+			args = append(args, "--force")
+		}
+	default:
+		args = append(args, "--restricted")
+		if options.Overwrite {
+			args = append(args, "--skipaccount")
+		}
 	}
 	// The separator matters: everything after it is the archive, whatever
 	// it is called.
 	args = append(args, "--", archivePath)
 
 	cmd := exec.CommandContext(ctx, r.restorepkg(), args...)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("cpanel: restorepkg failed: %w: %s", err, lastLine(output))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// restorepkg's last line is a column of module names, so the
+		// last line alone says nothing. The reason is the first line
+		// that reads like one.
+		return fmt.Errorf("cpanel: restorepkg failed: %w: %s", err, restoreFailure(output))
 	}
 	return nil
+}
+
+// restoreFailure picks the line an operator needs out of restorepkg's
+// transcript.
+//
+// It prints a usage block and a two-column list of every module it knows
+// when it rejects its arguments, so the last line of a failed run is a
+// module name -- which is how a real refusal ("You may not force
+// Restricted Restore") reached the interface as the word "ManualMX".
+func restoreFailure(output []byte) string {
+	var reason string
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "-") || !strings.Contains(line, " ") {
+			continue
+		}
+		lower := strings.ToLower(line)
+		switch {
+		case strings.Contains(lower, "requires the"), strings.Contains(lower, "may not"),
+			strings.Contains(lower, "failed"), strings.Contains(lower, "error"),
+			strings.Contains(lower, "cannot"), strings.Contains(lower, "invalid"):
+			if reason == "" {
+				reason = line
+			}
+		}
+	}
+	if reason != "" {
+		return reason
+	}
+	return lastLine(output)
 }
 
 func validateUser(user string) error {

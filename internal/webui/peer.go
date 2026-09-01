@@ -20,24 +20,9 @@ import (
 // who it is, and a request cannot be pointed at somebody else's backups by
 // changing a parameter.
 func peerAccount(conn net.Conn) (string, error) {
-	unixConn, ok := conn.(*net.UnixConn)
-	if !ok {
-		return "", fmt.Errorf("webui: connection is not a unix socket")
-	}
-	raw, err := unixConn.SyscallConn()
+	creds, err := peerCredentials(conn)
 	if err != nil {
-		return "", fmt.Errorf("webui: read the connection: %w", err)
-	}
-
-	var creds *unix.Ucred
-	var credErr error
-	if err := raw.Control(func(fd uintptr) {
-		creds, credErr = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
-	}); err != nil {
-		return "", fmt.Errorf("webui: read the peer's credentials: %w", err)
-	}
-	if credErr != nil {
-		return "", fmt.Errorf("webui: read the peer's credentials: %w", credErr)
+		return "", err
 	}
 
 	// root reaching the user interface is a mistake somewhere, not an
@@ -63,6 +48,34 @@ func peerAccount(conn net.Conn) (string, error) {
 		return "", fmt.Errorf("webui: %q is suspended", account.Username)
 	}
 	return account.Username, nil
+}
+
+// peerCredentials asks the kernel who opened a Unix-socket connection.
+// It is also used before HTTP parsing to enforce per-UID connection limits.
+func peerCredentials(conn net.Conn) (*unix.Ucred, error) {
+	if budgeted, ok := conn.(*budgetedConn); ok {
+		conn = budgeted.Conn
+	}
+	unixConn, ok := conn.(*net.UnixConn)
+	if !ok {
+		return nil, fmt.Errorf("webui: connection is not a unix socket")
+	}
+	raw, err := unixConn.SyscallConn()
+	if err != nil {
+		return nil, fmt.Errorf("webui: read the connection: %w", err)
+	}
+
+	var creds *unix.Ucred
+	var credErr error
+	if err := raw.Control(func(fd uintptr) {
+		creds, credErr = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
+	}); err != nil {
+		return nil, fmt.Errorf("webui: read the peer's credentials: %w", err)
+	}
+	if credErr != nil {
+		return nil, fmt.Errorf("webui: read the peer's credentials: %w", credErr)
+	}
+	return creds, nil
 }
 
 // cpanelUsersDir is where cPanel records its accounts. A variable so a

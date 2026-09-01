@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,87 @@ import (
 	"github.com/shuki/cprest/internal/staging"
 	"github.com/shuki/cprest/internal/vault"
 )
+
+// TestSourceOperationsStayOnTheAppendOnlyEndpoint protects the boundary
+// between the cPanel server and storage. Browsing and initialising add data
+// but never need deletion rights; routing either through the maintenance
+// URL both exposes that URL to the source server and fails when it is
+// correctly isolated on a management network.
+func TestSourceOperationsStayOnTheAppendOnlyEndpoint(t *testing.T) {
+	root := t.TempDir()
+	store, err := nodestore.Open(filepath.Join(root, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	settings := nodestore.DefaultSettings()
+	settings.StagingRoot = filepath.Join(root, "staging")
+	settings.ResticCache = filepath.Join(root, "cache")
+	settings.ConfigDir = filepath.Join(root, "config")
+	if err := store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+
+	var repositories []string
+	exec := resticrun.ExecFunc(func(_ context.Context, cmd resticrun.Command) (resticrun.CommandResult, error) {
+		for _, env := range cmd.Env {
+			if strings.HasPrefix(env, "RESTIC_REPOSITORY=") {
+				repositories = append(repositories, strings.TrimPrefix(env, "RESTIC_REPOSITORY="))
+			}
+		}
+		for _, arg := range cmd.Args {
+			if arg == "snapshots" {
+				return resticrun.CommandResult{Stdout: []byte("[]")}, nil
+			}
+		}
+		return resticrun.CommandResult{}, nil
+	})
+	engine := newEngineWithExec(t, store, root, exec)
+
+	_, repo, err := engine.AddDestination(nodestore.Destination{
+		Name: "Append only", Type: "rest",
+		Config: map[string]string{
+			"base_url":             "https://backup.example.test",
+			"maintenance_base_url": "https://delete.example.test",
+			"append_only":          "true",
+		},
+	}, map[string]string{"username": "cp01", "password": "secret"}, "cp01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.EnsureProvisioned(context.Background()); err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if _, err := engine.Snapshots(context.Background(), repo.ID, "customer1"); err != nil {
+		t.Fatalf("snapshots: %v", err)
+	}
+
+	if len(repositories) < 2 {
+		t.Fatalf("captured repositories = %v", repositories)
+	}
+	for _, repository := range repositories {
+		if strings.Contains(repository, "delete.example.test") {
+			t.Fatalf("source operation used delete-capable endpoint: %s", repository)
+		}
+		if !strings.Contains(repository, "backup.example.test") {
+			t.Errorf("source operation used unexpected endpoint: %s", repository)
+		}
+	}
+}
+
+func TestRestoreStagingUsesTheHistoricalSnapshotSize(t *testing.T) {
+	const gib = uint64(1 << 30)
+	if got := node.RestoreStagingEstimateForTest("account", gib, 10*gib); got != 21*gib {
+		t.Fatalf("whole-account estimate = %d GiB, want 21", got/gib)
+	}
+	if got := node.RestoreStagingEstimateForTest("account", 12*gib, 10*gib); got != 25*gib {
+		t.Fatalf("live-account estimate = %d GiB, want 25", got/gib)
+	}
+	if got := node.RestoreStagingEstimateForTest("items", 0, 0); got != 512<<20 {
+		t.Fatalf("unknown granular estimate = %d, want 512 MiB", got)
+	}
+}
 
 func newEngine(t *testing.T, store *nodestore.Store, root string) *node.Engine {
 	t.Helper()

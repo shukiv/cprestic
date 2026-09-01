@@ -14,7 +14,39 @@
 
 const CPREST_SOCKET = '/var/run/cprest/account/user.sock';
 
+require_once '/usr/local/cpanel/php/cpanel.php';
+
+/**
+ * Keep one LiveAPI connection for the page. cPanel explicitly requires a
+ * .live.php application to instantiate this object only once.
+ */
+function cprest_cpanel(): CPANEL {
+    static $cpanel = null;
+    if ($cpanel === null) {
+        $cpanel = new CPANEL();
+    }
+    return $cpanel;
+}
+
+function cprest_feature_enabled(): bool {
+    static $enabled = null;
+    if ($enabled === null) {
+        $enabled = (bool) cprest_cpanel()->cpanelfeature('cprest');
+    }
+    return $enabled;
+}
+
 function cprest_page(string $path): void {
+    // Feature Manager must be an authorization boundary, not just a hidden
+    // tile. Without this check an account denied the feature can type the
+    // .live.php URL directly and still ask the root service for restores.
+    if (!cprest_feature_enabled()) {
+        http_response_code(403);
+        header('Cache-Control: no-store, max-age=0');
+        echo '<p>cP:Restic is not enabled for this account.</p>';
+        return;
+    }
+
     $query = $_SERVER['QUERY_STRING'] ?? '';
     $target = $path . ($query === '' ? '' : '?' . $query);
     $method = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' ? 'POST' : 'GET';

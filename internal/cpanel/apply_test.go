@@ -54,15 +54,21 @@ func TestApplyAsksForARestrictedRestore(t *testing.T) {
 	}
 
 	// An operator restoring onto an account that is still here has asked
-	// for it to be replaced. Without --force restorepkg leaves what is
-	// there alone and reports nothing wrong, so the restore the
-	// interface promised silently did not happen.
+	// for it to be replaced. cPanel refuses --force with --restricted --
+	// "You may not force Restricted Restore" -- and --skipaccount is what
+	// --force means once the account exists, by cPanel's own help. A live
+	// restore proved this: --restricted --force failed outright, so every
+	// apply would have.
 	if err := host.Apply(context.Background(), archive,
 		ApplyOptions{Overwrite: true}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
-	if args := readArgs(t, record); !args["--force"] {
-		t.Errorf("a restore onto a live account did not ask to overwrite it: %v", args)
+	args = readArgs(t, record)
+	if args["--force"] {
+		t.Error("--force was passed with --restricted, which cPanel refuses outright")
+	}
+	if !args["--skipaccount"] {
+		t.Errorf("a restore onto a live account did not ask to restore into it: %v", args)
 	}
 }
 
@@ -84,6 +90,16 @@ func TestAnOperatorCanStillAskForAnUnrestrictedRestore(t *testing.T) {
 	args := readArgs(t, record)
 	if !args["--unrestricted"] || args["--restricted"] {
 		t.Errorf("the operator's choice was not passed on: %v", args)
+	}
+
+	// --force is only available in unrestricted mode, so that is where
+	// an overwrite has to use it.
+	if err := host.Apply(context.Background(), archive,
+		ApplyOptions{Unrestricted: true, Overwrite: true}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if args := readArgs(t, record); !args["--force"] {
+		t.Errorf("an unrestricted overwrite did not force: %v", args)
 	}
 }
 

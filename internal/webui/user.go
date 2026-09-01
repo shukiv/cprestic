@@ -57,6 +57,18 @@ func (s *Server) ListenUser(ctx context.Context, socketPath string) error {
 		_ = listener.Close()
 		return fmt.Errorf("webui: open socket: %w", err)
 	}
+	// The per-account request limit below starts only after HTTP headers
+	// arrive. Bound connections before parsing too, or a local account can
+	// open sockets, send nothing, and consume the root service's file
+	// descriptors until ReadHeaderTimeout expires them.
+	listener = &peerLimitedListener{
+		Listener: listener,
+		budget: connectionBudget{
+			maxTotal:  128,
+			maxPerUID: 8,
+			byUID:     map[uint32]int{},
+		},
+	}
 
 	server := &http.Server{
 		Handler:           s.UserHandler(),
@@ -85,6 +97,81 @@ func (s *Server) ListenUser(ctx context.Context, socketPath string) error {
 		return err
 	}
 	return nil
+}
+
+// peerLimitedListener admits only a bounded number of Unix connections in
+// total and from one UID. Rejected connections are closed before net/http
+// allocates a request for them.
+type peerLimitedListener struct {
+	net.Listener
+	budget connectionBudget
+}
+
+func (l *peerLimitedListener) Accept() (net.Conn, error) {
+	for {
+		conn, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		creds, err := peerCredentials(conn)
+		if err != nil || !l.budget.acquire(creds.Uid) {
+			_ = conn.Close()
+			continue
+		}
+		return &budgetedConn{
+			Conn: conn,
+			release: func() {
+				l.budget.release(creds.Uid)
+			},
+		}, nil
+	}
+}
+
+type budgetedConn struct {
+	net.Conn
+	once    sync.Once
+	release func()
+}
+
+func (c *budgetedConn) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(c.release)
+	return err
+}
+
+type connectionBudget struct {
+	mu        sync.Mutex
+	total     int
+	byUID     map[uint32]int
+	maxTotal  int
+	maxPerUID int
+}
+
+func (b *connectionBudget) acquire(uid uint32) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.byUID == nil {
+		b.byUID = map[uint32]int{}
+	}
+	if b.total >= b.maxTotal || b.byUID[uid] >= b.maxPerUID {
+		return false
+	}
+	b.total++
+	b.byUID[uid]++
+	return true
+}
+
+func (b *connectionBudget) release(uid uint32) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.byUID[uid] <= 1 {
+		delete(b.byUID, uid)
+	} else {
+		b.byUID[uid]--
+	}
+	if b.total > 0 {
+		b.total--
+	}
 }
 
 // UserHandler is what a cPanel account sees: its own backups, and nothing

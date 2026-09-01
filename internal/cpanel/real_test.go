@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/shuki/cprest/internal/pkgacct"
 )
 
 // newFakeHost lays out the parts of a cPanel server the real provider reads.
@@ -124,5 +126,29 @@ func TestAccountFailsLoudlyWhenDatabasesCannotBeListed(t *testing.T) {
 
 	if _, err := host.Account(context.Background(), "customer1"); err == nil {
 		t.Error("Account succeeded with no way to list databases")
+	}
+}
+
+func TestPostgreSQLCannotFallThroughTheMySQLOnlySplitPath(t *testing.T) {
+	request := StageRequest{
+		Account: AccountInfo{User: "customer1", HasPostgreSQL: true},
+		Mode:    pkgacct.ModeSplit,
+	}
+	mode, reason, err := safeDatabaseMode(request)
+	if err != nil {
+		t.Fatalf("safeDatabaseMode: %v", err)
+	}
+	if mode != pkgacct.ModeMonolithic || reason == "" {
+		t.Fatalf("mode = %q, reason = %q; want explained monolithic fallback", mode, reason)
+	}
+
+	request.SkipHomedir = true
+	if _, _, err := safeDatabaseMode(request); err == nil {
+		t.Fatal("a databases-only split backup silently accepted PostgreSQL")
+	}
+
+	request.SkipDatabases = true
+	if mode, _, err := safeDatabaseMode(request); err != nil || mode != pkgacct.ModeSplit {
+		t.Fatalf("an intentional database exclusion should remain split: mode=%q err=%v", mode, err)
 	}
 }

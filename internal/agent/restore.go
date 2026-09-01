@@ -158,10 +158,15 @@ func (a *Agent) restoreAccount(ctx context.Context, log *slog.Logger,
 		return result, nil
 	}
 
-	// Overwrite because the operator asked for the account to be
-	// replaced; without it restorepkg leaves an account that is already
-	// here alone and reports nothing wrong.
-	options := cpanel.ApplyOptions{Unrestricted: assignment.Unrestricted, Overwrite: true}
+	// Overwrite means "the account is already on this server, restore
+	// into it". Asking for that when the account is gone -- the case
+	// this program exists for -- tells cPanel to skip creating it, and
+	// nothing is restored into nothing.
+	_, lookupErr := a.provider.Account(ctx, assignment.CPanelUser)
+	options := cpanel.ApplyOptions{
+		Unrestricted: assignment.Unrestricted,
+		Overwrite:    lookupErr == nil,
+	}
 	log.Warn("applying restore to the live account",
 		"archive", result.ArchivePath, "restricted", !options.Unrestricted)
 	if err := a.provider.Apply(ctx, result.ArchivePath, options); err != nil {

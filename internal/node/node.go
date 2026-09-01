@@ -409,7 +409,11 @@ func (e *Engine) TestDestination(ctx context.Context, destinationID string) erro
 
 // Snapshots lists an account's snapshots in a repository.
 func (e *Engine) Snapshots(ctx context.Context, repositoryID, account string) ([]resticrun.Snapshot, error) {
-	repo, err := e.OpenRepository(repositoryID, true)
+	// Listing needs read access only. Using the maintenance endpoint here
+	// needlessly gives ordinary WHM and account-facing browsing a route to
+	// the endpoint that can delete snapshots, and breaks browsing entirely
+	// when that endpoint is correctly isolated from the cPanel server.
+	repo, err := e.OpenRepository(repositoryID, false)
 	if err != nil {
 		return nil, err
 	}
@@ -423,7 +427,7 @@ func (e *Engine) Snapshots(ctx context.Context, repositoryID, account string) ([
 // Browse lists the contents of a snapshot, so an operator can pick out the
 // one file they need.
 func (e *Engine) Browse(ctx context.Context, repositoryID, snapshotID string, subpaths ...string) ([]resticrun.Entry, error) {
-	repo, err := e.OpenRepository(repositoryID, true)
+	repo, err := e.OpenRepository(repositoryID, false)
 	if err != nil {
 		return nil, err
 	}

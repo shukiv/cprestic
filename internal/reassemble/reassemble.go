@@ -31,6 +31,9 @@ const (
 	// it dumps it, beside the databases. It is granular.DatabaseUsersFile
 	// spelt out rather than imported: granular imports this package.
 	StagedDatabaseUsersFile = "_users.sql"
+	// authSuffix names the file cPanel keeps beside the grants, holding
+	// each user's real password hash and authentication plugin.
+	authSuffix = "-auth.json"
 )
 
 // Request describes a restore of one account.
@@ -304,6 +307,13 @@ func placeDatabaseUsers(root string) error {
 	to := filepath.Join(root, DatabaseUsersFile)
 	if err := os.Rename(from, to); err != nil {
 		return fmt.Errorf("reassemble: place the database users where restorepkg reads them: %w", err)
+	}
+	// The authentication file travels with it. "IDENTIFIED BY PASSWORD"
+	// is not valid on MySQL 8, so this is where the real hash and plugin
+	// are read from, and a grants file without it restores users that
+	// cannot authenticate.
+	if err := os.Rename(from+authSuffix, to+authSuffix); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reassemble: place the database authentication: %w", err)
 	}
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,14 +42,17 @@ func (e *Engine) EnsureProvisioned(ctx context.Context) (int, error) {
 		if repo.InitialisedAt != nil {
 			continue
 		}
-		target, err := e.OpenRepository(repo.ID, true)
+		// Initialisation only creates repository data, which an append-only
+		// endpoint permits. The delete-capable endpoint is deliberately not
+		// used for normal source-server work.
+		target, err := e.OpenRepository(repo.ID, false)
 		if err != nil {
 			return created, err
 		}
 
 		var source *resticrun.Repository
 		if repo.ChunkerSourceRepoID != "" {
-			opened, err := e.OpenRepository(repo.ChunkerSourceRepoID, true)
+			opened, err := e.OpenRepository(repo.ChunkerSourceRepoID, false)
 			if err != nil {
 				return created, fmt.Errorf("node: open chunker source: %w", err)
 			}
@@ -351,6 +355,17 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 		account = cpanel.AccountInfo{User: stored.Account}
 	}
 
+	// The live account is not an estimate of a historical backup. It may
+	// have been deleted, emptied after an incident, or simply grown smaller
+	// since the requested snapshot. Size the root-owned restore workspace
+	// from the snapshot as well, and fail before writing if it cannot even
+	// be identified as this account's backup.
+	snapshotBytes, err := e.snapshotBytes(ctx, stored.RepositoryID, stored.Account, stored.SnapshotID)
+	if err != nil {
+		return e.failRestore(stored, err.Error())
+	}
+	account.SizeBytes = restoreStagingEstimate(stored.Kind, account.SizeBytes, snapshotBytes)
+
 	now := time.Now().UTC()
 	stored.Status = job.StatusRunning
 	stored.StartedAt = &now
@@ -403,6 +418,47 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 		Subject: subject, Body: body,
 	})
 	return nil
+}
+
+// snapshotBytes returns the amount of source data restic recorded for one
+// account snapshot. A short snapshot id is accepted because the restore
+// path accepts it too.
+func (e *Engine) snapshotBytes(ctx context.Context, repositoryID, account, snapshotID string) (uint64, error) {
+	snapshots, err := e.Snapshots(ctx, repositoryID, account)
+	if err != nil {
+		return 0, err
+	}
+	for _, snapshot := range snapshots {
+		if snapshot.ID == snapshotID || snapshot.ShortID == snapshotID {
+			if snapshot.Account() != account {
+				break
+			}
+			return snapshot.Summary.TotalBytesProcessed, nil
+		}
+	}
+	return 0, fmt.Errorf("node: snapshot %s does not belong to %s", snapshotID, account)
+}
+
+// restoreStagingEstimate accounts for the peak shape of a whole-account
+// reassembly. At its fullest, the extracted account tree and the cpmove tar
+// built from it coexist. The extra GiB follows cPanel's own pkgacct space
+// guidance and gives metadata and filesystem bookkeeping somewhere to go.
+func restoreStagingEstimate(kind string, liveBytes, snapshotBytes uint64) uint64 {
+	estimate := liveBytes
+	if snapshotBytes > estimate {
+		estimate = snapshotBytes
+	}
+	if kind != "" && kind != protocol.RestoreAccount {
+		if estimate == 0 {
+			return 512 << 20
+		}
+		return estimate
+	}
+	const overhead = uint64(1 << 30)
+	if estimate > (math.MaxUint64-overhead)/2 {
+		return math.MaxUint64
+	}
+	return estimate*2 + overhead
 }
 
 // runDrill rehearses a restore and records what it proved.
@@ -779,7 +835,7 @@ func (e *Engine) Forget(ctx context.Context, repositoryID string, retention node
 
 // Check verifies a repository's integrity.
 func (e *Engine) Check(ctx context.Context, repositoryID string, readDataSubsetPercent int) error {
-	repo, err := e.OpenRepository(repositoryID, true)
+	repo, err := e.OpenRepository(repositoryID, false)
 	if err != nil {
 		return err
 	}
@@ -799,7 +855,7 @@ func (e *Engine) Check(ctx context.Context, repositoryID string, readDataSubsetP
 // check that guards a backup guards this too. A rehearsal that filled the
 // volume would be worse than no rehearsal.
 func (e *Engine) Drill(ctx context.Context, repositoryID, account string) (checks []string, err error) {
-	repo, err := e.OpenRepository(repositoryID, true)
+	repo, err := e.OpenRepository(repositoryID, false)
 	if err != nil {
 		return nil, err
 	}

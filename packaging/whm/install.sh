@@ -4,6 +4,11 @@
 # Everything here is idempotent: running it again upgrades in place.
 set -eu
 
+# This script runs as root. Do not let the invoking shell choose binaries
+# such as install, systemctl, sed or restic from a writable directory.
+PATH=/usr/local/cpanel/3rdparty/bin:/usr/local/cpanel/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
 PREFIX=/usr/local/bin
 CONFIG_DIR=/etc/cprest
 STATE_DIR=/var/lib/cprest
@@ -22,6 +27,8 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 SOURCE_DIR=$(cd "$(dirname "$0")" && pwd)
 [ -f "$SOURCE_DIR/cprest-agent" ] || die "cprest-agent is not next to this script"
 [ -f "$SOURCE_DIR/cprest.cgi" ] || die "cprest.cgi is not next to this script"
+[ -f "$SOURCE_DIR/cpanel/install.json" ] || die "cpanel/install.json is missing from the package"
+[ -f "$SOURCE_DIR/branding/cprestic-icon.svg" ] || die "the cPanel plugin icon is missing from the package"
 
 # --- where WHM keeps plugin CGIs -------------------------------------------
 # Sources disagree about this path and it has moved between versions, so it
@@ -100,9 +107,9 @@ say "service cprest started"
 # Both "acls" and "entryurl" matter here, and getting either wrong fails
 # silently: WHM accepts the registration and simply never shows a menu item.
 #
-#   acls     is required, and must name real ACLs. A made-up value is
-#            dropped. "software-cprest" is a name no reseller holds, and
-#            root holds every ACL, so this is root-only and fails safe.
+#   acls     is required, and must name a real ACL. cPanel documents "all"
+#            as its root-level ACL. The CGI independently calls hasroot on
+#            every request, so menu registration is not the trust boundary.
 #   entryurl is what WHM actually links to from the Plugins section, and is
 #            relative to /usr/local/cpanel/whostmgr/docroot/cgi/.
 cat > "$APPCONFIG_DIR/cprest.conf" <<'APPCONFIG'
@@ -111,7 +118,7 @@ service=whostmgr
 url=/cgi/cprest.cgi
 entryurl=cprest.cgi
 user=root
-acls=software-cprest
+acls=all
 displayname=cP:Restic Backups
 icon=cprest.svg
 searchtext=backup restore restic
@@ -129,7 +136,7 @@ fi
 # Confirm WHM kept what we sent. It accepts a registration with an invalid
 # ACL by discarding the ACL, which leaves a plugin that exists and is
 # invisible — so check rather than trust.
-REGISTERED=$(whmapi1 get_appconfig_application_list 2>/dev/null |
+REGISTERED=$(/usr/local/cpanel/bin/whmapi1 get_appconfig_application_list 2>/dev/null |
     sed -n '/name: cprest$/,$p; /displayname: cP:Restic Backups/,/name: cprest/p')
 for key in entryurl acls; do
     if ! printf '%s' "$REGISTERED" | grep -q "$key"; then
@@ -139,7 +146,7 @@ warning: WHM registered cprest without "$key".
 
 The plugin will not appear in the WHM menu. Check the output of:
 
-  whmapi1 get_appconfig_application_list
+  /usr/local/cpanel/bin/whmapi1 get_appconfig_application_list
 
 PROBLEM
     fi
@@ -170,10 +177,23 @@ if [ -d "$FRONTEND" ]; then
             "$FRONTEND/assets/application_icons/cprest.png"
     fi
 
-    install -d -m 755 "$FRONTEND/dynamicui"
-    cat > "$FRONTEND/dynamicui/dynamicui_cprest.conf" <<'MENU'
-description=>Restore your files and databases from a backup,file=>cprest,group=>files,imgtype=>icon,itemdesc=>cP:Restic,itemorder=>1,subtype=>img,type=>image,url=>cprest/index.live.php,width=>48,height=>48
-MENU
+    # Register through cPanel's supported plugin installer. Besides keeping
+    # the DynamicUI cache consistent, install.json registers "cprest" with
+    # Feature Manager, so a host can withhold backup access from a package
+    # instead of every account receiving it unconditionally.
+    [ -x /usr/local/cpanel/scripts/install_plugin ] || \
+        die "/usr/local/cpanel/scripts/install_plugin is missing"
+    PLUGIN_META=$(mktemp -d /var/tmp/cprest-cpanel.XXXXXX)
+    trap 'if [ -n "${PLUGIN_META:-}" ]; then rm -rf -- "$PLUGIN_META"; fi' 0 1 2 15
+    install -m 0644 "$SOURCE_DIR/cpanel/install.json" "$PLUGIN_META/install.json"
+    install -m 0644 "$SOURCE_DIR/branding/cprestic-icon.svg" "$PLUGIN_META/cprest.svg"
+    # Remove the entry written by older releases; if left behind it can
+    # override the Feature Manager-aware entry generated below.
+    rm -f "$FRONTEND/dynamicui/dynamicui_cprest.conf"
+    /usr/local/cpanel/scripts/install_plugin "$PLUGIN_META" --theme=jupiter
+    rm -rf -- "$PLUGIN_META"
+    PLUGIN_META=
+    trap - 0 1 2 15
     echo "Installed the account-facing plugin in $FRONTEND/cprest."
 else
     echo "warning: no jupiter theme at $FRONTEND; the account-facing plugin was not installed." >&2
@@ -188,10 +208,10 @@ cP:Restic is installed.
 Registered as:
 $(sed 's/^/  /' "$APPCONFIG_DIR/cprest.conf")
 
-It is registered against the "software-cprest" ACL, which no reseller holds
-and root does, so it is root-only. The plugin also refuses any non-root WHM
-user itself. Please still confirm in WHM that resellers cannot see it: this
-plugin can read and delete every backup on the server.
+It is registered against cPanel's root-level "all" ACL. The plugin also
+checks that ACL itself on every request. Please still confirm in WHM that
+only administrators with root-level privileges can see it: this plugin can
+read and delete every backup on the server.
 
 If it does not appear, look in WHM under Development > Apps Managed by
 AppConfig. The Manage Plugins page lists cPanel RPM addons and will not

@@ -138,6 +138,52 @@ func (r *Real) recordedDatabases(name string) (databases, users []string, record
 	return unique(databases), unique(users), true
 }
 
+// recordedPostgreSQL reports whether cPanel's per-account database map
+// contains PostgreSQL databases. The second result is false when the map
+// cannot answer safely; callers must not turn that uncertainty into "none".
+//
+// cPanel has used both a direct PGSQL database map and a section with dbs and
+// noprefix maps, so both shapes are accepted.
+func (r *Real) recordedPostgreSQL(name string) (present, recorded bool) {
+	raw, err := os.ReadFile(filepath.Join(r.databasesDir(), name+".json"))
+	if err != nil {
+		return false, false
+	}
+	var sections map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &sections); err != nil {
+		return false, false
+	}
+	rawPGSQL, found := sections["PGSQL"]
+	if !found || string(rawPGSQL) == "null" {
+		return false, false
+	}
+	var pgsql map[string]json.RawMessage
+	if err := json.Unmarshal(rawPGSQL, &pgsql); err != nil {
+		return false, false
+	}
+	for _, key := range []string{"dbs", "noprefix"} {
+		if rawDatabases, found := pgsql[key]; found {
+			var databases map[string]json.RawMessage
+			if err := json.Unmarshal(rawDatabases, &databases); err != nil {
+				return false, false
+			}
+			if len(databases) > 0 {
+				return true, true
+			}
+		}
+	}
+	for key := range pgsql {
+		switch key {
+		case "owner", "server", "dbs", "dbusers", "noprefix":
+			continue
+		default:
+			// Older maps put database names directly below PGSQL.
+			return true, true
+		}
+	}
+	return false, true
+}
+
 // ownedDatabases is every database cPanel attributes to an account,
 // whoever else's name it happens to start with.
 //

@@ -63,3 +63,23 @@ func TestASuspendedAccountIsNotServed(t *testing.T) {
 		}
 	}
 }
+
+func TestSocketConnectionsAreBoundedBeforeHTTPParsing(t *testing.T) {
+	budget := webui.NewConnectionBudgetForTest(3, 2)
+	if !budget.Acquire(1001) || !budget.Acquire(1001) {
+		t.Fatal("the first two connections from an account were refused")
+	}
+	if budget.Acquire(1001) {
+		t.Fatal("one account exceeded its pre-HTTP connection budget")
+	}
+	if !budget.Acquire(1002) {
+		t.Fatal("a second account could not use the remaining global slot")
+	}
+	if budget.Acquire(1003) {
+		t.Fatal("the global pre-HTTP connection budget was exceeded")
+	}
+	budget.Release(1001)
+	if !budget.Acquire(1003) {
+		t.Fatal("a closed connection did not release its slot")
+	}
+}

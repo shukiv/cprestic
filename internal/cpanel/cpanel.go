@@ -38,6 +38,11 @@ type AccountInfo struct {
 	User      string
 	HomeDir   string
 	Databases []string
+	// HasPostgreSQL is true when cPanel's database map records PostgreSQL
+	// data for this account, or when that map cannot reliably rule it out.
+	// Split payloads only dump MySQL themselves, so PostgreSQL requires the
+	// complete pkgacct archive to avoid a successful backup with missing data.
+	HasPostgreSQL bool
 	// SizeBytes drives the staging space preflight. Zero means it has not
 	// been measured, not that the account is empty.
 	SizeBytes uint64
