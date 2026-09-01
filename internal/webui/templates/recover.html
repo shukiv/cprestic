@@ -172,6 +172,9 @@
             <input type="hidden" name="repository" value="{{$repo}}">
             <input type="hidden" name="account" value="{{.Account}}">
             <input type="hidden" name="apply" value="1">
+            <label class="cpr-check" style="margin:0 var(--s3) 0 0" title="cprest asks cPanel for a restricted restore, because the archive holds the account's own home directory and cPanel's restore runs as root. Turn this on only if a restricted restore refused something the account legitimately had.">
+              <input type="checkbox" name="unrestricted" value="1">
+              <span>unrestricted</span></label>
             <button class="cpr-btn cpr-danger">Restore onto this server</button>
           </form>
         </div></td>

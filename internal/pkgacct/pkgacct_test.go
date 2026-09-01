@@ -171,13 +171,13 @@ func TestPlanValidation(t *testing.T) {
 func TestCommandArgs(t *testing.T) {
 	modern := ProbeCapabilities(helpModern)
 
-	split := CommandArgs("customer1", "/stage/customer1", ModeSplit, modern)
+	split := CommandArgs("customer1", "/stage/customer1", ModeSplit, modern, false)
 	assertContains(t, split, "--nocompress", "--skiphomedir", "--skipdb", "customer1")
 	if last := split[len(split)-1]; last != "/stage/customer1/metadata" {
 		t.Errorf("split target = %q, want the metadata subdirectory", last)
 	}
 
-	monolithic := CommandArgs("customer1", "/stage/customer1", ModeMonolithic, modern)
+	monolithic := CommandArgs("customer1", "/stage/customer1", ModeMonolithic, modern, false)
 	assertContains(t, monolithic, "--nocompress", "customer1")
 	for _, unwanted := range []string{"--skiphomedir", "--skipdb"} {
 		if contains(monolithic, unwanted) {
@@ -189,7 +189,7 @@ func TestCommandArgs(t *testing.T) {
 	}
 
 	// A host without the flags gets none of them rather than a guess.
-	bare := CommandArgs("c1", "/stage", ModeSplit, Capabilities{})
+	bare := CommandArgs("c1", "/stage", ModeSplit, Capabilities{}, false)
 	if len(bare) != 2 || bare[0] != "c1" || bare[1] != "/stage/metadata" {
 		t.Errorf("args = %v, want just the account and target", bare)
 	}
@@ -273,5 +273,31 @@ func TestVerifyRejectsAnEmptyArchive(t *testing.T) {
 	payload := Payload{Parts: []Part{{Kind: PartArchive, Path: archive}}}
 	if err := payload.Verify(); err == nil {
 		t.Error("a zero-byte archive was accepted")
+	}
+}
+
+// TestSkipEmailReachesPkgacct covers a schedule that says to leave email
+// out. Excluding ~/mail keeps the messages out of the file backup, but
+// pkgacct packs the mail configuration — the mail account names and the
+// hashes with them — inside its own archive, and no restic exclude can
+// reach in there. So a backup an operator believed held no email held the
+// credentials to all of it.
+func TestSkipEmailReachesPkgacct(t *testing.T) {
+	installed := Capabilities{
+		NoCompressFlag: "--nocompress", SkipHomedirFlag: "--skiphomedir",
+		SkipDBFlag: "--skipmysql", SkipMailFlag: "--skipmail",
+	}
+	args := CommandArgs("customer1", "/stage/customer1", ModeSplit, installed, true)
+	if !contains(args, "--skipmail") {
+		t.Errorf("args = %v, want pkgacct told to leave mail out", args)
+	}
+	kept := CommandArgs("customer1", "/stage/customer1", ModeSplit, installed, false)
+	if contains(kept, "--skipmail") {
+		t.Errorf("args = %v, mail was left out of a backup that wanted it", kept)
+	}
+	// A cPanel with no such flag must not be handed one.
+	old := CommandArgs("customer1", "/stage/customer1", ModeSplit, Capabilities{}, true)
+	if contains(old, "--skipmail") {
+		t.Errorf("args = %v, a flag this pkgacct does not have was passed", old)
 	}
 }

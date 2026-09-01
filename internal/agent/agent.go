@@ -252,6 +252,7 @@ func (a *Agent) RunJob(ctx context.Context, assignment protocol.JobAssignment) p
 			Account: account, StagingDir: dir.Path, Mode: mode,
 			SkipHomedir:   assignment.SkipHomedir,
 			SkipDatabases: assignment.SkipDatabases,
+			SkipEmail:     assignment.SkipEmail,
 		})
 	}
 	if err != nil {

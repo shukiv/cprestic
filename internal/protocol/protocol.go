@@ -140,6 +140,10 @@ type JobAssignment struct {
 	// The parts of the account this job leaves out.
 	SkipHomedir   bool `json:"skip_homedir,omitempty"`
 	SkipDatabases bool `json:"skip_databases,omitempty"`
+	// SkipEmail reaches pkgacct as well as restic: an exclude keeps the
+	// messages out of the file backup, but the mail configuration is
+	// inside pkgacct's archive where no exclude can reach it.
+	SkipEmail bool `json:"skip_email,omitempty"`
 	// RetryFailed gives a failed destination one more attempt while the
 	// payload is still staged.
 	RetryFailed    bool   `json:"retry_failed,omitempty"`

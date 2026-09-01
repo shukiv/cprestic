@@ -275,6 +275,7 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 		Caps:          caps,
 		SkipHomedir:   req.SkipHomedir,
 		SkipDatabases: req.SkipDatabases,
+		SkipEmail:     req.SkipEmail,
 	})
 	if err != nil {
 		return pkgacct.Payload{}, err
@@ -291,7 +292,7 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 		}
 	}
 
-	args := pkgacct.CommandArgs(req.Account.User, req.StagingDir, req.Mode, caps)
+	args := pkgacct.CommandArgs(req.Account.User, req.StagingDir, req.Mode, caps, req.SkipEmail)
 	cmd := exec.CommandContext(ctx, r.pkgacct(), args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

@@ -6,26 +6,29 @@
   it survives being an <img>: WHM draws this from addon_plugins/cprest.svg
   in a 48x48 box, on a machine that has none of our fonts.
 
-  Two things make it font-independent. textLength pins each line to an
+  Three things make it hold up there. textLength pins each line to an
   exact width whatever face the browser falls back to, so the mark never
-  overflows the box or shrinks to a stripe down the middle of it. And the
-  ink colour is set from a media query rather than left to inherit,
-  because an <img> inherits nothing from the page around it and WHM has a
-  dark theme.
+  overflows the box or shrinks to a stripe down the middle of it. The mark
+  carries its own light ground rather than taking the page's, because an
+  <img> inherits nothing and WHM's dark theme is WHM's own setting, not
+  the operating system's — a prefers-color-scheme rule would be right
+  about the machine and wrong about the page. And nothing here depends on
+  a colour being inherited: every fill is stated.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300"
      role="img" aria-label="cP:Restic">
   <style>
-    .cpr-ink { fill:#141A22; }
-    .cpr-cp  { fill:#CF470C; }
+    .cpr-ground { fill:#FFFFFF; }
+    .cpr-edge   { fill:none; stroke:#E2E7EC; stroke-width:4; }
+    .cpr-ink    { fill:#141A22; }
+    .cpr-cp     { fill:#CF470C; }
     text {
       font-family:"Fira Sans","Inter","Helvetica Neue",Helvetica,Arial,sans-serif;
       font-weight:700; text-anchor:middle;
     }
-    @media (prefers-color-scheme: dark) {
-      .cpr-ink { fill:#E8EDF2; }
-    }
   </style>
-  <text class="cpr-ink" x="150" y="148" font-size="118" textLength="266" lengthAdjust="spacingAndGlyphs"><tspan class="cpr-cp">cP</tspan>:R</text>
-  <text class="cpr-ink" x="150" y="222" font-size="70" textLength="252" lengthAdjust="spacingAndGlyphs">Backup</text>
+  <rect class="cpr-ground" x="0" y="0" width="300" height="300" rx="48"/>
+  <rect class="cpr-edge" x="2" y="2" width="296" height="296" rx="46"/>
+  <text class="cpr-ink" x="150" y="148" font-size="104" textLength="228" lengthAdjust="spacingAndGlyphs"><tspan class="cpr-cp">cP</tspan>:R</text>
+  <text class="cpr-ink" x="150" y="218" font-size="62" textLength="216" lengthAdjust="spacingAndGlyphs">Backup</text>
 </svg>

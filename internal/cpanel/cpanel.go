@@ -56,11 +56,15 @@ type StageRequest struct {
 	StagingDir string
 	Mode       pkgacct.Mode
 	// SkipHomedir and SkipDatabases leave those parts out of the payload
-	// entirely, for a schedule that says so. The account's configuration
-	// always travels: it is one archive that restorepkg needs, and
-	// pkgacct has no switch that takes pieces out of it.
+	// entirely, for a schedule that says so.
 	SkipHomedir   bool
 	SkipDatabases bool
+	// SkipEmail leaves the account's mail out. It reaches pkgacct as well
+	// as restic: excluding ~/mail keeps the messages out of the file
+	// backup, but the mail configuration -- the account names, and the
+	// hashes that go with them -- is packed inside pkgacct's own archive,
+	// where no restic exclude can reach it.
+	SkipEmail bool
 }
 
 // Provider produces backup payloads for cPanel accounts.

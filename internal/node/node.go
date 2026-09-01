@@ -441,6 +441,7 @@ func (e *Engine) assignmentFor(j nodestore.Job, policy nodestore.Policy,
 		LimitUploadKiB: policy.LimitUploadKiB,
 		Excludes:       excludesFor(policy, account),
 		SkipHomedir:    policy.SkipHomedir,
+		SkipEmail:      policy.SkipEmail,
 		SkipDatabases:  policy.SkipDatabases,
 		RetryFailed:    policy.RetryFailed,
 	}
@@ -461,8 +462,12 @@ func (e *Engine) assignmentFor(j nodestore.Job, policy nodestore.Policy,
 
 // excludesFor is what this job should not store: the patterns the
 // operator gave, plus the account's mail when the schedule leaves email
-// out. Mail is a path rather than a flag — pkgacct has no switch for it —
-// so leaving it out means telling restic not to read it.
+// out.
+//
+// This is only half of leaving mail out. It keeps the messages out of the
+// file backup; the mail configuration, and the mail account hashes with
+// it, are inside pkgacct's own archive where no exclude here can reach —
+// so the schedule's choice is passed to pkgacct as well.
 func excludesFor(policy nodestore.Policy, account cpanel.AccountInfo) []string {
 	excludes := append([]string(nil), policy.Excludes...)
 	if policy.SkipEmail && account.HomeDir != "" {

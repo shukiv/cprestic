@@ -114,6 +114,12 @@ type Capabilities struct {
 	NoCompressFlag  string
 	SkipHomedirFlag string
 	SkipDBFlag      string
+	// SkipMailFlag leaves the account's mail out of pkgacct's archive.
+	// It matters because a restic exclude cannot reach inside that
+	// archive: a schedule told to leave email out was still shipping the
+	// mail configuration, and the mail account names and password hashes
+	// in it, inside the metadata part.
+	SkipMailFlag string
 }
 
 // knownFlags maps the capability we need to the flag spellings observed
@@ -122,6 +128,7 @@ var knownFlags = map[string][]string{
 	"nocompress":  {"--nocompress", "--uncompressed"},
 	"skiphomedir": {"--skiphomedir", "--skiphome"},
 	"skipdb":      {"--skipdb", "--skipmysql"},
+	"skipmail":    {"--skipmail"},
 }
 
 // ProbeCapabilities parses the output of "pkgacct --help".
@@ -145,6 +152,7 @@ func ProbeCapabilities(helpOutput string) Capabilities {
 		NoCompressFlag:  find("nocompress"),
 		SkipHomedirFlag: find("skiphomedir"),
 		SkipDBFlag:      find("skipdb"),
+		SkipMailFlag:    find("skipmail"),
 	}
 }
 
@@ -160,6 +168,10 @@ type PlanRequest struct {
 	// that asked for a backup of less than the whole account.
 	SkipHomedir   bool
 	SkipDatabases bool
+	// SkipEmail leaves the account's mail out, both the messages under
+	// the home directory and the mail configuration pkgacct would
+	// otherwise pack into its archive.
+	SkipEmail bool
 }
 
 // Plan works out the payload for a request, without running anything.
@@ -244,8 +256,13 @@ func isFlagSeparator(r rune) bool {
 //
 // The archive is written into the staging directory rather than pkgacct's
 // default location so the agent controls where the disk fills up.
-func CommandArgs(account, stagingDir string, mode Mode, caps Capabilities) []string {
+func CommandArgs(account, stagingDir string, mode Mode, caps Capabilities, skipEmail bool) []string {
 	var args []string
+	if skipEmail && caps.SkipMailFlag != "" {
+		// An exclude given to restic cannot reach inside pkgacct's own
+		// archive, so leaving mail out has to be said here as well.
+		args = append(args, caps.SkipMailFlag)
+	}
 	if caps.NoCompressFlag != "" {
 		// Compression here would defeat restic's deduplication entirely.
 		args = append(args, caps.NoCompressFlag)
