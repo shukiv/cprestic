@@ -471,7 +471,7 @@
    work. The colour is the product's own and does not come from the theme
    tokens: it is the same in light and dark, as a mark should be. */
 .cprest .cpr-brand {
-  font-weight:700; letter-spacing:-.01em; white-space:nowrap;
+  font-size:19px; font-weight:700; letter-spacing:-.015em; white-space:nowrap;
   padding:var(--s4) 0; margin-right:var(--s5); flex:none;
 }
 .cprest .cpr-brand-cp { color:#CF470C; }

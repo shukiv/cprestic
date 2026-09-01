@@ -104,6 +104,13 @@ func flashFrom(r *http.Request) *flash {
 	return &flash{Kind: kind, Message: message}
 }
 
+// renderUser draws an account-facing page. It uses the same machinery as
+// the operator's pages and its own layout: a customer is not an operator,
+// and none of the operator's navigation means anything to them.
+func (s *Server) renderUser(w http.ResponseWriter, r *http.Request, name string, data any) {
+	s.render(w, r, name, "Backups", "", data)
+}
+
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
 		"bytes": humanBytes,

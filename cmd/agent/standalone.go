@@ -86,6 +86,12 @@ func runStandalone(ctx context.Context, cfg config, log *slog.Logger) error {
 
 	errs := make(chan error, 2)
 	go func() { errs <- ui.Listen(ctx, cfg.socketPath) }()
+	// The account-facing interface, which cPanel users reach through
+	// their own plugin. It is a separate socket because it answers a
+	// different question: not "what is on this server" but "what is mine".
+	if cfg.userSocketPath != "" {
+		go func() { errs <- ui.ListenUser(ctx, cfg.userSocketPath) }()
+	}
 	go func() { errs <- engine.Run(ctx) }()
 
 	log.Info("standalone node running",

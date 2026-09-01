@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1988,4 +1989,43 @@ func TestTheBrandIsOnThePageInItsOwnColour(t *testing.T) {
 	if strings.Contains(page, ".cprest .cpr-brand span { color:var(--muted)") {
 		t.Error("a rule is still greying out everything inside the brand")
 	}
+}
+
+// The account-facing interface takes who is asking from the socket, never
+// from the request. A page that cannot be attributed is refused rather
+// than shown somebody's backups.
+func TestTheUserInterfaceRefusesWhatItCannotAttribute(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	// newUI serves the operator's handler; what matters here is that the
+	// account-facing one refuses a request carrying no account, which is
+	// what an unattributed connection produces.
+	_ = client
+	server := httptest.NewServer(newUserHandler(t))
+	defer server.Close()
+
+	resp, err := http.Get(server.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("a request with no account = %d, want 403", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "could not tell which account") {
+		t.Errorf("the refusal does not say why: %s", body)
+	}
+}
+
+// newUserHandler builds the account-facing handler on its own, so it can
+// be asked what it does with a request that has no account attached.
+func newUserHandler(t *testing.T) http.Handler {
+	t.Helper()
+	_, _, engine := newUI(t)
+	server, err := webui.New(engine, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("build ui: %v", err)
+	}
+	return server.UserHandler()
 }

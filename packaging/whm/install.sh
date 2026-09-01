@@ -138,6 +138,32 @@ PROBLEM
     fi
 done
 
+# ---------------------------------------------------------------------------
+# The account-facing plugin.
+#
+# cPanel runs these as the account they belong to, which is the whole
+# point: the service reads who is asking from the socket rather than from
+# anything the page says. Installed by copying, because a plugin that is
+# four PHP files and one menu entry does not need a tarball and a script
+# that unpacks it.
+FRONTEND=/usr/local/cpanel/base/frontend/jupiter
+if [ -d "$FRONTEND" ]; then
+    install -d -m 755 "$FRONTEND/cprest"
+    for page in index.live.php browse.live.php restore.live.php download.live.php proxy.php; do
+        if [ -f "$SOURCE_DIR/cpanel/$page" ]; then
+            install -m 644 "$SOURCE_DIR/cpanel/$page" "$FRONTEND/cprest/$page"
+        fi
+    done
+
+    install -d -m 755 "$FRONTEND/dynamicui"
+    cat > "$FRONTEND/dynamicui/dynamicui_cprest.conf" <<'MENU'
+description=>Restore your files and databases from a backup,file=>cprest,group=>files,imgtype=>icon,itemdesc=>cP:Restic,itemorder=>1,subtype=>img,type=>image,url=>cprest/index.live.php,width=>48,height=>48
+MENU
+    echo "Installed the account-facing plugin in $FRONTEND/cprest."
+else
+    echo "warning: no jupiter theme at $FRONTEND; the account-facing plugin was not installed." >&2
+fi
+
 cat <<DONE
 
 cP:Restic is installed.

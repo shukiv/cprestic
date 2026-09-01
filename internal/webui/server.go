@@ -110,11 +110,17 @@ func parseTemplates() (map[string]*template.Template, error) {
 	sets := map[string]*template.Template{}
 	for _, page := range pages {
 		name := path.Base(page)
-		if name == "layout.html" || name == "partials.html" {
+		if name == "layout.html" || name == "partials.html" || name == "user_layout.html" {
 			continue
 		}
+		// An account's pages wear their own layout: none of the
+		// operator's navigation means anything to a customer.
+		layout := "templates/layout.html"
+		if strings.HasPrefix(name, "user_") {
+			layout = "templates/user_layout.html"
+		}
 		set, err := template.New(name).Funcs(templateFuncs()).ParseFS(templateFS,
-			"templates/layout.html", "templates/partials.html", page)
+			layout, "templates/partials.html", page)
 		if err != nil {
 			return nil, fmt.Errorf("webui: parse %s: %w", name, err)
 		}

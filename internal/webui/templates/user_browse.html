@@ -1,0 +1,92 @@
+{{define "content"}}
+{{$data := .Data}}
+<div>
+  <div class="cpr-crumb"><a class="cpr-link" href="index.live.php">Your backups</a> <span>›</span>
+    <span>{{if $data.SnapshotAt}}{{stamp $data.SnapshotAt}}{{else}}choose a backup{{end}}</span></div>
+  <h1>Restore something</h1>
+  <p class="cpr-sub">Pick a backup, then take back whatever you need from it.</p>
+</div>
+
+{{with $data.Err}}
+<div class="cpr-banner cpr-bad"><div class="cpr-body">{{.}}</div></div>
+{{end}}
+
+{{if $data.Snapshots}}
+<div class="cpr-card">
+  <div class="cpr-pad">
+    <form method="get" class="cpr-row">
+      <input type="hidden" name="repository" value="{{$data.Repository}}">
+      <label for="snapshot" style="margin:0">Backup taken</label>
+      <select id="snapshot" name="snapshot" onchange="this.form.submit()" style="width:auto">
+        {{range $data.Snapshots}}
+        <option value="{{.ID}}" {{if eq .ID $data.Snapshot}}selected{{end}}>{{stamp .Time}}</option>
+        {{end}}
+      </select>
+    </form>
+  </div>
+</div>
+
+<div class="cpr-card">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
+    <h2 style="margin:0">Whole things</h2>
+  </div>
+  <div class="cpr-pad">
+    <p class="cpr-hint" style="margin-top:0">Each of these comes back as a download, exactly as it
+    was in that backup.</p>
+    <div class="cpr-row">
+      {{range $data.Kinds}}
+      {{if ne (printf "%s" .) "files"}}
+      <form method="post" action="restore.live.php" class="cpr-inline">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <input type="hidden" name="repository" value="{{$data.Repository}}">
+        <input type="hidden" name="snapshot" value="{{$data.Snapshot}}">
+        <input type="hidden" name="item" value="{{.}}">
+        <button class="cpr-btn">{{$data.KindTitle .}}</button>
+      </form>
+      {{end}}
+      {{end}}
+    </div>
+    <p class="cpr-note">A mailbox or a database needs to be named, so those come from the list of
+    what is in this backup — ask your host if you cannot see one you expect.</p>
+  </div>
+</div>
+
+{{if $data.Entries}}
+<div class="cpr-card">
+  <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
+    <h2 style="margin:0">Your files</h2>
+    <span class="cpr-mono" style="font-size:13px">{{$data.Path}}</span>
+  </div>
+  <form method="post" action="restore.live.php">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="repository" value="{{$data.Repository}}">
+    <input type="hidden" name="snapshot" value="{{$data.Snapshot}}">
+    <input type="hidden" name="item" value="files">
+    <div class="cpr-tablewrap"><table>
+      <thead><tr><th style="width:32px">&nbsp;</th><th>Name</th><th>Size</th></tr></thead>
+      <tbody>
+        {{$q := printf "browse.live.php?repository=%s&amp;snapshot=%s" $data.Repository $data.Snapshot}}
+        {{if $data.Up}}
+        <tr><td></td><td colspan="2"><a class="cpr-link" href="{{$q}}&amp;path={{$data.Up}}">↑ up one level</a></td></tr>
+        {{end}}
+        {{range $data.Entries}}
+        <tr>
+          <td><input type="checkbox" name="name" value="{{.Path}}" aria-label="Restore {{.Name}}"></td>
+          <td class="cpr-acct">
+            {{if .Dir}}<a class="cpr-link" href="{{$q}}&amp;path={{.Path}}">{{.Name}}/</a>
+            {{else}}{{.Name}}{{end}}</td>
+          <td class="cpr-mono cpr-num">{{if .Size}}{{bytes .Size}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table></div>
+    <div class="cpr-pad cpr-row" style="border-top:1px solid var(--line)">
+      <button class="cpr-btn cpr-primary" type="submit">Restore what is ticked</button>
+      <span class="cpr-hint" style="margin:0">Folders come back whole. Ticks are lost if you walk
+      into another folder, so restore from one folder at a time.</span>
+    </div>
+  </form>
+</div>
+{{end}}
+{{end}}
+{{end}}
