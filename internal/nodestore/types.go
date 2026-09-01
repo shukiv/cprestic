@@ -39,7 +39,48 @@ type Repository struct {
 	// interface keeps saying so: the disaster these backups exist for is
 	// also the one that destroys the only copy of the key.
 	RecoveryNotedAt *time.Time `json:"recovery_noted_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
+	// RetentionApprovedAt is when an operator looked at what retention
+	// would delete from this repository and said go. Nothing is ever
+	// deleted before that: a keep policy is easy to write and hard to
+	// picture, and this is the one thing the program does that cannot be
+	// undone.
+	RetentionApprovedAt *time.Time `json:"retention_approved_at,omitempty"`
+	// Retention records what the last plan said and what the last run
+	// did.
+	Retention RetentionState `json:"retention,omitempty"`
+	CreatedAt time.Time      `json:"created_at"`
+}
+
+// RetentionState is what happened the last time retention looked at a
+// repository. It is stored rather than held in memory so that restarting
+// the service does not start the whole cycle again, and so the page can
+// say what is about to happen without running restic to find out.
+type RetentionState struct {
+	// PlannedAt is when the last dry run was taken, and Plan is what it
+	// said. A plan is a record, not a promise: a backup landing after it
+	// changes what the next real run removes.
+	PlannedAt *time.Time       `json:"planned_at,omitempty"`
+	Plan      []RetentionGroup `json:"plan,omitempty"`
+	WouldKeep int              `json:"would_keep,omitempty"`
+	WouldDrop int              `json:"would_drop,omitempty"`
+	// AppliedAt and Dropped are the last run that actually removed
+	// something.
+	AppliedAt *time.Time `json:"applied_at,omitempty"`
+	Dropped   int        `json:"dropped,omitempty"`
+	// LastError is why the last attempt did not finish. A stale lock is
+	// the usual one, and it is worth saying rather than retrying in
+	// silence forever.
+	LastError string `json:"last_error,omitempty"`
+}
+
+// RetentionGroup is one account's share of a plan.
+type RetentionGroup struct {
+	Account string     `json:"account"`
+	Host    string     `json:"host,omitempty"`
+	Keep    int        `json:"keep"`
+	Drop    int        `json:"drop"`
+	Oldest  *time.Time `json:"oldest,omitempty"`
+	Newest  *time.Time `json:"newest,omitempty"`
 }
 
 // Retention is the keep policy handed to "restic forget".

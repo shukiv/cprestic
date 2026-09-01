@@ -457,6 +457,7 @@ func (e *Engine) Schedule(ctx context.Context, now time.Time) (int, error) {
 		e.log.Error("sweep the work directory", "error", err)
 	}
 	e.watchForTrouble(ctx, now)
+	e.sweepRetention(ctx, now)
 
 	policies, err := e.store.Policies()
 	if err != nil {

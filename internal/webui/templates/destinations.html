@@ -107,6 +107,88 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
   {{range $data.Destinations}}
     {{if .PublicKey}}
     <div class="cpr-pad" style="border-top:1px solid var(--line)">
+    {{/* Retention: the one thing here that destroys data, so it says what
+         it would do before it is allowed to do it. */}}
+    {{if .Repository.ID}}
+    <div class="cpr-pad" style="border-top:1px solid var(--line)">
+      {{$r := .Repository.Retention}}
+      <div class="cpr-spread" style="align-items:flex-start">
+        <div>
+          <h3 style="margin:0; font-size:14px">Keeping backups tidy</h3>
+          {{if keepsSet .Keeps}}
+          <p class="cpr-hint" style="margin:var(--s1) 0 0">Keeps {{keepsSaid .Keeps}}, per account.
+          {{if .Repository.RetentionApprovedAt}}Approved {{ago .Repository.RetentionApprovedAt}}.
+          {{else}}<strong>Nothing has been removed yet.</strong> Read the plan below first.{{end}}</p>
+          {{else}}
+          <p class="cpr-hint" style="margin:var(--s1) 0 0">No enabled schedule writing here says
+          how much to keep, so nothing can be removed. This repository will grow without bound.</p>
+          {{end}}
+        </div>
+        <div class="cpr-actions">
+          {{if keepsSet .Keeps}}
+          <form method="post" action="?p=destinations/retention/plan" class="cpr-inline">
+            <input type="hidden" name="csrf" value="{{$.CSRF}}">
+            <input type="hidden" name="repository" value="{{.Repository.ID}}">
+            <button class="cpr-btn">{{if $r.PlannedAt}}Check again{{else}}Show what would go{{end}}</button>
+          </form>
+          {{if .Repository.RetentionApprovedAt}}
+          <form method="post" action="?p=destinations/retention/run" class="cpr-inline"
+                data-confirm="Remove the backups the policy says to remove? This cannot be undone.">
+            <input type="hidden" name="csrf" value="{{$.CSRF}}">
+            <input type="hidden" name="repository" value="{{.Repository.ID}}">
+            <button class="cpr-btn">Run it now</button>
+          </form>
+          <form method="post" action="?p=destinations/retention/withdraw" class="cpr-inline">
+            <input type="hidden" name="csrf" value="{{$.CSRF}}">
+            <input type="hidden" name="repository" value="{{.Repository.ID}}">
+            <button class="cpr-btn cpr-quiet">Stop</button>
+          </form>
+          {{else if $r.PlannedAt}}
+          <form method="post" action="?p=destinations/retention/approve" class="cpr-inline"
+                data-confirm="Allow cP:Restic to delete backups from this destination from now on?">
+            <input type="hidden" name="csrf" value="{{$.CSRF}}">
+            <input type="hidden" name="repository" value="{{.Repository.ID}}">
+            <button class="cpr-btn cpr-danger">Approve</button>
+          </form>
+          {{end}}
+          {{end}}
+        </div>
+      </div>
+
+      {{with $r.LastError}}
+      <div class="cpr-warnbox" style="margin-top:var(--s3)">{{.}}</div>
+      {{end}}
+
+      {{if $r.PlannedAt}}
+      <p class="cpr-hint" style="margin-top:var(--s3)">
+        {{if $r.WouldDrop}}Checked {{ago $r.PlannedAt}}: <strong>{{$r.WouldDrop}}</strong> of
+        {{add $r.WouldDrop $r.WouldKeep}} backups would be removed.
+        {{else}}Checked {{ago $r.PlannedAt}}: nothing to remove — every backup here is inside
+        the keep policy.{{end}}
+        {{with $r.AppliedAt}} Last run {{ago .}}, removing {{$r.Dropped}}.{{end}}
+      </p>
+      {{if $r.WouldDrop}}
+      <div class="cpr-tablewrap" style="margin-top:var(--s3)"><table>
+        <thead><tr><th>Account</th><th>Kept</th><th>Removed</th><th>Oldest that would go</th></tr></thead>
+        <tbody>
+          {{range $r.Plan}}{{if .Drop}}
+          <tr>
+            <td class="cpr-acct">{{if .Account}}{{.Account}}{{else}}<span class="cpr-muted">untagged</span>{{end}}</td>
+            <td class="cpr-mono cpr-num">{{.Keep}}</td>
+            <td class="cpr-mono cpr-num">{{.Drop}}</td>
+            <td>{{with .Oldest}}{{stamp .}}<div class="cpr-sublabel">{{ago .}}</div>{{end}}</td>
+          </tr>
+          {{end}}{{end}}
+        </tbody>
+      </table></div>
+      <p class="cpr-hint" style="margin-top:var(--s3)">A plan is what was true when it was taken.
+      Tonight's backup changes it, and the real run works out the answer again — so these counts
+      are the shape of what happens, not the exact list.</p>
+      {{end}}
+      {{end}}
+    </div>
+    {{end}}
+
       <details>
         <summary>Public key for {{.Name}}</summary>
         <p class="cpr-hint" style="margin-top:var(--s2)">If backups to this destination fail to

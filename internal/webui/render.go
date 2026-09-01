@@ -129,7 +129,34 @@ func templateFuncs() template.FuncMap {
 		// kindTitle and eventTitle name a stored channel's kind and
 		// events the way the operator chose them, rather than showing
 		// the identifiers they are stored as.
-		"kindTitle":  func(kind string) string { return notify.Kind(kind).Title() },
+		"kindTitle": func(kind string) string { return notify.Kind(kind).Title() },
+		"add":       func(a, b int) int { return a + b },
+		// keepsSet and keepsSaid describe a retention policy in the words
+		// an operator wrote it in, rather than as five numbers most of
+		// which are zero.
+		"keepsSet": func(keeps nodestore.Retention) bool {
+			return keeps.KeepLast+keeps.KeepDaily+keeps.KeepWeekly+
+				keeps.KeepMonthly+keeps.KeepYearly > 0
+		},
+		"keepsSaid": func(keeps nodestore.Retention) string {
+			var parts []string
+			for _, said := range []struct {
+				count int
+				unit  string
+			}{
+				{keeps.KeepLast, "most recent"}, {keeps.KeepDaily, "daily"},
+				{keeps.KeepWeekly, "weekly"}, {keeps.KeepMonthly, "monthly"},
+				{keeps.KeepYearly, "yearly"},
+			} {
+				if said.count > 0 {
+					parts = append(parts, fmt.Sprintf("%d %s", said.count, said.unit))
+				}
+			}
+			if len(parts) == 0 {
+				return "nothing"
+			}
+			return strings.Join(parts, ", ")
+		},
 		"eventTitle": func(event string) string { return notify.Event(event).Title() },
 		// channelWhere is the one detail that tells two channels of the
 		// same kind apart, without ever showing a credential.

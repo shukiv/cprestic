@@ -42,6 +42,11 @@ type ForgetSpec struct {
 	GroupBy string
 	// Prune actually removes the unreferenced data.
 	Prune bool
+	// DryRun asks restic what it would remove without removing it. The
+	// answer is the same computation the real run does, taken a moment
+	// earlier: a backup landing in between changes it, so a plan is a
+	// record of what was true when it was made, not a promise.
+	DryRun bool
 }
 
 // CheckSpec describes an integrity check.
@@ -120,10 +125,27 @@ func ForgetArgs(spec ForgetSpec) ([]string, error) {
 	for _, tag := range spec.Tags {
 		args = append(args, "--tag", tag)
 	}
-	if spec.GroupBy != "" {
-		args = append(args, "--group-by", spec.GroupBy)
+
+	// Grouping decides what a keep count counts. Without it restic groups
+	// by host and paths, and paths move when a schedule's payload mode
+	// changes; with tags alone, two servers writing into one repository
+	// would share a group, and one server's backups would be deleted to
+	// satisfy the other server's retention. Host and tags together give
+	// one group per account per server, which is what "keep seven daily
+	// backups" is meant to mean.
+	groupBy := spec.GroupBy
+	if groupBy == "" {
+		groupBy = "host,tags"
+	}
+	args = append(args, "--group-by", groupBy)
+
+	if spec.DryRun {
+		args = append(args, "--dry-run")
 	}
 	if spec.Prune {
+		if spec.DryRun {
+			return nil, fmt.Errorf("resticrun: a dry run must not prune")
+		}
 		args = append(args, "--prune")
 	}
 	return args, nil

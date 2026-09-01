@@ -201,6 +201,9 @@ type destinationView struct {
 	// only once when the destination was created.
 	PublicKey    string
 	RemoteTarget string
+	// Keeps is the retention this destination would apply: the most
+	// generous of every enabled schedule that writes here.
+	Keeps nodestore.Retention
 }
 
 // TypeName is the destination's type in the words the form used to offer
@@ -239,6 +242,10 @@ func (s *Server) destinationViews() ([]destinationView, error) {
 	if err != nil {
 		return nil, err
 	}
+	policies, err := s.engine.Store().Policies()
+	if err != nil {
+		return nil, err
+	}
 
 	views := make([]destinationView, 0, len(destinations))
 	for _, dest := range destinations {
@@ -260,6 +267,9 @@ func (s *Server) destinationViews() ([]destinationView, error) {
 		if dest.Type == string(destination.TypeSFTP) {
 			view.PublicKey = s.engine.PublicKeyFor(dest)
 			view.RemoteTarget = dest.Config["user"] + "@" + dest.Config["host"]
+		}
+		if view.Repository.ID != "" {
+			view.Keeps = node.MergedRetention(policies, view.Repository.ID)
 		}
 		views = append(views, view)
 	}
@@ -3058,4 +3068,61 @@ func browseCrumbs(view browseView) []crumb {
 		crumbs = append(crumbs, crumb{Label: view.Path, URL: base + "&path=" + url.QueryEscape(view.Path)})
 	}
 	return crumbs
+}
+
+// --- retention ---
+
+// handlePlanRetention asks what retention would delete, without deleting
+// anything.
+func (s *Server) handlePlanRetention(w http.ResponseWriter, r *http.Request) {
+	id := r.PostFormValue("repository")
+	state, err := s.engine.PlanRetention(r.Context(), id)
+	if err != nil {
+		s.redirect(w, r, "/destinations", "error", err.Error())
+		return
+	}
+	if state.WouldDrop == 0 {
+		s.redirect(w, r, "/destinations", "ok",
+			"Nothing would be removed: every backup there is inside the keep policy.")
+		return
+	}
+	s.redirect(w, r, "/destinations", "warn", fmt.Sprintf(
+		"%d of %d backups would be removed. Read what is below before approving it.",
+		state.WouldDrop, state.WouldDrop+state.WouldKeep))
+}
+
+// handleApproveRetention records that an operator has read a plan and
+// agreed this destination may have backups deleted from it.
+func (s *Server) handleApproveRetention(w http.ResponseWriter, r *http.Request) {
+	if err := s.engine.ApproveRetention(r.PostFormValue("repository")); err != nil {
+		s.redirect(w, r, "/destinations", "error", err.Error())
+		return
+	}
+	s.redirect(w, r, "/destinations", "ok",
+		"Approved. Retention will run here from now on, and what it removes is recorded.")
+}
+
+// handleWithdrawRetention stops it again.
+func (s *Server) handleWithdrawRetention(w http.ResponseWriter, r *http.Request) {
+	if err := s.engine.WithdrawRetention(r.PostFormValue("repository")); err != nil {
+		s.redirect(w, r, "/destinations", "error", err.Error())
+		return
+	}
+	s.redirect(w, r, "/destinations", "ok",
+		"Stopped. Nothing more will be removed from this destination until you approve it again.")
+}
+
+// handleRunRetention applies it now rather than waiting for the next pass.
+func (s *Server) handleRunRetention(w http.ResponseWriter, r *http.Request) {
+	removed, err := s.engine.ApplyRetention(r.Context(), r.PostFormValue("repository"))
+	if err != nil {
+		s.redirect(w, r, "/destinations", "error", err.Error())
+		return
+	}
+	if removed == 0 {
+		s.redirect(w, r, "/destinations", "ok", "Nothing needed removing.")
+		return
+	}
+	s.redirect(w, r, "/destinations", "ok", fmt.Sprintf(
+		"Removed %d backups and reclaimed the space they were holding.", removed))
 }
