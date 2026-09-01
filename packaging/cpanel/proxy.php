@@ -12,7 +12,7 @@
  * they are.
  */
 
-const CPREST_SOCKET = '/var/run/cprest/user.sock';
+const CPREST_SOCKET = '/var/run/cprest/account/user.sock';
 
 function cprest_page(string $path): void {
     $query = $_SERVER['QUERY_STRING'] ?? '';
@@ -43,31 +43,40 @@ function cprest_page(string $path): void {
     $request .= "\r\n" . $body;
 
     fwrite($socket, $request);
-    $response = stream_get_contents($socket);
-    fclose($socket);
 
-    $split = strpos($response, "\r\n\r\n");
-    if ($split === false) {
+    // Headers a line at a time, then the body in chunks. A restore
+    // archive is gigabytes; reading the whole answer into a string first
+    // would exhaust PHP's memory limit and hand the customer a blank
+    // page instead of their files.
+    $head = [];
+    while (($line = fgets($socket)) !== false) {
+        $line = rtrim($line, "\r\n");
+        if ($line === '') { break; }
+        $head[] = $line;
+    }
+    if ($head === []) {
+        fclose($socket);
         http_response_code(502);
         echo '<p>cP:Restic answered something this page could not read.</p>';
         return;
     }
-    $head = substr($response, 0, $split);
-    $payload = substr($response, $split + 4);
 
+    if (preg_match('#^HTTP/1\.[01] (\d{3})#', $head[0], $status)) {
+        http_response_code((int) $status[1]);
+    }
     // A redirect and a download have to reach the browser as themselves.
-    foreach (explode("\r\n", $head) as $index => $line) {
-        if ($index === 0) {
-            if (preg_match('#^HTTP/1\.[01] (\d{3})#', $line, $status)) {
-                http_response_code((int) $status[1]);
-            }
-            continue;
-        }
-        [$name, $value] = array_pad(explode(':', $line, 2), 2, '');
-        $name = strtolower(trim($name));
+    foreach (array_slice($head, 1) as $line) {
+        $name = strtolower(trim(explode(':', $line, 2)[0] ?? ''));
         if (in_array($name, ['location', 'content-disposition', 'content-type', 'content-length'], true)) {
-            header(trim($line));
+            header($line);
         }
     }
-    echo $payload;
+
+    while (!feof($socket)) {
+        $chunk = fread($socket, 65536);
+        if ($chunk === false || $chunk === '') { break; }
+        echo $chunk;
+        flush();
+    }
+    fclose($socket);
 }

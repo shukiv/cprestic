@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/shuki/cprest/internal/granular"
@@ -37,15 +38,12 @@ func accountOf(r *http.Request) string {
 // writable by anyone, and every request is then confined to the account
 // that opened it.
 func (s *Server) ListenUser(ctx context.Context, socketPath string) error {
+	// This one has to be reachable by accounts, so it lives in its own
+	// directory. The operator's socket is in a different one, at 0700,
+	// and neither listener can now change the other's boundary.
 	dir := filepath.Dir(socketPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("webui: create %s: %w", dir, err)
-	}
-	// The directory has to be traversable for an account to reach the
-	// socket in it. What protects the operator's interface is the mode on
-	// its own socket, not the directory.
-	if err := os.Chmod(dir, 0o755); err != nil {
-		return fmt.Errorf("webui: open %s: %w", dir, err)
+	if err := prepareSocketDir(dir, 0o755); err != nil {
+		return err
 	}
 	if err := os.Remove(socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("webui: remove stale socket: %w", err)
@@ -95,16 +93,66 @@ func (s *Server) UserHandler() http.Handler {
 	return mux
 }
 
-// userPage refuses anything that cannot be attributed to an account.
+// userPage refuses anything that cannot be attributed to an account, and
+// holds one account to one request at a time.
+//
+// Listing a repository or walking a snapshot runs restic against the
+// destination. Without a limit, anything running as the account — a cron
+// job, a compromised site — could keep this server and the backup server
+// busy on its behalf indefinitely.
 func (s *Server) userPage(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if accountOf(r) == "" {
+		account := accountOf(r)
+		if account == "" {
 			http.Error(w, "cP:Restic could not tell which account this is. "+
 				"Open it from inside cPanel.", http.StatusForbidden)
 			return
 		}
+		if !s.userBusy.enter(account) {
+			http.Error(w, "cP:Restic is already working on a request for this account. "+
+				"Wait for it to finish.", http.StatusTooManyRequests)
+			return
+		}
+		defer s.userBusy.leave(account)
 		next(w, r)
 	}
+}
+
+// inFlight counts what each account has running.
+type inFlight struct {
+	mu    sync.Mutex
+	count map[string]int
+	// limit is how many at once. One: a person clicking through a file
+	// tree makes one request at a time, and anything making more is not
+	// a person.
+	limit int
+}
+
+func (f *inFlight) enter(key string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.count == nil {
+		f.count = map[string]int{}
+	}
+	limit := f.limit
+	if limit <= 0 {
+		limit = 1
+	}
+	if f.count[key] >= limit {
+		return false
+	}
+	f.count[key]++
+	return true
+}
+
+func (f *inFlight) leave(key string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.count[key] <= 1 {
+		delete(f.count, key)
+		return
+	}
+	f.count[key]--
 }
 
 // userView is one account's own page.

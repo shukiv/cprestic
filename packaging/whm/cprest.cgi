@@ -22,7 +22,7 @@ use Whostmgr::ACLS   ();
 use Whostmgr::HTMLInterface ();
 
 # A compile-time constant, so nothing writable can redirect the plugin.
-my $SOCKET = '/var/run/cprest/ui.sock';
+my $SOCKET = '/var/run/cprest/admin/ui.sock';
 my $TIMEOUT = 300;
 
 run() unless caller();
@@ -38,7 +38,7 @@ sub run {
         return;
     }
 
-    my ( $status, $headers, $body ) = request();
+    my ( $status, $headers, $body, $socket ) = request();
 
     if ( !defined $status ) {
         chrome( 'The cprest service is not running on this server. '
@@ -55,11 +55,22 @@ sub run {
         }
         print "\r\n";
         binmode STDOUT;
-        print $body;
+        # An archive is gigabytes. It goes out as it arrives rather than
+        # being held in this process first, which used to be a way to run
+        # cpsrvd out of memory by asking for a large restore.
+        print $body if length $body;
+        stream( $socket, \*STDOUT );
+        close $socket;
         return;
     }
 
-    chrome($body);
+    my $rest;
+    {
+        local $/;
+        $rest = <$socket>;
+    }
+    close $socket;
+    chrome( $body . ( defined $rest ? $rest : '' ) );
 }
 
 # request forwards this CGI invocation to the service and returns its
@@ -92,16 +103,19 @@ sub request {
     $request .= "\r\n" . $payload;
 
     $socket->autoflush(1);
+    binmode $socket;
     print {$socket} $request;
 
-    local $/;
-    binmode $socket;
-    my $response = <$socket>;
-    close $socket;
-    return ( undef, undef, undef ) unless defined $response;
-
-    my ( $head, $body ) = split /\r\n\r\n/, $response, 2;
-    $body = '' unless defined $body;
+    # Headers first, a line at a time, so a large body never has to be
+    # in memory to find where it starts.
+    my $head = '';
+    my $body = '';
+    while ( defined( my $chunk = <$socket> ) ) {
+        $head .= $chunk;
+        last if $chunk =~ /^\r?\n$/;
+    }
+    return ( undef, undef, undef ) unless length $head;
+    $head =~ s/\r?\n\r?\n\z//;
 
     my @lines  = split /\r\n/, $head;
     my $line   = shift @lines || '';
@@ -113,7 +127,17 @@ sub request {
         next unless defined $value;
         $headers{ lc $name } = $value;
     }
-    return ( $status, \%headers, $body );
+    return ( $status, \%headers, $body, $socket );
+}
+
+# stream copies what is left of the socket to the browser in pieces.
+sub stream {
+    my ( $from, $to ) = @_;
+    my $buffer;
+    while ( my $read = read( $from, $buffer, 65536 ) ) {
+        print {$to} $buffer;
+    }
+    return;
 }
 
 # chrome prints the fragment inside WHM's own interface.

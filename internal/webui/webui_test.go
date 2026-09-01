@@ -2029,3 +2029,61 @@ func newUserHandler(t *testing.T) http.Handler {
 	}
 	return server.UserHandler()
 }
+
+// The two listeners used to share a directory and set it to different
+// modes as they started, so which boundary a server ended up with
+// depended on which won the race. Each has its own now.
+func TestTheTwoSocketsHaveTheirOwnDirectories(t *testing.T) {
+	root := t.TempDir()
+	admin := filepath.Join(root, "admin")
+	account := filepath.Join(root, "account")
+
+	if err := webui.PrepareSocketDirForTest(admin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := webui.PrepareSocketDirForTest(account, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for dir, want := range map[string]os.FileMode{admin: 0o700, account: 0o755} {
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != want {
+			t.Errorf("%s is %o, want %o", dir, got, want)
+		}
+	}
+
+	// And making one does not change the other.
+	if err := webui.PrepareSocketDirForTest(account, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Errorf("the operator's directory became %o when the account one was made", got)
+	}
+}
+
+// One account, one request at a time: listing a repository runs restic
+// against the destination, and anything running as the account could
+// otherwise keep this server busy on its behalf.
+func TestOneAccountGetsOneRequestAtATime(t *testing.T) {
+	var busy webui.InFlightForTest
+	if !busy.Enter("studio") {
+		t.Fatal("the first request was refused")
+	}
+	if busy.Enter("studio") {
+		t.Error("a second request for the same account was allowed")
+	}
+	if !busy.Enter("rtflow") {
+		t.Error("another account was held up by the first one")
+	}
+	busy.Leave("studio")
+	if !busy.Enter("studio") {
+		t.Error("the account is still held after its request finished")
+	}
+}

@@ -98,9 +98,9 @@ func parseFlags() config {
 		"run this server on its own, with local state and the WHM interface, and no controller")
 	flag.StringVar(&cfg.statePath, "state", "/var/lib/cprest/state.db",
 		"standalone: where this server keeps its own configuration and history")
-	flag.StringVar(&cfg.userSocketPath, "user-socket", "/var/run/cprest/user.sock",
+	flag.StringVar(&cfg.userSocketPath, "user-socket", "/var/run/cprest/account/user.sock",
 		"unix socket the cPanel account interface listens on")
-	flag.StringVar(&cfg.socketPath, "socket", "/var/run/cprest/ui.sock",
+	flag.StringVar(&cfg.socketPath, "socket", "/var/run/cprest/admin/ui.sock",
 		"standalone: unix socket the WHM plugin connects to")
 	flag.StringVar(&cfg.masterKeyPath, "master-key", "/etc/cprest/master.key",
 		"standalone: key that encrypts stored destination credentials")

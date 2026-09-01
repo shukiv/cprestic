@@ -61,6 +61,9 @@ type Server struct {
 	// type and the browser refuses to apply it. Inlining sidesteps that,
 	// and saves two round trips through the CGI besides.
 	assets assets
+	// userBusy holds each cPanel account to one request at a time on the
+	// account-facing socket.
+	userBusy inFlight
 }
 
 // assets is the stylesheet and script, embedded in the page.
@@ -97,6 +100,28 @@ func New(engine *node.Engine, log *slog.Logger) (*Server, error) {
 		csrfToken: hex.EncodeToString(raw),
 		assets:    assets{CSS: template.CSS(css), JS: template.JS(script)},
 	}, nil
+}
+
+// prepareSocketDir makes a socket's directory at exactly the mode asked
+// for, creating any parent along the way as traversable but not writable.
+func prepareSocketDir(dir string, mode os.FileMode) error {
+	if parent := filepath.Dir(dir); parent != "/" && parent != "." {
+		if err := os.MkdirAll(parent, 0o755); err != nil {
+			return fmt.Errorf("webui: create %s: %w", parent, err)
+		}
+		if err := os.Chmod(parent, 0o755); err != nil {
+			return fmt.Errorf("webui: set the mode of %s: %w", parent, err)
+		}
+	}
+	if err := os.MkdirAll(dir, mode); err != nil {
+		return fmt.Errorf("webui: create %s: %w", dir, err)
+	}
+	// MkdirAll leaves an existing directory's mode alone, and umask can
+	// take bits off a new one, so it is set rather than assumed.
+	if err := os.Chmod(dir, mode); err != nil {
+		return fmt.Errorf("webui: set the mode of %s: %w", dir, err)
+	}
+	return nil
 }
 
 // parseTemplates builds one template set per page, each containing the
@@ -228,12 +253,12 @@ func safeRoute(route string) bool {
 // The socket sits in an owner-only directory and is itself owner-only, so
 // an unprivileged user on a shared server cannot reach it.
 func (s *Server) Listen(ctx context.Context, socketPath string) error {
+	// Its own directory, at its own mode. The two listeners used to share
+	// one and set it to different modes as they started, so which
+	// boundary a server ended up with depended on which won the race.
 	dir := filepath.Dir(socketPath)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("webui: create %s: %w", dir, err)
-	}
-	if err := os.Chmod(dir, 0o700); err != nil {
-		return fmt.Errorf("webui: secure %s: %w", dir, err)
+	if err := prepareSocketDir(dir, 0o700); err != nil {
+		return err
 	}
 	// A socket left by a killed process would block the listen.
 	if err := os.Remove(socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {

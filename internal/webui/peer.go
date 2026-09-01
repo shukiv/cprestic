@@ -3,8 +3,11 @@ package webui
 import (
 	"fmt"
 	"net"
+	"os"
 	"os/user"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"golang.org/x/sys/unix"
 )
@@ -46,5 +49,23 @@ func peerAccount(conn net.Conn) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("webui: uid %d is not an account on this server", creds.Uid)
 	}
+	// A system user is not a customer. cPanel keeps one file per account,
+	// and that file existing is what makes a name an account rather than
+	// any unix user who happens to be able to open a socket.
+	if !isCPanelAccount(account.Username) {
+		return "", fmt.Errorf("webui: %q is not a cPanel account", account.Username)
+	}
 	return account.Username, nil
+}
+
+// cpanelUsersDir is where cPanel records its accounts. A variable so a
+// test can point it somewhere it controls.
+var cpanelUsersDir = "/var/cpanel/users"
+
+func isCPanelAccount(name string) bool {
+	if name == "" || strings.ContainsAny(name, "/.") {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(cpanelUsersDir, name))
+	return err == nil && info.Mode().IsRegular()
 }
