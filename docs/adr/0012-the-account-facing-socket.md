@@ -39,9 +39,13 @@ Not yet. The direct socket stays, with the boundaries it has now:
   cPanel `verify_user_has_feature` itself and fails closed, because the
   cPanel-side page check can be bypassed by talking to the socket
   directly.
-- **Team users are refused**, at the cPanel page, which is the only place
-  that can see them: a team user shares the owner's uid, so the daemon
-  cannot tell.
+- **Team users are refused** at the cPanel page — best effort, and worth
+  saying so plainly. A team user shares the owner's uid, so the daemon
+  cannot tell one from the account owner; the page is the only place that
+  sees `TEAM_USER`. It therefore stops a team user who uses the
+  interface, and does not stop one who can run code as the account and
+  open the socket directly. That is the shared-uid limitation, and unlike
+  the checks above it is not enforced by the kernel.
 - **One request in flight per account**, submitted forms are capped at a
   megabyte, and the socket has read and idle deadlines — a local process
   cannot hold the root service open or make it read forever.

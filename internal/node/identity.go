@@ -21,6 +21,56 @@ import (
 // list them, and let them restore and download them. Nothing would look
 // wrong.
 
+// BackfillIdentities records every account that is on the server now
+// against the unix account it means.
+//
+// It runs once, and what it establishes is the thing every later check
+// leans on: these accounts are here today, so the backups already stored
+// under their names are theirs. Without it, the first branch of
+// noteIdentity would be reasoning from an absent record -- and an absent
+// record is not evidence that a name has always meant the same customer.
+// A name recycled before this program ever recorded it would have looked
+// exactly the same.
+func (e *Engine) BackfillIdentities(ctx context.Context) error {
+	settings := e.Settings()
+	if settings.IdentitiesBackfilledAt != nil {
+		return nil
+	}
+	accounts, err := e.provider.Accounts(ctx)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	for _, account := range accounts {
+		if _, err := e.store.Identity(account.User); err == nil {
+			continue
+		}
+		uid, err := accountUID(account.User)
+		if err != nil {
+			// An account cPanel lists that the system does not know is a
+			// problem for the backup to report, not for this to guess at.
+			e.log.Warn("no unix account behind a cPanel name",
+				"account", account.User, "error", err)
+			continue
+		}
+		if _, err := e.store.PutIdentity(nodestore.AccountIdentity{
+			Account: account.User, UID: uid, SinceAt: now,
+		}); err != nil {
+			return err
+		}
+	}
+
+	settings.IdentitiesBackfilledAt = &now
+	if err := e.store.SaveSettings(settings); err != nil {
+		return err
+	}
+	e.settings = settings
+	e.log.Info("recorded which unix account each cPanel name means",
+		"accounts", len(accounts))
+	return nil
+}
+
 // noteIdentity records which unix account a name means, and reports
 // whether the name has just changed hands.
 func (e *Engine) noteIdentity(account string) (nodestore.AccountIdentity, error) {
@@ -33,13 +83,20 @@ func (e *Engine) noteIdentity(account string) (nodestore.AccountIdentity, error)
 	stored, err := e.store.Identity(account)
 	switch {
 	case err != nil:
-		// First time this program has seen the name. Its existing
-		// backups, if any, were taken by this same account -- it is here
-		// now and has been throughout -- so this is a starting point,
-		// not a boundary between two owners.
-		return e.store.PutIdentity(nodestore.AccountIdentity{
-			Account: account, UID: uid, SinceAt: now,
-		})
+		// No record. What that means depends on whether every account
+		// then present has already been recorded: before the backfill it
+		// means nobody has looked yet, and after it, it means this name
+		// was not on the server when we looked -- so it is either new or
+		// has changed hands, and anything stored under it from before now
+		// is not this account's to read.
+		fresh := nodestore.AccountIdentity{Account: account, UID: uid, SinceAt: now}
+		fresh.Recycled = e.Settings().IdentitiesBackfilledAt != nil
+		if fresh.Recycled {
+			e.log.Warn("a cPanel name appeared that was not here when accounts were recorded",
+				"account", account, "uid", uid,
+				"older_backups_hidden_from_the_account", true)
+		}
+		return e.store.PutIdentity(fresh)
 	case stored.UID == uid:
 		stored.SinceAt = orZero(stored.SinceAt, now)
 		return e.store.PutIdentity(stored)
@@ -118,6 +175,12 @@ func orZero(value, fallback time.Time) time.Time {
 // filter exists for the one case where "this account's backups" and
 // "this customer's backups" are different sets.
 func (e *Engine) UserSnapshots(ctx context.Context, repositoryID, account string) ([]resticrun.Snapshot, error) {
+	// Checked here and not only when a backup runs. Between an account
+	// being deleted and the new one's first backup there can be days, and
+	// this is the interface the new customer is looking at during them.
+	if _, err := e.noteIdentity(account); err != nil {
+		return nil, err
+	}
 	snapshots, err := e.Snapshots(ctx, repositoryID, account)
 	if err != nil {
 		return nil, err

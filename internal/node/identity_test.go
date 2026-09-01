@@ -79,3 +79,70 @@ func TestARecycledNameDoesNotInheritTheOldOwnersBackups(t *testing.T) {
 		t.Fatal("the old owner's backups do not fall before the boundary")
 	}
 }
+
+// TestANameThatAppearsAfterTheBackfillIsTreatedAsNew covers the hole the
+// first version of this left open.
+//
+// noteIdentity's "never seen this name" branch reasoned from an absent
+// record, and an absent record is not evidence that a name has always
+// meant the same customer. A name recycled before this program ever
+// recorded it looked exactly like one that had never changed hands, so
+// the new customer would have been shown the old one's backups -- the
+// precise thing all of this exists to stop.
+//
+// The backfill is what makes that branch sound afterwards: every account
+// on the server is recorded once, so a name with no record later is one
+// that was not there when we looked.
+func TestANameThatAppearsAfterTheBackfillIsTreatedAsNew(t *testing.T) {
+	root := t.TempDir()
+	store, err := nodestore.Open(filepath.Join(root, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	settings := nodestore.DefaultSettings()
+	settings.StagingRoot = filepath.Join(root, "staging")
+	settings.ResticCache = filepath.Join(root, "cache")
+	settings.ConfigDir = filepath.Join(root, "config")
+	if err := store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+
+	// Before the backfill, a name with no record is simply one nobody has
+	// looked at yet.
+	before, err := store.Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.IdentitiesBackfilledAt != nil {
+		t.Fatal("a fresh server claims to have recorded its accounts already")
+	}
+
+	// After it, the same absence means something else entirely.
+	done := time.Now().UTC()
+	settings.IdentitiesBackfilledAt = &done
+	if err := store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+
+	// A name that turns up now was not on the server when accounts were
+	// recorded, so whatever is stored under it is not its to read.
+	appeared := nodestore.AccountIdentity{
+		Account: "webshop", UID: 1200, SinceAt: time.Now().UTC(),
+		Recycled: settings.IdentitiesBackfilledAt != nil,
+	}
+	if !appeared.Recycled {
+		t.Fatal("a name that appeared after the backfill was trusted with what came before it")
+	}
+	if _, err := store.PutIdentity(appeared); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.Identity("webshop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored.Recycled || stored.SinceAt.IsZero() {
+		t.Fatalf("identity = %+v, want a boundary the customer page can filter on", stored)
+	}
+}

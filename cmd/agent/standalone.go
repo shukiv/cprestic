@@ -73,6 +73,12 @@ func runStandalone(ctx context.Context, cfg config, log *slog.Logger) error {
 		// the interface shows the gap.
 		log.Error("probe pkgacct", "error", err)
 	}
+	// Which unix account each cPanel name means, recorded before anything
+	// serves a customer. Everything that decides whether a name has
+	// changed hands leans on this having happened.
+	if err := engine.BackfillIdentities(ctx); err != nil {
+		log.Warn("record which unix account each cPanel name means", "error", err)
+	}
 	if created, err := engine.EnsureProvisioned(ctx); err != nil {
 		log.Error("create repositories", "error", err)
 	} else if created > 0 {

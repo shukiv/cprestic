@@ -291,12 +291,17 @@ type Settings struct {
 	// StagingRoot is where pkgacct writes. Snapshot paths embed it and
 	// restic groups retention by path, so changing it after the first
 	// backup orphans every existing retention group. Treat it as fixed.
-	StagingRoot   string  `json:"staging_root"`
-	MaxConcurrent int     `json:"max_concurrent"`
-	SafetyMargin  float64 `json:"safety_margin"`
-	ResticBinary  string  `json:"restic_binary"`
-	ResticCache   string  `json:"restic_cache"`
-	ResticCACert  string  `json:"restic_cacert,omitempty"`
+	StagingRoot   string `json:"staging_root"`
+	MaxConcurrent int    `json:"max_concurrent"`
+	// IdentitiesBackfilledAt is when every account then on the server was
+	// recorded against the unix account it meant. After it, an account
+	// with no record is one that appeared later -- which may be a name
+	// that has changed hands, and is treated as one.
+	IdentitiesBackfilledAt *time.Time `json:"identities_backfilled_at,omitempty"`
+	SafetyMargin           float64    `json:"safety_margin"`
+	ResticBinary           string     `json:"restic_binary"`
+	ResticCache            string     `json:"restic_cache"`
+	ResticCACert           string     `json:"restic_cacert,omitempty"`
 	// ConfigDir holds the SSH keys and known_hosts files cprest generates
 	// for SFTP destinations.
 	ConfigDir string `json:"config_dir"`
