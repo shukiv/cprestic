@@ -13,6 +13,7 @@ import (
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/node"
 	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shuki/cprest/internal/resticrun"
 	"github.com/shuki/cprest/internal/staging"
 	"github.com/shuki/cprest/internal/vault"
 )
@@ -377,4 +378,55 @@ func TestSweepRemovesOldOutputAndLeavesWorkAlone(t *testing.T) {
 	if _, err := os.Stat(working.Path); err != nil {
 		t.Error("a directory being worked in was swept")
 	}
+}
+
+// newEngineWithExec builds an engine whose restic is a stand-in, so the
+// paths that only happen when restic fails can be exercised.
+func newEngineWithExec(t *testing.T, store *nodestore.Store, root string, exec resticrun.Execer) *node.Engine {
+	t.Helper()
+	keyHex, err := vault.GenerateMasterKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(root, "master.key")
+	if err := os.WriteFile(keyPath, []byte(keyHex), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	key, err := vault.LoadMasterKey(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := vault.New(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := node.New(node.Config{
+		Store: store, Vault: v, Exec: exec,
+		Provider: &cpanel.Fake{Root: filepath.Join(root, "cpanel")},
+		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatalf("node.New: %v", err)
+	}
+	return engine
+}
+
+// attachedRepository is a local destination with a repository on it, which
+// is the least a retention test needs to open one.
+func attachedRepository(t *testing.T, store *nodestore.Store, engine *node.Engine) nodestore.Repository {
+	t.Helper()
+	_, repo, err := engine.AddDestination(nodestore.Destination{
+		Name: "Local", Type: "local",
+		Config: map[string]string{"root": t.TempDir()},
+	}, nil, "backups")
+	if err != nil {
+		t.Fatalf("add destination: %v", err)
+	}
+	// Retention only looks at repositories that exist on the far end.
+	now := time.Now().UTC()
+	repo.InitialisedAt = &now
+	if _, err := store.PutRepository(repo); err != nil {
+		t.Fatal(err)
+	}
+	return repo
 }

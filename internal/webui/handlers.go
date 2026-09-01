@@ -3113,6 +3113,11 @@ func (s *Server) handleWithdrawRetention(w http.ResponseWriter, r *http.Request)
 }
 
 // handleRunRetention applies it now rather than waiting for the next pass.
+//
+// This runs under the request: a prune that outlives the server's write
+// timeout has its context cancelled when the response dies. restic is
+// crash-safe, so nothing is damaged and the next pass finishes the job --
+// but the button can abort work the scheduled run would have completed.
 func (s *Server) handleRunRetention(w http.ResponseWriter, r *http.Request) {
 	removed, err := s.engine.ApplyRetention(r.Context(), r.PostFormValue("repository"))
 	if err != nil {

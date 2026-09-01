@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shuki/cprest/internal/resticrun"
 )
 
 // TestRetentionRefusesToRunWithoutApproval is the gate the operator asked
@@ -98,5 +99,68 @@ func TestAKeepPolicyOfNothingIsRefused(t *testing.T) {
 	}
 	if _, err := engine.ApplyRetention(context.Background(), repo.ID); err == nil {
 		t.Fatal("a repository with no keep policy was handed to restic forget")
+	}
+}
+
+// TestARetentionFailureIsReportedAndBacksOff covers what happens when
+// restic will not run — a stale lock is the everyday case, and one turned
+// up on the live server during development.
+//
+// Two things must hold, and neither did. The error has to reach the
+// caller: recording it and returning nil told an operator who had just
+// hit a locked repository that there was nothing to remove. And the
+// attempt has to count towards the throttle, or the sweep retries the
+// same locked repository on every fifteen-second tick, silently, for
+// ever.
+func TestARetentionFailureIsReportedAndBacksOff(t *testing.T) {
+	root := t.TempDir()
+	store, err := nodestore.Open(filepath.Join(root, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	settings := nodestore.DefaultSettings()
+	settings.StagingRoot = filepath.Join(root, "staging")
+	settings.ResticCache = filepath.Join(root, "cache")
+	settings.ConfigDir = filepath.Join(root, "config")
+	if err := store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+
+	// A restic that answers the way a locked repository does.
+	locked := resticrun.ExecFunc(func(context.Context, resticrun.Command) (resticrun.CommandResult, error) {
+		return resticrun.CommandResult{
+			ExitCode: 11,
+			Stdout: []byte(`{"message_type":"exit_error","code":11,` +
+				`"message":"unable to create lock in backend: repository is already locked"}`),
+		}, nil
+	})
+	engine := newEngineWithExec(t, store, root, locked)
+
+	repo := attachedRepository(t, store, engine)
+	if _, err := store.PutPolicy(nodestore.Policy{
+		Name: "Nightly", ScheduleCron: "0 2 * * *", Enabled: true,
+		RepositoryIDs: []string{repo.ID},
+		Retention:     nodestore.Retention{KeepDaily: 7},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := engine.PlanRetention(context.Background(), repo.ID); err == nil {
+		t.Fatal("a locked repository was reported as having nothing to remove")
+	}
+
+	after, err := store.Repository(repo.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Retention.LastError == "" {
+		t.Error("the reason was not recorded where the page can show it")
+	}
+	if after.Retention.AttemptedAt == nil {
+		t.Fatal("a failed attempt left no timestamp, so the sweep would retry it every tick")
+	}
+	if !engine.RetentionIsThrottledForTest(after) {
+		t.Error("a repository that has just failed is due again immediately")
 	}
 }

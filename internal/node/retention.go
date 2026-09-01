@@ -95,9 +95,7 @@ func (e *Engine) PlanRetention(ctx context.Context, repositoryID string) (nodest
 
 	plan, err := e.runner.ForgetPlanned(ctx, repo, forgetSpec(keeps, true, false))
 	if err != nil {
-		return nodestore.RetentionState{}, e.recordRetention(repositoryID, func(state *nodestore.RetentionState) {
-			state.LastError = err.Error()
-		})
+		return nodestore.RetentionState{}, e.retentionFailed(repositoryID, err)
 	}
 
 	now := time.Now().UTC()
@@ -142,15 +140,17 @@ func (e *Engine) ApplyRetention(ctx context.Context, repositoryID string) (int, 
 	// nothing was removed.
 	plan, err := e.runner.ForgetPlanned(ctx, repo, forgetSpec(keeps, false, false))
 	if err != nil {
-		return 0, e.recordRetention(repositoryID, func(state *nodestore.RetentionState) {
-			state.LastError = err.Error()
-		})
+		return 0, e.retentionFailed(repositoryID, err)
 	}
 	if plan.Removed > 0 {
-		if err := e.runner.Prune(ctx, repo); err != nil {
-			return plan.Removed, e.recordRetention(repositoryID, func(state *nodestore.RetentionState) {
-				state.LastError = "removed the backups but could not reclaim the space: " + err.Error()
-			})
+		if pruneErr := e.runner.Prune(ctx, repo); pruneErr != nil {
+			// The backups are gone either way -- forget already
+			// happened. What is left undone is reclaiming the space, and
+			// saying "removed 14 and reclaimed the space" would be a lie
+			// about the half that failed.
+			return plan.Removed, e.retentionFailed(repositoryID, fmt.Errorf(
+				"the backups were removed but the space they held could not be "+
+					"reclaimed: %w", pruneErr))
 		}
 	}
 
@@ -193,6 +193,25 @@ func (e *Engine) WithdrawRetention(repositoryID string) error {
 	stored.RetentionApprovedAt = nil
 	_, err = e.store.PutRepository(stored)
 	return err
+}
+
+// retentionFailed records why an attempt did not finish and hands the
+// reason back to the caller.
+//
+// Both halves matter. Returning nil here because the note was written
+// successfully would tell an operator who has just hit a stale lock that
+// there was nothing to remove -- and would leave the sweep with no
+// timestamp, so it would try the same locked repository on every tick,
+// silently, for ever.
+func (e *Engine) retentionFailed(repositoryID string, cause error) error {
+	now := time.Now().UTC()
+	if err := e.recordRetention(repositoryID, func(state *nodestore.RetentionState) {
+		state.AttemptedAt = &now
+		state.LastError = cause.Error()
+	}); err != nil {
+		e.log.Error("record a retention failure", "repository", repositoryID, "error", err)
+	}
+	return cause
 }
 
 // retentionFor is the merged keep policy for a repository, refused if it
@@ -305,7 +324,7 @@ func (e *Engine) sweepRetention(ctx context.Context, now time.Time) {
 // something stale must not be retried every fifteen seconds.
 func lastRetentionAttempt(state nodestore.RetentionState) time.Time {
 	latest := time.Time{}
-	for _, at := range []*time.Time{state.PlannedAt, state.AppliedAt} {
+	for _, at := range []*time.Time{state.PlannedAt, state.AppliedAt, state.AttemptedAt} {
 		if at != nil && at.After(latest) {
 			latest = *at
 		}

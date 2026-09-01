@@ -67,9 +67,14 @@ type RetentionState struct {
 	// something.
 	AppliedAt *time.Time `json:"applied_at,omitempty"`
 	Dropped   int        `json:"dropped,omitempty"`
-	// LastError is why the last attempt did not finish. A stale lock is
-	// the usual one, and it is worth saying rather than retrying in
-	// silence forever.
+	// AttemptedAt is when retention last tried and did not finish. It is
+	// separate from PlannedAt and AppliedAt so that a repository whose
+	// lock is held by something stale is left alone for as long as a
+	// successful one, rather than retried on every scheduler tick.
+	AttemptedAt *time.Time `json:"attempted_at,omitempty"`
+	// LastError is why that attempt did not finish. A stale lock is the
+	// usual one, and it is worth saying rather than retrying in silence
+	// forever.
 	LastError string `json:"last_error,omitempty"`
 }
 

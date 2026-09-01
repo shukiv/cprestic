@@ -64,6 +64,10 @@ type Config struct {
 	Vault    *vault.Vault
 	Provider cpanel.Provider
 	Log      *slog.Logger
+	// Exec runs restic. Nil means real child processes; a test
+	// substitutes one so the paths that only happen when restic fails
+	// can be exercised at all.
+	Exec resticrun.Execer
 }
 
 // New builds an Engine from stored settings.
@@ -98,7 +102,7 @@ func New(cfg Config) (*Engine, error) {
 		RuntimeDir: settings.StagingRoot,
 		CacheDir:   settings.ResticCache,
 		CACertPath: settings.ResticCACert,
-	}, nil)
+	}, cfg.Exec)
 
 	stagingManager := &staging.Manager{
 		Root:              settings.StagingRoot,
