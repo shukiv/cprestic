@@ -75,9 +75,6 @@ func (r *REST) Preflight(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if base.Scheme != "https" {
-		return fmt.Errorf("rest: base URL must use https, got %q", base.Scheme)
-	}
 	if r.Username == "" {
 		return fmt.Errorf("rest: username is required")
 	}
@@ -139,6 +136,14 @@ func (r *REST) baseURL() (*url.URL, error) {
 	}
 	if parsed.Host == "" {
 		return nil, fmt.Errorf("rest: base URL %q has no host", r.BaseURL)
+	}
+	// Checked here rather than only when the destination is tested. A
+	// destination is saved before it is reachable and can be edited
+	// afterwards, so a check that only ran on the test button left a way
+	// to send this server's credentials, and every account on it, over
+	// plain HTTP.
+	if parsed.Scheme != "https" {
+		return nil, fmt.Errorf("rest: base URL must use https, got %q", parsed.Scheme)
 	}
 	return parsed, nil
 }

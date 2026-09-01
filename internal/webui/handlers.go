@@ -2196,6 +2196,7 @@ func (s *Server) handleStartRestore(w http.ResponseWriter, r *http.Request) {
 		SnapshotID:   r.PostFormValue("snapshot"),
 		Kind:         protocol.RestoreAccount,
 		Apply:        r.PostFormValue("apply") != "",
+		Unrestricted: r.PostFormValue("unrestricted") != "",
 	}
 
 	if paths := strings.TrimSpace(r.PostFormValue("paths")); paths != "" {
@@ -2861,6 +2862,7 @@ func (s *Server) handleRecoverAccount(w http.ResponseWriter, r *http.Request) {
 		SnapshotID:   snapshot,
 		Kind:         protocol.RestoreAccount,
 		Apply:        apply,
+		Unrestricted: r.PostFormValue("unrestricted") != "",
 	})
 	if err != nil {
 		s.redirect(w, r, "/recover", "error", err.Error())

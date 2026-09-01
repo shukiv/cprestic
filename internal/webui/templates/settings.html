@@ -226,8 +226,11 @@
       costs a fraction of it.
     </div></div>
     {{else}}
-    <p class="cpr-hint" style="margin:0">Nothing is left out: the three rows above are the whole
-    account. What differs between payload modes is how it is cut up, not what is kept.</p>
+    <p class="cpr-hint" style="margin:0">The three rows above are the whole account as cPanel
+    packages it, and what differs between payload modes is how it is cut up rather than what is
+    kept. One thing cPanel itself does not carry: two-factor authentication settings are not in
+    a <span class="cpr-mono">cpmove</span> archive, so an account restored onto a rebuilt server
+    comes back with 2FA off and has to have it set up again.</p>
     {{end}}
   </div>
 

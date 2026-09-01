@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/destination"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/protocol"
@@ -157,8 +158,13 @@ func (a *Agent) restoreAccount(ctx context.Context, log *slog.Logger,
 		return result, nil
 	}
 
-	log.Warn("applying restore to the live account", "archive", result.ArchivePath)
-	if err := a.provider.Apply(ctx, result.ArchivePath); err != nil {
+	// Overwrite because the operator asked for the account to be
+	// replaced; without it restorepkg leaves an account that is already
+	// here alone and reports nothing wrong.
+	options := cpanel.ApplyOptions{Unrestricted: assignment.Unrestricted, Overwrite: true}
+	log.Warn("applying restore to the live account",
+		"archive", result.ArchivePath, "restricted", !options.Unrestricted)
+	if err := a.provider.Apply(ctx, result.ArchivePath, options); err != nil {
 		log.Error("restorepkg", "error", err)
 		return reassemble.Result{}, err
 	}

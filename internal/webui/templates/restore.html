@@ -133,6 +133,11 @@
       <span><strong>Overwrite the live account</strong>
       <small class="cpr-help">Hands the rebuilt archive to cPanel's restorepkg. The account's
       current files, databases and settings are replaced. There is no undo.</small></span></label>
+    <label class="cpr-check"><input type="checkbox" name="unrestricted" value="1">
+      <span><strong>Restore without cPanel's restricted-restore checks</strong>
+      <small class="cpr-help">cprest asks cPanel for a restricted restore, because the archive
+      holds the account's own home directory and cPanel's restore runs as root. Turn this on only
+      if a restricted restore refused something this account legitimately had.</small></span></label>
 
     <div class="cpr-row" style="margin-top:var(--s4)">
       <button class="cpr-btn cpr-primary" type="submit">Start restore</button>

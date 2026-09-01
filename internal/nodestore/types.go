@@ -164,6 +164,9 @@ type Restore struct {
 	ItemNames []string `json:"item_names,omitempty"`
 	// Apply hands the rebuilt archive to restorepkg, overwriting the live
 	// account. Off unless explicitly asked for.
+	// Unrestricted asks cPanel to skip its Restricted Restore checks
+	// when applying the archive. The default is restricted.
+	Unrestricted  bool       `json:"unrestricted,omitempty"`
 	Apply         bool       `json:"apply"`
 	Status        job.Status `json:"status"`
 	BytesRestored uint64     `json:"bytes_restored"`

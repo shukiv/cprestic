@@ -205,3 +205,31 @@ func TestOptionsAreEmptyForSimpleBackends(t *testing.T) {
 		}
 	}
 }
+
+// TestPlaintextIsRefusedWhereTheURLIsBuilt covers the way the https rule
+// was got around without meaning to: a destination is saved before it is
+// tested, and can be edited afterwards. The check lived only in Preflight,
+// so an endpoint edited to http was never tested again and was used —
+// sending this server's credentials, and every account on it, in the
+// clear.
+func TestPlaintextIsRefusedWhereTheURLIsBuilt(t *testing.T) {
+	rest := &REST{BaseURL: "http://backup.example.com"}
+	if _, err := rest.URI("repo"); err == nil {
+		t.Error("a REST destination built a plaintext URI")
+	} else if !strings.Contains(err.Error(), "https") {
+		t.Errorf("err = %v, want an https complaint", err)
+	}
+
+	bucket := &S3{Endpoint: "http://minio.internal", Bucket: "backups"}
+	if _, err := bucket.URI("repo"); err == nil {
+		t.Error("an S3 destination built a plaintext URI")
+	} else if !strings.Contains(err.Error(), "https") {
+		t.Errorf("err = %v, want an https complaint", err)
+	}
+
+	// And the ones that are fine still are.
+	secure := &REST{BaseURL: "https://backup.example.com"}
+	if _, err := secure.URI("repo"); err != nil {
+		t.Errorf("an https destination was refused: %v", err)
+	}
+}

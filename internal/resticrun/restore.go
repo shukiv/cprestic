@@ -206,6 +206,14 @@ func (r *Runner) Ls(ctx context.Context, repo Repository, snapshotID string, sub
 	if err := classifyExit(result.ExitCode, result.Stderr, false); err != nil {
 		return nil, err
 	}
+	if result.Truncated {
+		// A listing that was cut short parses perfectly and is wrong.
+		// Silently showing part of a backup is how somebody restores what
+		// they can see and never learns the rest was there.
+		return nil, fmt.Errorf(
+			"resticrun: this backup holds more files than can be listed at once. " +
+				"Browse into a directory rather than listing the whole snapshot")
+	}
 
 	// The stream opens with a snapshot header and continues with one node
 	// per entry, so entries are selected by message type rather than by

@@ -37,6 +37,11 @@ type CommandResult struct {
 	Stdout   []byte
 	Stderr   []byte
 	ExitCode int
+	// Truncated says output was dropped to stay inside the cap. It
+	// matters because a caller parsing a listing would otherwise read a
+	// cut-off answer as a complete one, and quietly show an account
+	// fewer files than its backup holds.
+	Truncated bool
 }
 
 // Execer runs a Command. Tests substitute a fake so the suite needs no
@@ -71,15 +76,20 @@ func (o *OSExec) Exec(ctx context.Context, cmd Command) (CommandResult, error) {
 	c.Dir = cmd.Dir
 
 	var stdout, stderr bytes.Buffer
-	var out io.Writer = &cappedWriter{buf: &stdout, limit: limit}
+	capped := &cappedWriter{buf: &stdout, limit: limit}
+	var out io.Writer = capped
 	if cmd.OnLine != nil {
 		out = io.MultiWriter(out, &lineWriter{emit: cmd.OnLine})
 	}
 	c.Stdout = out
-	c.Stderr = &cappedWriter{buf: &stderr, limit: limit}
+	cappedErr := &cappedWriter{buf: &stderr, limit: limit}
+	c.Stderr = cappedErr
 
 	err := c.Run()
-	result := CommandResult{Stdout: stdout.Bytes(), Stderr: stderr.Bytes()}
+	result := CommandResult{
+		Stdout: stdout.Bytes(), Stderr: stderr.Bytes(),
+		Truncated: capped.dropped || cappedErr.dropped,
+	}
 
 	var exitErr *exec.ExitError
 	switch {
@@ -100,15 +110,21 @@ func (o *OSExec) Exec(ctx context.Context, cmd Command) (CommandResult, error) {
 type cappedWriter struct {
 	buf   *bytes.Buffer
 	limit int
+	// dropped records that this writer threw output away, so a caller
+	// can tell a short answer from a complete one.
+	dropped bool
 }
 
 func (w *cappedWriter) Write(p []byte) (int, error) {
-	if remaining := w.limit - w.buf.Len(); remaining > 0 {
-		if len(p) > remaining {
-			w.buf.Write(p[:remaining])
-		} else {
-			w.buf.Write(p)
-		}
+	remaining := w.limit - w.buf.Len()
+	switch {
+	case remaining <= 0:
+		w.dropped = true
+	case len(p) > remaining:
+		w.buf.Write(p[:remaining])
+		w.dropped = true
+	default:
+		w.buf.Write(p)
 	}
 	// Always report a full write: truncation is intentional and must not
 	// look like a broken pipe to the child process.

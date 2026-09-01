@@ -34,6 +34,8 @@ type Fake struct {
 	FileSize  int
 	// Applied records the archives Apply was called with.
 	Applied []string
+	// AppliedWith records the options each of those was applied under.
+	AppliedWith []ApplyOptions
 }
 
 var _ Provider = (*Fake)(nil)
@@ -155,7 +157,7 @@ func (f *Fake) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 // The fake cannot restore an account, so it verifies the archive exists and
 // writes a marker the caller can assert on. A test that needs to know
 // restorepkg was invoked checks Applied.
-func (f *Fake) Apply(_ context.Context, archivePath string) error {
+func (f *Fake) Apply(_ context.Context, archivePath string, options ApplyOptions) error {
 	info, err := os.Stat(archivePath)
 	if err != nil {
 		return fmt.Errorf("cpanel: restore archive: %w", err)
@@ -163,6 +165,7 @@ func (f *Fake) Apply(_ context.Context, archivePath string) error {
 	if info.IsDir() {
 		return fmt.Errorf("cpanel: restore archive %s is a directory", archivePath)
 	}
+	f.AppliedWith = append(f.AppliedWith, options)
 	f.Applied = append(f.Applied, archivePath)
 	return nil
 }

@@ -470,9 +470,16 @@ func (r *Real) restorepkg() string {
 // Apply hands a rebuilt archive to cPanel.
 //
 // This overwrites the live account, so the agent only reaches it when an
-// operator set apply on the restore job. Like the rest of this file it has
-// never been run against a cPanel host.
-func (r *Real) Apply(ctx context.Context, archivePath string) error {
+// operator set apply on the restore job.
+//
+// It asks for a restricted restore. cPanel's own default is the opposite,
+// and the reason to differ is what is in the archive: an account's home
+// directory, which that account's owner controls, being unpacked by root.
+// An account that was compromised at any point since its last backup can
+// have left something in there for this moment. Restricted mode is
+// cPanel's answer to exactly that, and an operator who needs the archive
+// restored whole can say so.
+func (r *Real) Apply(ctx context.Context, archivePath string, options ApplyOptions) error {
 	info, err := os.Stat(archivePath)
 	if err != nil {
 		return fmt.Errorf("cpanel: restore archive: %w", err)
@@ -481,7 +488,21 @@ func (r *Real) Apply(ctx context.Context, archivePath string) error {
 		return fmt.Errorf("cpanel: restore archive %s is a directory", archivePath)
 	}
 
-	cmd := exec.CommandContext(ctx, r.restorepkg(), archivePath)
+	args := []string{"--restricted"}
+	if options.Unrestricted {
+		args = []string{"--unrestricted"}
+	}
+	if options.Overwrite {
+		// Without this restorepkg leaves an account that is already here
+		// as it is, and a restore the operator asked for does nothing
+		// while reporting success.
+		args = append(args, "--force")
+	}
+	// The separator matters: everything after it is the archive, whatever
+	// it is called.
+	args = append(args, "--", archivePath)
+
+	cmd := exec.CommandContext(ctx, r.restorepkg(), args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("cpanel: restorepkg failed: %w: %s", err, lastLine(output))
 	}

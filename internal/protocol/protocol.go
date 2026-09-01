@@ -70,6 +70,11 @@ type RestoreAssignment struct {
 	// Apply hands the rebuilt archive to cPanel's restorepkg, overwriting
 	// the live account. Off unless an operator asked for it.
 	Apply bool `json:"apply"`
+	// Unrestricted asks cPanel to restore the archive without its
+	// Restricted Restore protections. The default is restricted, because
+	// the archive holds a customer's own home directory and restorepkg
+	// runs as root.
+	Unrestricted bool `json:"unrestricted,omitempty"`
 
 	// Source is the repository to read from. The controller picks it; the
 	// agent never chooses where a restore comes from.

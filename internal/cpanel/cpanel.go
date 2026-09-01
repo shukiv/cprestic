@@ -16,6 +16,24 @@ import (
 // Accounts fills in only User and HomeDir, because measuring a size means
 // walking a home directory and listing databases means a MySQL round trip.
 // Account fills in everything, and is called when a backup is about to run.
+// ApplyOptions are the choices an operator makes about handing an archive
+// to cPanel's own restore.
+type ApplyOptions struct {
+	// Unrestricted turns off cPanel's Restricted Restore.
+	//
+	// Restricted is the default here, and cPanel's is the opposite. The
+	// archive contains a customer's home directory, which the customer
+	// controls, and restorepkg runs as root: unrestricted mode will
+	// follow what it finds in there. Restricted mode refuses some
+	// legitimate content too, which is why this is a choice rather than
+	// a rule.
+	Unrestricted bool
+	// Overwrite restores over an account that is already on this server.
+	// Without it restorepkg will not replace what is there, and a restore
+	// the interface promised would overwrite the account quietly did not.
+	Overwrite bool
+}
+
 type AccountInfo struct {
 	User      string
 	HomeDir   string
@@ -71,5 +89,5 @@ type Provider interface {
 	// Apply hands a rebuilt account archive to cPanel, overwriting the
 	// live account. Callers must only reach this when an operator has
 	// explicitly asked for it.
-	Apply(ctx context.Context, archivePath string) error
+	Apply(ctx context.Context, archivePath string, options ApplyOptions) error
 }

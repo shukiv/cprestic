@@ -369,6 +369,7 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 		ItemKind:     stored.ItemKind,
 		ItemNames:    stored.ItemNames,
 		Apply:        stored.Apply,
+		Unrestricted: stored.Unrestricted,
 		Source:       target,
 		SizeEstimate: account.SizeBytes,
 	})

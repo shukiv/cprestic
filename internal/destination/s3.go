@@ -115,10 +115,13 @@ func (s *S3) normalisedEndpoint() (string, error) {
 	if parsed.Path != "" && parsed.Path != "/" {
 		return "", fmt.Errorf("s3: endpoint %q must not contain a path", s.Endpoint)
 	}
-	if parsed.Scheme == "https" {
-		return "https://" + parsed.Host, nil
+	// Checked here rather than only when the destination is tested: a
+	// destination can be edited after it has been saved, and an endpoint
+	// that was https when it was tested need not be one when it is used.
+	if parsed.Scheme != "https" {
+		return "", fmt.Errorf("s3: endpoint must use https, got %q", parsed.Scheme)
 	}
-	return parsed.Scheme + "://" + parsed.Host, nil
+	return "https://" + parsed.Host, nil
 }
 
 // withScheme defaults a bare host to https so url.Parse treats it as a host
