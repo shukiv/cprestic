@@ -33,6 +33,12 @@ type flash struct {
 
 // render writes a page, or an error page if the template fails.
 func (s *Server) render(w http.ResponseWriter, r *http.Request, name, title, nav string, data any) {
+	s.renderWithCSRF(w, r, name, title, nav, data, s.csrfToken)
+}
+
+func (s *Server) renderWithCSRF(
+	w http.ResponseWriter, r *http.Request, name, title, nav string, data any, csrf string,
+) {
 	// These pages show repository passwords and private keys. A shared
 	// browser, a back button, or a proxy that keeps a copy would each be
 	// a way for the key to the backups to outlive the session that was
@@ -40,7 +46,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name, title, nav
 	w.Header().Set("Cache-Control", "no-store, max-age=0")
 	w.Header().Set("Pragma", "no-cache")
 	view := page{
-		Title: title, Nav: nav, CSRF: s.csrfToken,
+		Title: title, Nav: nav, CSRF: csrf,
 		Flash: flashFrom(r), Data: data, Assets: s.assets,
 	}
 
@@ -102,6 +108,15 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, status int, err er
 	s.render(w, r, "error.html", "Problem", "", err.Error())
 }
 
+// failUser keeps an account-side failure on the account side of the trust
+// boundary. Backend errors can contain repository addresses and root-owned
+// paths, and the WHM error layout is allowed to carry privileged controls.
+func (s *Server) failUser(w http.ResponseWriter, r *http.Request, status int, err error) {
+	s.log.Error("account request failed", "account", accountOf(r),
+		"path", r.URL.Path, "error", err)
+	http.Error(w, "cP:Restic could not complete that request.", status)
+}
+
 func flashFrom(r *http.Request) *flash {
 	message := r.URL.Query().Get("msg")
 	if message == "" {
@@ -120,7 +135,7 @@ func flashFrom(r *http.Request) *flash {
 func (s *Server) renderUser(w http.ResponseWriter, r *http.Request, name string, data any) {
 	w.Header().Set("Cache-Control", "no-store, max-age=0")
 	w.Header().Set("Pragma", "no-cache")
-	s.render(w, r, name, "Backups", "", data)
+	s.renderWithCSRF(w, r, name, "Backups", "", data, s.userCSRFToken(accountOf(r)))
 }
 
 func templateFuncs() template.FuncMap {
@@ -131,6 +146,16 @@ func templateFuncs() template.FuncMap {
 		// the identifiers they are stored as.
 		"kindTitle": func(kind string) string { return notify.Kind(kind).Title() },
 		"add":       func(a, b int) int { return a + b },
+		// hostKeyFile turns an ssh key type into the name of the public
+		// key file on the far side, so the page can say exactly what to
+		// run there to check the fingerprint.
+		"hostKeyFile": func(keyType string) string {
+			name := strings.TrimPrefix(keyType, "ssh-")
+			if base, _, found := strings.Cut(name, "-"); found {
+				name = base
+			}
+			return name
+		},
 		// keepsSet and keepsSaid describe a retention policy in the words
 		// an operator wrote it in, rather than as five numbers most of
 		// which are zero.

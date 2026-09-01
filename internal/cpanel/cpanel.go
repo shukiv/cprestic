@@ -74,6 +74,12 @@ type StageRequest struct {
 
 // Provider produces backup payloads for cPanel accounts.
 type Provider interface {
+	// NativeExcludes is what cPanel's own backups would leave out of
+	// this account: the server-wide cpbackup-exclude.conf and the
+	// account's own. An operator who wrote a path in there has said it
+	// must not leave the server.
+	NativeExcludes(home string) []string
+
 	// Capabilities reports which pkgacct flags this host supports.
 	Capabilities(ctx context.Context) (pkgacct.Capabilities, error)
 

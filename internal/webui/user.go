@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -180,7 +181,7 @@ func (s *Server) UserHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.userPage(s.handleUserHome))
 	mux.HandleFunc("GET /browse", s.userPage(s.handleUserBrowse))
-	mux.HandleFunc("POST /restore", s.userPage(s.guard(s.handleUserRestore)))
+	mux.HandleFunc("POST /restore", s.userPage(s.userGuard(s.handleUserRestore)))
 	mux.HandleFunc("GET /download", s.userPage(s.handleUserDownload))
 	return mux
 }
@@ -206,6 +207,17 @@ func (s *Server) userPage(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		defer s.userBusy.leave(account)
+		allowed, err := s.userFeatures.allowed(r.Context(), account)
+		if err != nil {
+			s.log.Error("account feature check failed", "account", account, "error", err)
+			http.Error(w, "cP:Restic could not verify that this feature is enabled. "+
+				"Ask your host to check cPanel Feature Manager.", http.StatusServiceUnavailable)
+			return
+		}
+		if !allowed {
+			http.Error(w, "cP:Restic is not enabled for this account.", http.StatusForbidden)
+			return
+		}
 		next(w, r)
 	}
 }
@@ -282,7 +294,7 @@ func (s *Server) handleUserHome(w http.ResponseWriter, r *http.Request) {
 	view := userView{Account: accountOf(r), Kinds: userKinds}
 	destinations, err := s.destinationViews()
 	if err != nil {
-		s.fail(w, r, http.StatusInternalServerError, err)
+		s.failUser(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	for _, dest := range destinations {
@@ -292,7 +304,9 @@ func (s *Server) handleUserHome(w http.ResponseWriter, r *http.Request) {
 		row := userRepository{ID: dest.Repository.ID, Name: dest.Name}
 		snapshots, err := s.engine.Snapshots(r.Context(), dest.Repository.ID, view.Account)
 		if err != nil {
-			view.Err = err.Error()
+			s.log.Error("list account snapshots", "account", view.Account,
+				"repository", dest.Repository.ID, "error", err)
+			view.Err = "One of your backup destinations could not be read. Ask your host to check it."
 		}
 		row.Snapshots = len(snapshots)
 		for _, snapshot := range snapshots {
@@ -307,7 +321,7 @@ func (s *Server) handleUserHome(w http.ResponseWriter, r *http.Request) {
 	// to collect.
 	restores, err := s.engine.Store().Restores(50)
 	if err != nil {
-		s.fail(w, r, http.StatusInternalServerError, err)
+		s.failUser(w, r, http.StatusInternalServerError, err)
 		return
 	}
 	for _, restore := range restores {
@@ -315,7 +329,7 @@ func (s *Server) handleUserHome(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		view.Restores = append(view.Restores, restoreRow{
-			Restore:     restore,
+			Restore:     accountSafeRestore(restore),
 			Collectable: restore.ArchivePath != "" && onDisk(restore.ArchivePath),
 		})
 	}
@@ -343,7 +357,9 @@ func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
 
 	snapshots, err := s.engine.Snapshots(r.Context(), view.Repository, view.Account)
 	if err != nil {
-		view.Err = err.Error()
+		s.log.Error("browse account snapshots", "account", view.Account,
+			"repository", view.Repository, "error", err)
+		view.Err = "This backup destination could not be read. Ask your host to check it."
 		s.renderUser(w, r, "user_browse.html", view)
 		return
 	}
@@ -363,7 +379,9 @@ func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
 
 	parts, err := reassemble.Classify(snapshot.Paths)
 	if err != nil {
-		view.Err = err.Error()
+		s.log.Error("classify account snapshot", "account", view.Account,
+			"repository", view.Repository, "snapshot", snapshot.ID, "error", err)
+		view.Err = "This backup has an unexpected layout. Ask your host to check it."
 		s.renderUser(w, r, "user_browse.html", view)
 		return
 	}
@@ -385,7 +403,9 @@ func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := s.engine.Browse(r.Context(), view.Repository, snapshot.ID, view.Path)
 	if err != nil {
-		view.Err = err.Error()
+		s.log.Error("browse account backup", "account", view.Account,
+			"repository", view.Repository, "snapshot", snapshot.ID, "error", err)
+		view.Err = "That part of the backup could not be read. Ask your host to check it."
 		s.renderUser(w, r, "user_browse.html", view)
 		return
 	}
@@ -435,12 +455,32 @@ func (s *Server) handleUserRestore(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if _, err := s.engine.QueueRestore(restore); err != nil {
-		s.redirect(w, r, "/", "error", err.Error())
+		s.log.Error("queue account restore", "account", account, "error", err)
+		message := "The restore could not be started. Ask your host to check it."
+		if strings.Contains(err.Error(), "already has work in flight") {
+			message = "A backup or restore is already running for your account. Wait for it to finish."
+		}
+		s.redirect(w, r, "/", "error", message)
 		return
 	}
 	s.redirect(w, r, "/", "ok",
 		"Started. What it recovers will appear below to download; nothing on your account "+
 			"is changed.")
+}
+
+// accountSafeRestore removes root-side diagnostics before a restore record
+// is rendered to a customer. WHM retains the original record and the logs
+// retain its error; repository addresses and staging paths do not belong in
+// an account-facing page.
+func accountSafeRestore(restore nodestore.Restore) nodestore.Restore {
+	restore.ArchivePath = ""
+	restore.RestoredTo = ""
+	if restore.Error == "" {
+		return restore
+	}
+	restore.Error = "The restore failed. Ask your host to check the backup service."
+	restore.Detail = ""
+	return restore
 }
 
 // handleUserDownload hands over a restore this account asked for.

@@ -29,6 +29,11 @@ func NewConnectionBudgetForTest(total, perUID int) *ConnectionBudgetForTest {
 func (b *ConnectionBudgetForTest) Acquire(uid uint32) bool { return b.b.acquire(uid) }
 func (b *ConnectionBudgetForTest) Release(uid uint32)      { b.b.release(uid) }
 
+// CSRF separation is a trust-boundary property: account-facing pages must
+// never reveal the token used by root's WHM interface.
+func (s *Server) AdminCSRFForTest() string              { return s.csrfToken }
+func (s *Server) UserCSRFForTest(account string) string { return s.userCSRFToken(account) }
+
 // IsUserKindForTest exposes what an account is allowed to ask for.
 func IsUserKindForTest(kind string) bool { return isUserKind(granular.Kind(kind)) }
 

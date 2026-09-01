@@ -53,6 +53,9 @@ type Real struct {
 	// PostgresPaths are where PostgreSQL would be if this server had it.
 	// Empty means the standard locations.
 	PostgresPaths []string
+	// ServerExcludeConf is the server-wide cpbackup-exclude.conf. Empty
+	// means the standard location.
+	ServerExcludeConf string
 }
 
 var _ Provider = (*Real)(nil)

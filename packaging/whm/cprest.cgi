@@ -24,6 +24,7 @@ use Whostmgr::HTMLInterface ();
 # A compile-time constant, so nothing writable can redirect the plugin.
 my $SOCKET = '/var/run/cprest/admin/ui.sock';
 my $TIMEOUT = 300;
+my $MAX_BODY = 1024 * 1024;
 
 run() unless caller();
 
@@ -36,6 +37,20 @@ sub run {
     if ( !Whostmgr::ACLS::hasroot() ) {
         deny('cprest is available to the root WHM account only.');
         return;
+    }
+
+    # The Go service applies the same limit, but the CGI used to allocate
+    # the entire body before the service could reject it. Bound it here too
+    # so a request cannot consume cpsrvd's Perl worker memory first.
+    if ( ( $ENV{'REQUEST_METHOD'} || 'GET' ) eq 'POST' ) {
+        my $length = $ENV{'CONTENT_LENGTH'} // '0';
+        if ( $length !~ /\A\d+\z/ || $length > $MAX_BODY ) {
+            print "Status: 413 Payload Too Large\r\n"
+              . "Content-Type: text/plain; charset=utf-8\r\n"
+              . "Cache-Control: no-store, max-age=0\r\n\r\n"
+              . "The submitted form is too large.\n";
+            return;
+        }
     }
 
     my ( $status, $headers, $body, $socket ) = request();
@@ -90,7 +105,11 @@ sub request {
     my $payload = '';
     if ( $method eq 'POST' ) {
         my $length = $ENV{'CONTENT_LENGTH'} || 0;
-        read( STDIN, $payload, $length ) if $length;
+        while ( length($payload) < $length ) {
+            my $read = read( STDIN, my $chunk, $length - length($payload) );
+            last if !defined($read) || $read == 0;
+            $payload .= $chunk;
+        }
     }
 
     my $request = "$method $path HTTP/1.0\r\n"

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -231,5 +232,69 @@ func TestPlaintextIsRefusedWhereTheURLIsBuilt(t *testing.T) {
 	secure := &REST{BaseURL: "https://backup.example.com"}
 	if _, err := secure.URI("repo"); err != nil {
 		t.Errorf("an https destination was refused: %v", err)
+	}
+}
+
+// TestAppendOnlyIsCheckedRatherThanBelieved covers a promise the page made
+// that nothing had verified. "The server runs with --append-only" was an
+// operator's checkbox, and the page told them ransomware on this machine
+// could not destroy their history. Nobody had asked the server.
+func TestAppendOnlyIsCheckedRatherThanBelieved(t *testing.T) {
+	var deleted []string
+	refusing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			deleted = append(deleted, r.URL.Path)
+			// What rest-server --append-only answers.
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer refusing.Close()
+
+	accepting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			deleted = append(deleted, r.URL.Path)
+			// What a read-write rest-server answers for an object that
+			// is not there.
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer accepting.Close()
+
+	// httptest is http, and https is enforced where the URL is built, so
+	// the check is driven directly.
+	for _, probe := range []struct {
+		name   string
+		server *httptest.Server
+		wantOK bool
+	}{
+		{"a server that refuses deletes", refusing, true},
+		{"a server that does not", accepting, false},
+	} {
+		dest := &REST{
+			BaseURL: probe.server.URL, Username: "cprest", Password: "x",
+			AppendOnly: true, HTTPClient: probe.server.Client(),
+		}
+		base, err := url.Parse(probe.server.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = dest.checkAppendOnly(context.Background(), base, probe.server.Client())
+		if probe.wantOK && err != nil {
+			t.Errorf("%s was reported as not append-only: %v", probe.name, err)
+		}
+		if !probe.wantOK && err == nil {
+			t.Errorf("%s passed an append-only check", probe.name)
+		}
+	}
+
+	// The probe must never name an object that could exist.
+	for _, path := range deleted {
+		if !strings.HasSuffix(path, strings.Repeat("0", 64)) {
+			t.Errorf("the check aimed a delete at %q, which could be a real object", path)
+		}
 	}
 }

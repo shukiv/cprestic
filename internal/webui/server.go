@@ -10,7 +10,9 @@ package webui
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
 	"encoding/hex"
@@ -55,6 +57,10 @@ type Server struct {
 	// operator — but a token still stops another page in the browser
 	// posting to this one.
 	csrfToken string
+	// userCSRFKey derives a different token for every cPanel account. It
+	// must be separate from csrfToken: every customer can read the token
+	// in their own page, while csrfToken protects root-only WHM actions.
+	userCSRFKey []byte
 	// assets are inlined into every page. cpsrvd strips Content-Type from
 	// what the plugin proxies back and sets X-Content-Type-Options:
 	// nosniff, so a stylesheet fetched as its own request arrives with no
@@ -64,6 +70,10 @@ type Server struct {
 	// userBusy holds each cPanel account to one request at a time on the
 	// account-facing socket.
 	userBusy inFlight
+	// userFeatures enforces cPanel Feature Manager after socket identity
+	// has been established, where an account cannot bypass it by replacing
+	// or avoiding the PHP frontend.
+	userFeatures accountFeatureGate
 }
 
 // assets is the stylesheet and script, embedded in the page.
@@ -91,15 +101,26 @@ func New(engine *node.Engine, log *slog.Logger) (*Server, error) {
 		return nil, fmt.Errorf("webui: read script: %w", err)
 	}
 
-	raw := make([]byte, 32)
+	raw := make([]byte, 64)
 	if _, err := rand.Read(raw); err != nil {
 		return nil, fmt.Errorf("webui: generate csrf token: %w", err)
 	}
 	return &Server{
 		engine: engine, log: log, templates: templates,
-		csrfToken: hex.EncodeToString(raw),
-		assets:    assets{CSS: template.CSS(css), JS: template.JS(script)},
+		csrfToken:    hex.EncodeToString(raw[:32]),
+		userCSRFKey:  append([]byte(nil), raw[32:]...),
+		assets:       assets{CSS: template.CSS(css), JS: template.JS(script)},
+		userFeatures: newAccountFeatureGate(),
 	}, nil
+}
+
+// userCSRFToken binds an account-facing form to the Unix peer identity that
+// rendered it. Customers neither receive the root WHM token nor share a
+// token with another account on the same server.
+func (s *Server) userCSRFToken(account string) string {
+	mac := hmac.New(sha256.New, s.userCSRFKey)
+	_, _ = mac.Write([]byte(account))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // prepareSocketDir makes a socket's directory at exactly the mode asked
@@ -313,20 +334,37 @@ func (s *Server) Listen(ctx context.Context, socketPath string) error {
 const maxFormBytes = 1 << 20
 
 func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
+	return s.guardWithToken(func(*http.Request) string { return s.csrfToken }, s.fail, next)
+}
+
+// userGuard uses the account identity attached from SO_PEERCRED. Keeping it
+// distinct from guard prevents any cPanel customer from learning the secret
+// that authorizes root WHM changes merely by opening their own backup page.
+func (s *Server) userGuard(next http.HandlerFunc) http.HandlerFunc {
+	return s.guardWithToken(func(r *http.Request) string {
+		return s.userCSRFToken(accountOf(r))
+	}, s.failUser, next)
+}
+
+func (s *Server) guardWithToken(
+	expected func(*http.Request) string,
+	fail func(http.ResponseWriter, *http.Request, int, error),
+	next http.HandlerFunc,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// ParseForm reads the whole body, and without this it reads
 		// however much the other end feels like sending, for however
 		// long it feels like taking.
 		r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
 		if err := r.ParseForm(); err != nil {
-			s.fail(w, r, http.StatusBadRequest, fmt.Errorf("unreadable form: %w", err))
+			fail(w, r, http.StatusBadRequest, fmt.Errorf("unreadable form: %w", err))
 			return
 		}
 		supplied := r.PostFormValue("csrf")
-		if subtle.ConstantTimeCompare([]byte(supplied), []byte(s.csrfToken)) != 1 {
+		if subtle.ConstantTimeCompare([]byte(supplied), []byte(expected(r))) != 1 {
 			// Usually a stale page after a restart, occasionally something
 			// worse. Either way the operator should reload and retry.
-			s.fail(w, r, http.StatusForbidden,
+			fail(w, r, http.StatusForbidden,
 				errors.New("this page expired when the service restarted; reload and try again"))
 			return
 		}

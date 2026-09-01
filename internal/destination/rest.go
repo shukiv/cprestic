@@ -106,7 +106,50 @@ func (r *REST) Preflight(ctx context.Context) error {
 	if resp.StatusCode >= 500 {
 		return fmt.Errorf("rest: server error (HTTP %d)", resp.StatusCode)
 	}
+
+	if r.AppendOnly {
+		return r.checkAppendOnly(ctx, base, client)
+	}
 	return nil
+}
+
+// checkAppendOnly finds out whether the server really refuses deletes.
+//
+// The setting was an operator's word for it, and the page said it meant
+// ransomware here could not destroy the history. Nobody had asked the
+// server. A rest-server started with --append-only refuses a delete
+// whatever the object is; one without it answers 404 for an object that
+// is not there. So a delete aimed at a name that cannot exist tells the
+// two apart and removes nothing either way.
+func (r *REST) checkAppendOnly(ctx context.Context, base *url.URL, client *http.Client) error {
+	// A blob id is 64 hex characters. This one is all zeroes, which no
+	// content hashes to, so the request cannot name a real object.
+	probe := base.JoinPath("data", strings.Repeat("0", 64))
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, probe.String(), nil)
+	if err != nil {
+		return fmt.Errorf("rest: build request: %w", err)
+	}
+	req.SetBasicAuth(r.Username, r.Password)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("rest: check append-only: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch {
+	case resp.StatusCode == http.StatusForbidden, resp.StatusCode == http.StatusMethodNotAllowed:
+		// Refused, which is what append-only means.
+		return nil
+	case resp.StatusCode == http.StatusUnauthorized:
+		return fmt.Errorf("rest: authentication rejected while checking append-only (HTTP %d)",
+			resp.StatusCode)
+	default:
+		return fmt.Errorf(
+			"rest: this destination is marked append-only, but the server accepted a delete "+
+				"(HTTP %d). Start rest-server with --append-only, or clear the setting so the "+
+				"page stops promising protection that is not there", resp.StatusCode)
+	}
 }
 
 // defaultClient trusts the system roots plus any configured private CA.

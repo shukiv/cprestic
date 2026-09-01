@@ -2,6 +2,7 @@ package webui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -464,6 +465,12 @@ type destinationsView struct {
 	// reason in a banner above it, which is a way of asking them to type
 	// it all again.
 	FormError string
+	// ConfirmHost, HostFingerprint and HostKeyType are set when a remote
+	// server has answered and the operator has not yet agreed to who it
+	// is. Nothing has been sent to it at that point.
+	ConfirmHost     string
+	HostFingerprint string
+	HostKeyType     string
 	// Submitted is what they typed, so a rejected form comes back as they
 	// left it.
 	Submitted map[string]string
@@ -667,12 +674,55 @@ func (s *Server) addSFTPDestination(w http.ResponseWriter, r *http.Request, name
 		AdminUser:       strings.TrimSpace(r.PostFormValue("admin_user")),
 		AdminPassword:   r.PostFormValue("admin_password"),
 		ExistingKeyPath: strings.TrimSpace(r.PostFormValue("identity_file")),
+		// Empty until the operator has been shown who answered on that
+		// address and has agreed it is the right server.
+		ConfirmedFingerprint: strings.TrimSpace(r.PostFormValue("confirm_fingerprint")),
 	})
+}
+
+// confirmHost re-renders the form with the host key the far side
+// presented, and nothing else changed.
+//
+// The password is not carried back -- no secret is -- so the operator
+// retypes it. That is the cost of not holding a remote server's root
+// password in this process between two page loads.
+func (s *Server) confirmHost(w http.ResponseWriter, r *http.Request, unconfirmed *node.UnconfirmedHostError) {
+	views, err := s.destinationViews()
+	if err != nil {
+		s.fail(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	view := destinationsView{
+		Destinations:    views,
+		Hostname:        s.engine.Settings().Hostname,
+		Adding:          true,
+		Submitted:       map[string]string{},
+		ConfirmHost:     unconfirmed.Host,
+		HostFingerprint: unconfirmed.Fingerprint,
+		HostKeyType:     unconfirmed.KeyType,
+	}
+	for name, values := range r.PostForm {
+		switch name {
+		case "csrf", "password", "secret_access_key", "admin_password":
+			continue
+		}
+		if len(values) > 0 {
+			view.Submitted[name] = values[0]
+		}
+	}
+	s.render(w, r, "destinations.html", "Destinations", "destinations", view)
 }
 
 // finishSFTP runs a prepared request and says what happened.
 func (s *Server) finishSFTP(w http.ResponseWriter, r *http.Request, request node.SFTPRequest) {
 	result, err := s.engine.AddSFTPDestination(request)
+	var unconfirmed *node.UnconfirmedHostError
+	if errors.As(err, &unconfirmed) {
+		// Nothing has been sent to that server. The form comes back with
+		// the fingerprint to check and a box to agree to it.
+		s.confirmHost(w, r, unconfirmed)
+		return
+	}
 	if err != nil {
 		s.refuseDestination(w, r, err)
 		return

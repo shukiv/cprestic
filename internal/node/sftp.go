@@ -41,6 +41,32 @@ type SFTPRequest struct {
 	// and is never stored.
 	AdminUser     string
 	AdminPassword string
+	// ConfirmedFingerprint is the remote server's host key fingerprint as
+	// the operator has agreed to it. Empty means they have not been shown
+	// one yet, and nothing is sent to that server until they have: the
+	// whole point of a fingerprint is that somebody looked at it.
+	ConfirmedFingerprint string
+}
+
+// UnconfirmedHostError is what AddSFTPDestination returns when it has
+// learnt a server's identity and nobody has agreed to it yet.
+//
+// Trust on first use is what an operator does when they type "yes" at
+// ssh's prompt, and it is a real decision: the fingerprint is the only
+// thing standing between a backup destination and whoever answered on
+// that address. Storing it silently and then sending a password made
+// that decision for them, invisibly, every time.
+type UnconfirmedHostError struct {
+	Host        string
+	Fingerprint string
+	KeyType     string
+}
+
+func (e *UnconfirmedHostError) Error() string {
+	return fmt.Sprintf("%s identifies itself with a %s key, fingerprint %s. "+
+		"Check it against that server before going on: on it, run "+
+		"ssh-keygen -lf /etc/ssh/ssh_host_%s_key.pub",
+		e.Host, e.KeyType, e.Fingerprint, strings.TrimPrefix(e.KeyType, "ssh-"))
 }
 
 // SFTPResult reports what was set up, including the public key an operator
@@ -103,6 +129,21 @@ func (e *Engine) AddSFTPDestination(req SFTPRequest) (SFTPResult, error) {
 		return SFTPResult{}, fmt.Errorf(
 			"node: could not reach %s over SSH: %w", address, err)
 	}
+	// Nothing has been sent to that server yet, and nothing is until the
+	// operator has seen who answered.
+	switch {
+	case req.ConfirmedFingerprint == "":
+		return SFTPResult{}, &UnconfirmedHostError{
+			Host: req.Host, Fingerprint: hostKey.Fingerprint, KeyType: hostKey.Type,
+		}
+	case req.ConfirmedFingerprint != hostKey.Fingerprint:
+		return SFTPResult{}, fmt.Errorf(
+			"node: %s answered with a different host key than the one you agreed to. "+
+				"You agreed to %s and it presented %s. Either that server was rebuilt, or "+
+				"something else is answering on its address -- do not go on until you know "+
+				"which", req.Host, req.ConfirmedFingerprint, hostKey.Fingerprint)
+	}
+
 	knownHostsPath := filepath.Join(settings.ConfigDir, "known_hosts", destinationID)
 	if err := sshkeys.WriteKnownHosts(knownHostsPath, hostKey); err != nil {
 		return SFTPResult{}, err

@@ -259,9 +259,25 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
 {{with $data.FormError}}
 <div class="cpr-banner cpr-bad" style="margin-bottom:var(--s4)"><div class="cpr-body">{{.}}</div></div>
 {{end}}
+{{if $data.ConfirmHost}}
+{{/* The far side has answered and nothing has been sent to it yet. An
+     operator who has not looked at the fingerprint has not checked
+     anything, so this is a stop rather than a notice. */}}
+<div class="cpr-banner cpr-warn" style="margin-bottom:var(--s4)"><div class="cpr-body">
+  <b>Is this the right server?</b><br>
+  <span class="cpr-mono">{{$data.ConfirmHost}}</span> identifies itself with a
+  {{$data.HostKeyType}} key:
+  <div class="cpr-log" style="margin:var(--s2) 0">{{$data.HostFingerprint}}</div>
+  Check that against the server itself before going on — on it, run
+  <span class="cpr-mono">ssh-keygen -lf /etc/ssh/ssh_host_{{hostKeyFile $data.HostKeyType}}_key.pub</span>.
+  Nothing has been sent to that address yet; no password leaves this server until you agree
+  this is the right one.
+</div></div>
+{{end}}
   <form method="post" action="{{if $editing}}?p=destinations/edit{{else}}?p=destinations/add{{end}}">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     {{with $editing}}<input type="hidden" name="id" value="{{.ID}}">{{end}}
+    {{if $data.HostFingerprint}}<input type="hidden" name="confirm_fingerprint" value="{{$data.HostFingerprint}}">{{end}}
     <div class="cpr-grid2">
       <div>
         <label for="name">Name</label>
@@ -304,8 +320,9 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
       <label class="cpr-check"><input type="checkbox" name="append_only" value="1" {{with $editing}}{{if .AppendOnly}}checked{{end}}{{end}}>
         <span>The server runs with <span class="cpr-mono">--append-only</span>
         <small class="cpr-help">Recommended: this server can then add backups but never delete
-        them, so ransomware here cannot destroy your history. It also means retention
-        cannot run through this address — give the second one below.</small></span></label>
+        them, so ransomware here cannot destroy your history. Testing the destination checks it
+        rather than taking your word for it — if the server accepts a delete, the test says so.
+        It also means retention cannot run through this address — give the second one below.</small></span></label>
 
       <label for="maintenance_base_url">Address that may delete (optional)</label>
       <input type="text" id="maintenance_base_url" name="maintenance_base_url" value="{{$data.Field "maintenance_base_url"}}"

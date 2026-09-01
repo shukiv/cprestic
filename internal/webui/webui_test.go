@@ -2018,6 +2018,25 @@ func TestTheUserInterfaceRefusesWhatItCannotAttribute(t *testing.T) {
 	}
 }
 
+func TestAccountPagesDoNotRevealTheRootWHMCSRFToken(t *testing.T) {
+	server, err := webui.New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("build ui: %v", err)
+	}
+	admin := server.AdminCSRFForTest()
+	studio := server.UserCSRFForTest("studio")
+	rtflow := server.UserCSRFForTest("rtflow")
+	if admin == studio || admin == rtflow {
+		t.Fatal("a cPanel account received root WHM's CSRF token")
+	}
+	if studio == rtflow {
+		t.Fatal("two cPanel accounts share a CSRF token")
+	}
+	if studio != server.UserCSRFForTest("studio") {
+		t.Fatal("an account's token is not stable for the life of the service")
+	}
+}
+
 // newUserHandler builds the account-facing handler on its own, so it can
 // be asked what it does with a request that has no account attached.
 func newUserHandler(t *testing.T) http.Handler {

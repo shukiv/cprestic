@@ -36,6 +36,9 @@ type Fake struct {
 	Applied []string
 	// AppliedWith records the options each of those was applied under.
 	AppliedWith []ApplyOptions
+	// Excludes is what NativeExcludes returns, for a test that needs the
+	// account to have some.
+	Excludes []string
 }
 
 var _ Provider = (*Fake)(nil)
@@ -157,6 +160,10 @@ func (f *Fake) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 // The fake cannot restore an account, so it verifies the archive exists and
 // writes a marker the caller can assert on. A test that needs to know
 // restorepkg was invoked checks Applied.
+// NativeExcludes has none: a synthetic host has no cPanel configuration
+// to read them from.
+func (f *Fake) NativeExcludes(string) []string { return f.Excludes }
+
 func (f *Fake) Apply(_ context.Context, archivePath string, options ApplyOptions) error {
 	info, err := os.Stat(archivePath)
 	if err != nil {

@@ -13,6 +13,7 @@
  */
 
 const CPREST_SOCKET = '/var/run/cprest/account/user.sock';
+const CPREST_MAX_BODY = 1048576;
 
 require_once '/usr/local/cpanel/php/cpanel.php';
 
@@ -53,8 +54,21 @@ function cprest_page(string $path): void {
 
     $body = '';
     if ($method === 'POST') {
+        $declared = $_SERVER['CONTENT_LENGTH'] ?? '0';
+        if (!is_string($declared) || !ctype_digit($declared) || (int) $declared > CPREST_MAX_BODY) {
+            http_response_code(413);
+            header('Cache-Control: no-store, max-age=0');
+            echo '<p>The submitted form is too large.</p>';
+            return;
+        }
         $body = file_get_contents('php://input');
         if ($body === false) { $body = ''; }
+        if (strlen($body) > CPREST_MAX_BODY) {
+            http_response_code(413);
+            header('Cache-Control: no-store, max-age=0');
+            echo '<p>The submitted form is too large.</p>';
+            return;
+        }
     }
 
     $socket = @stream_socket_client('unix://' . CPREST_SOCKET, $errno, $errstr, 15);
@@ -74,7 +88,18 @@ function cprest_page(string $path): void {
     }
     $request .= "\r\n" . $body;
 
-    fwrite($socket, $request);
+    $written = 0;
+    $requestLength = strlen($request);
+    while ($written < $requestLength) {
+        $count = fwrite($socket, substr($request, $written));
+        if ($count === false || $count === 0) {
+            fclose($socket);
+            http_response_code(502);
+            echo '<p>cP:Restic could not receive this request.</p>';
+            return;
+        }
+        $written += $count;
+    }
 
     // Headers a line at a time, then the body in chunks. A restore
     // archive is gigabytes; reading the whole answer into a string first

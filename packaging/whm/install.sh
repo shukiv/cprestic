@@ -23,6 +23,7 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" = 0 ] || die "run this as root"
 [ -d /usr/local/cpanel ] || die "this does not look like a cPanel server (/usr/local/cpanel is missing)"
+umask 077
 
 SOURCE_DIR=$(cd "$(dirname "$0")" && pwd)
 [ -f "$SOURCE_DIR/cprest-agent" ] || die "cprest-agent is not next to this script"
@@ -85,6 +86,7 @@ Type=simple
 # "SHOW DATABASES" fails with "Access denied", and an account's databases
 # would be missing from its backup.
 Environment=HOME=/root
+UMask=0077
 ExecStart=/usr/local/bin/cprest-agent -standalone
 Restart=always
 RestartSec=15
@@ -97,6 +99,8 @@ ProtectControlGroups=true
 [Install]
 WantedBy=multi-user.target
 UNIT
+chown root:root "$SERVICE"
+chmod 0644 "$SERVICE"
 
 systemctl daemon-reload
 systemctl enable cprest >/dev/null 2>&1 || true
@@ -124,6 +128,8 @@ icon=cprest.svg
 searchtext=backup restore restic
 target=_self
 APPCONFIG
+chown root:root "$APPCONFIG_DIR/cprest.conf"
+chmod 0644 "$APPCONFIG_DIR/cprest.conf"
 
 # The icon has to be in place before the registration that names it.
 ICON_DIR=/usr/local/cpanel/whostmgr/docroot/addon_plugins

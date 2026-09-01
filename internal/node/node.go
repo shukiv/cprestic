@@ -447,7 +447,7 @@ func (e *Engine) assignmentFor(j nodestore.Job, policy nodestore.Policy,
 		PayloadMode:    policy.PayloadMode,
 		Compression:    policy.Compression,
 		LimitUploadKiB: policy.LimitUploadKiB,
-		Excludes:       excludesFor(policy, account),
+		Excludes:       excludesFor(policy, account, e.provider.NativeExcludes(account.HomeDir)),
 		SkipHomedir:    policy.SkipHomedir,
 		SkipEmail:      policy.SkipEmail,
 		SkipDatabases:  policy.SkipDatabases,
@@ -476,12 +476,15 @@ func (e *Engine) assignmentFor(j nodestore.Job, policy nodestore.Policy,
 // file backup; the mail configuration, and the mail account hashes with
 // it, are inside pkgacct's own archive where no exclude here can reach —
 // so the schedule's choice is passed to pkgacct as well.
-func excludesFor(policy nodestore.Policy, account cpanel.AccountInfo) []string {
+func excludesFor(policy nodestore.Policy, account cpanel.AccountInfo, native []string) []string {
 	excludes := append([]string(nil), policy.Excludes...)
 	if policy.SkipEmail && account.HomeDir != "" {
 		excludes = append(excludes, filepath.Join(account.HomeDir, "mail"))
 	}
-	return excludes
+	// What cPanel's own backups would leave out. An operator who wrote a
+	// path into cpbackup-exclude.conf has said it must not leave the
+	// server; ignoring that file uploaded the very files they excluded.
+	return append(excludes, native...)
 }
 
 func (e *Engine) targetFor(repositoryID string) (protocol.Target, error) {
