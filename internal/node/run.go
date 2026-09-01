@@ -607,6 +607,10 @@ func (e *Engine) watchForTrouble(ctx context.Context, now time.Time) {
 		if err != nil {
 			continue
 		}
+		if policy.AlertNoBackupDays < 0 {
+			// The operator said never for this schedule.
+			continue
+		}
 		first := schedule.Next(now)
 		overdue := 2 * schedule.Next(first).Sub(first)
 		if policy.AlertNoBackupDays > 0 {

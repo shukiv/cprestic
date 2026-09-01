@@ -2313,50 +2313,8 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 // --- settings ---
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
-	settings := s.engine.Settings()
-	free := uint64(0)
-	if info, err := os.Stat(settings.StagingRoot); err == nil && info.IsDir() {
-		free, _ = stagingFree(settings.StagingRoot)
-	}
-	outputs, err := s.engine.RetainedOutput()
+	view, err := s.settingsPage()
 	if err != nil {
-		s.fail(w, r, http.StatusInternalServerError, err)
-		return
-	}
-	var held uint64
-	for _, output := range outputs {
-		held += output.Bytes
-	}
-
-	// What a backup contains depends on the payload mode the schedules
-	// use, so the page states it rather than describing the default.
-	policies, err := s.engine.Store().Policies()
-	if err != nil {
-		s.fail(w, r, http.StatusInternalServerError, err)
-		return
-	}
-	split, monolithic := 0, 0
-	for _, policy := range policies {
-		if policy.PayloadMode == string(pkgacct.ModeMonolithic) {
-			monolithic++
-			continue
-		}
-		split++
-	}
-
-	view := settingsView{
-		Settings:    settings,
-		StagingFree: free,
-		Outputs:     outputs,
-		OutputBytes: held,
-		KeepDays:    keepDays(settings),
-		Split:       split,
-		Monolithic:  monolithic,
-		Kinds:       notify.Kinds,
-		Events:      notify.Events,
-		Submitted:   map[string]string{},
-	}
-	if view.Channels, err = s.engine.Channels(); err != nil {
 		s.fail(w, r, http.StatusInternalServerError, err)
 		return
 	}
@@ -2374,6 +2332,61 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	view.Adding = r.URL.Query().Get("addchannel") != ""
 
 	s.render(w, r, "settings.html", "Settings", "settings", view)
+}
+
+// settingsPage gathers everything the page shows. It is built in one place
+// because the page is rendered twice — once as itself, and once when a
+// channel form comes back refused — and a second, thinner version of it
+// would show an operator a page saying this server had no staging space
+// and no restored files, on the strength of a typo in a mail server name.
+func (s *Server) settingsPage() (settingsView, error) {
+	settings := s.engine.Settings()
+	free := uint64(0)
+	if info, err := os.Stat(settings.StagingRoot); err == nil && info.IsDir() {
+		free, _ = stagingFree(settings.StagingRoot)
+	}
+	outputs, err := s.engine.RetainedOutput()
+	if err != nil {
+		return settingsView{}, err
+	}
+	var held uint64
+	for _, output := range outputs {
+		held += output.Bytes
+	}
+
+	// What a backup contains depends on the payload mode the schedules
+	// use, so the page states it rather than describing the default.
+	policies, err := s.engine.Store().Policies()
+	if err != nil {
+		return settingsView{}, err
+	}
+	split, monolithic := 0, 0
+	for _, policy := range policies {
+		if policy.PayloadMode == string(pkgacct.ModeMonolithic) {
+			monolithic++
+			continue
+		}
+		split++
+	}
+
+	channels, err := s.engine.Channels()
+	if err != nil {
+		return settingsView{}, err
+	}
+
+	return settingsView{
+		Settings:    settings,
+		StagingFree: free,
+		Outputs:     outputs,
+		OutputBytes: held,
+		KeepDays:    keepDays(settings),
+		Split:       split,
+		Monolithic:  monolithic,
+		Channels:    channels,
+		Kinds:       notify.Kinds,
+		Events:      notify.Events,
+		Submitted:   map[string]string{},
+	}, nil
 }
 
 // settingsView is the settings page. It is a named type because the
@@ -2524,22 +2537,14 @@ func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
 // filled in as it was, and the reason on it — rather than sending the
 // operator back to an empty form to type it all again.
 func (s *Server) refuseChannel(w http.ResponseWriter, r *http.Request, cause error) {
-	channels, err := s.engine.Channels()
+	view, err := s.settingsPage()
 	if err != nil {
 		s.fail(w, r, http.StatusInternalServerError, err)
 		return
 	}
-	settings := s.engine.Settings()
-	view := settingsView{
-		Settings:  settings,
-		KeepDays:  keepDays(settings),
-		Channels:  channels,
-		Kinds:     notify.Kinds,
-		Events:    notify.Events,
-		FormError: cause.Error(),
-		Submitted: map[string]string{},
-		Adding:    true,
-	}
+	view.FormError = cause.Error()
+	view.Adding = true
+
 	secret := map[string]bool{"csrf": true}
 	for _, kind := range notify.Kinds {
 		for _, field := range channelSecretFields(string(kind)) {
@@ -2555,15 +2560,14 @@ func (s *Server) refuseChannel(w http.ResponseWriter, r *http.Request, cause err
 		view.Submitted[name] = values[0]
 	}
 	if id := r.PostFormValue("id"); id != "" {
-		for i := range channels {
-			if channels[i].ID == id {
-				view.Editing = &channels[i]
+		for i := range view.Channels {
+			if view.Channels[i].ID == id {
+				view.Editing = &view.Channels[i]
 				view.Adding = false
 				break
 			}
 		}
 	}
-	w.WriteHeader(http.StatusOK)
 	s.render(w, r, "settings.html", "Settings", "settings", view)
 }
 
