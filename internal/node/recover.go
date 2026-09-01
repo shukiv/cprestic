@@ -48,6 +48,11 @@ type AccountBackups struct {
 	Account   string
 	Snapshots int
 	Latest    time.Time
+	// LatestID is the newest backup of this account in this repository.
+	// The page that offers to recover an account has to say which backup
+	// it means, and this is the one an operator rebuilding a server
+	// wants unless they say otherwise.
+	LatestID string
 }
 
 // Attach registers an existing repository on this server.
@@ -166,6 +171,7 @@ func Summarise(snapshots []resticrun.Snapshot) Contents {
 		found.Snapshots++
 		if snapshot.Time.After(found.Latest) {
 			found.Latest = snapshot.Time
+			found.LatestID = snapshot.ID
 		}
 	}
 
@@ -176,4 +182,35 @@ func Summarise(snapshots []resticrun.Snapshot) Contents {
 		return contents.Accounts[i].Account < contents.Accounts[j].Account
 	})
 	return contents
+}
+
+// LatestSnapshot is the newest backup of one account in one repository.
+//
+// Recovering an account is chosen by account, not by snapshot: an
+// operator rebuilding a lost server picks the customer, and means the
+// last good backup of them. Resolving it here rather than in a form also
+// means a page that has been open since before tonight's backup cannot
+// quietly restore yesterday's.
+func (e *Engine) LatestSnapshot(ctx context.Context, repositoryID, account string) (string, error) {
+	repo, err := e.OpenRepository(repositoryID, false)
+	if err != nil {
+		return "", err
+	}
+	snapshots, err := e.runner.Snapshots(ctx, repo, resticrun.SnapshotFilter{})
+	if err != nil {
+		return "", err
+	}
+	var latest resticrun.Snapshot
+	for _, snapshot := range snapshots {
+		if snapshot.Account() != account {
+			continue
+		}
+		if latest.ID == "" || snapshot.Time.After(latest.Time) {
+			latest = snapshot
+		}
+	}
+	if latest.ID == "" {
+		return "", fmt.Errorf("node: this destination holds no backup of %s", account)
+	}
+	return latest.ID, nil
 }

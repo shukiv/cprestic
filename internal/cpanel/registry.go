@@ -80,7 +80,12 @@ func (r *Real) databasesDir() string {
 // do not carry the account's prefix, which a server with prefixing
 // disabled is full of.
 type databaseMap struct {
-	MySQL struct {
+	// A pointer so an absent MYSQL section can be told apart from an
+	// account that genuinely has no databases. They are not the same
+	// thing: the first means this file does not answer the question, and
+	// treating it as "no databases" drops an account's data out of its
+	// backups without anything failing.
+	MySQL *struct {
 		Owner    string                     `json:"owner"`
 		DBs      map[string]json.RawMessage `json:"dbs"`
 		DBUsers  map[string]json.RawMessage `json:"dbusers"`
@@ -103,9 +108,14 @@ func (r *Real) recordedDatabases(name string) (databases, users []string, record
 	if err := json.Unmarshal(raw, &recordedMap); err != nil {
 		return nil, nil, false
 	}
+	if recordedMap.MySQL == nil || recordedMap.MySQL.Owner == "" {
+		// A file that does not say whose databases these are does not
+		// answer the question. Fall back rather than back up nothing.
+		return nil, nil, false
+	}
 	// An account whose map names a different owner is not this account's
 	// map. Trusting it would hand one customer another's databases.
-	if owner := recordedMap.MySQL.Owner; owner != "" && owner != name {
+	if recordedMap.MySQL.Owner != name {
 		return nil, nil, false
 	}
 	for database := range recordedMap.MySQL.DBs {

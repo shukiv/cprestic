@@ -433,6 +433,9 @@ Written %s
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("Content-Length", strconv.Itoa(body.Len()))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// This file is the only thing that can read the backups. No copy of
+	// it belongs in a cache between here and the operator.
+	w.Header().Set("Cache-Control", "no-store, max-age=0")
 	_, _ = w.Write([]byte(body.String()))
 }
 
@@ -2273,6 +2276,8 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// Somebody's whole account. Not something to leave in a cache.
+	w.Header().Set("Cache-Control", "no-store, max-age=0")
 
 	if _, err := io.Copy(w, file); err != nil {
 		// The response is already going out, so there is nothing to say
@@ -2833,10 +2838,27 @@ func (s *Server) handleAttach(w http.ResponseWriter, r *http.Request) {
 // repository, onto this server.
 func (s *Server) handleRecoverAccount(w http.ResponseWriter, r *http.Request) {
 	account := r.PostFormValue("account")
+	repository := r.PostFormValue("repository")
 	apply := r.PostFormValue("apply") != ""
+
+	// Which backup: the newest one of this account in this destination,
+	// resolved now rather than carried in the form. Recovery is chosen by
+	// account — the operator picks the customer, not a hash — and this is
+	// what "recover them" means.
+	snapshot := r.PostFormValue("snapshot")
+	if snapshot == "" {
+		found, err := s.engine.LatestSnapshot(r.Context(), repository, account)
+		if err != nil {
+			s.redirect(w, r, "/recover", "error", err.Error())
+			return
+		}
+		snapshot = found
+	}
+
 	queued, err := s.engine.QueueRestore(nodestore.Restore{
 		Account:      account,
-		RepositoryID: r.PostFormValue("repository"),
+		RepositoryID: repository,
+		SnapshotID:   snapshot,
 		Kind:         protocol.RestoreAccount,
 		Apply:        apply,
 	})

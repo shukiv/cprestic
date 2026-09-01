@@ -150,3 +150,15 @@ func TestDatabaseUsersComeFromBesideTheDumps(t *testing.T) {
 		t.Error("database users were promised from a backup that holds none")
 	}
 }
+
+// TestTheStagedUsersFileNameMatchesReassemble keeps the two spellings of
+// one filename together. reassemble cannot import this package — this
+// package imports it — so the name is written out there, and a rename
+// here would otherwise leave the grants file behind in the rebuilt
+// archive with nothing failing.
+func TestTheStagedUsersFileNameMatchesReassemble(t *testing.T) {
+	if DatabaseUsersFile != reassemble.StagedDatabaseUsersFile {
+		t.Fatalf("granular calls it %q, reassemble looks for %q",
+			DatabaseUsersFile, reassemble.StagedDatabaseUsersFile)
+	}
+}

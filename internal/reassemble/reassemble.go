@@ -22,6 +22,15 @@ import (
 const (
 	HomedirDir  = "homedir"
 	DatabaseDir = "mysql"
+	// DatabaseUsersFile is where a cpmove archive keeps the account's
+	// database users and their grants: at the top of the tree, not with
+	// the databases. Checked against what /scripts/pkgacct produces on
+	// cPanel 136.
+	DatabaseUsersFile = "mysql.sql"
+	// StagedDatabaseUsersFile is what cprest names the same thing where
+	// it dumps it, beside the databases. It is granular.DatabaseUsersFile
+	// spelt out rather than imported: granular imports this package.
+	StagedDatabaseUsersFile = "_users.sql"
 )
 
 // Request describes a restore of one account.
@@ -258,6 +267,9 @@ func restoreSplit(ctx context.Context, restorer Restorer, req Request,
 		if err := restore(found.Databases, filepath.Join(root, DatabaseDir)); err != nil {
 			return Result{}, fmt.Errorf("reassemble: restore databases: %w", err)
 		}
+		if err := placeDatabaseUsers(root); err != nil {
+			return Result{}, err
+		}
 	}
 
 	// 4. Repack, which is the form restorepkg accepts.
@@ -271,6 +283,29 @@ func restoreSplit(ctx context.Context, restorer Restorer, req Request,
 		Mode:          pkgacct.ModeSplit,
 		BytesRestored: bytesRestored,
 	}, nil
+}
+
+// placeDatabaseUsers moves the grants file to the name cPanel's own
+// restore reads.
+//
+// cprest dumps the account's database users beside its databases, because
+// that is where they are produced. A cpmove archive keeps them somewhere
+// else: one file per database under mysql/, and the users and their
+// grants in mysql.sql at the top of the tree. restorepkg reads the
+// latter and nothing else, so an archive with the file under mysql/ was
+// restored with every table in place and no user able to read them.
+func placeDatabaseUsers(root string) error {
+	from := filepath.Join(root, DatabaseDir, StagedDatabaseUsersFile)
+	if _, err := os.Stat(from); err != nil {
+		// No users file: an account with no databases, or a backup taken
+		// before cprest dumped them.
+		return nil
+	}
+	to := filepath.Join(root, DatabaseUsersFile)
+	if err := os.Rename(from, to); err != nil {
+		return fmt.Errorf("reassemble: place the database users where restorepkg reads them: %w", err)
+	}
+	return nil
 }
 
 // soleArchive finds the single archive a metadata restore produced.

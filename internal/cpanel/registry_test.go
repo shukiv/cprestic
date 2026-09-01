@@ -113,3 +113,32 @@ func TestASuspendedAccountIsRecognised(t *testing.T) {
 		}
 	}
 }
+
+// TestAnUnhelpfulDatabaseMapFallsBackRatherThanBackingUpNothing covers a
+// file that parses and says nothing: no MYSQL section, or one with no
+// owner. Reading that as "this account has no databases" would drop them
+// out of the backup with nothing failing, which is the failure this whole
+// file exists to stop.
+func TestAnUnhelpfulDatabaseMapFallsBackRatherThanBackingUpNothing(t *testing.T) {
+	databasesDir := filepath.Join(t.TempDir(), "databases")
+	if err := os.MkdirAll(databasesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	host := newFakeHost(t, "customer1")
+	host.DatabasesDir = databasesDir
+
+	for what, body := range map[string]string{
+		"no MYSQL section":        `{"version":1}`,
+		"an empty section":        `{"MYSQL":{},"version":1}`,
+		"a section with no owner": `{"MYSQL":{"dbs":{"customer1_wp":"127.0.0.1"}},"version":1}`,
+		"not json at all":         `{`,
+	} {
+		if err := os.WriteFile(filepath.Join(databasesDir, "customer1.json"),
+			[]byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, recorded := host.recordedDatabases("customer1"); recorded {
+			t.Errorf("%s was treated as cPanel's answer", what)
+		}
+	}
+}

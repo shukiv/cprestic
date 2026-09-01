@@ -148,7 +148,7 @@ func (r *Real) Account(ctx context.Context, user string) (AccountInfo, error) {
 	if err := validateUser(user); err != nil {
 		return AccountInfo{}, err
 	}
-	home := filepath.Join(r.homeRoot(), user)
+	home := r.homeFor(user)
 	info, err := os.Stat(home)
 	if err != nil {
 		return AccountInfo{}, fmt.Errorf("cpanel: account home %s: %w", home, err)
@@ -387,6 +387,34 @@ func plainAccountName(name string) bool {
 	return true
 }
 
+// dumpDatabaseCreate writes the statement that creates the database, in
+// the separate file a cpmove archive keeps it in.
+//
+// The table dump beside it is "mysqldump <name>", which carries no
+// CREATE DATABASE and no character set: restoring it into a server that
+// does not already have the database puts every table somewhere else, or
+// nowhere. cPanel's own archives carry this as <name>.create, and this
+// writes the same thing under the same name.
+func (r *Real) dumpDatabaseCreate(ctx context.Context, name, dumpPath string) error {
+	path := strings.TrimSuffix(dumpPath, ".sql") + ".create"
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("cpanel: create %s: %w", path, err)
+	}
+	cmd := exec.CommandContext(ctx, r.mysqldump(),
+		"--no-data", "--no-create-info", "--databases", name)
+	cmd.Stdout = file
+	err = cmd.Run()
+	closeErr := file.Close()
+	if err != nil {
+		return fmt.Errorf("cpanel: dump the definition of %s: %w", name, err)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("cpanel: close %s: %w", path, closeErr)
+	}
+	return nil
+}
+
 // plainDatabaseUser holds a database user name to the same shape. It is
 // separate from plainAccountName because these come from a file cPanel
 // wrote rather than from a directory of account names, and a name from a
@@ -423,6 +451,9 @@ func (r *Real) dumpDatabases(ctx context.Context, req StageRequest, payload pkga
 		}
 		if closeErr != nil {
 			return fmt.Errorf("cpanel: close dump %s: %w", path, closeErr)
+		}
+		if err := r.dumpDatabaseCreate(ctx, name, path); err != nil {
+			return err
 		}
 	}
 	return nil

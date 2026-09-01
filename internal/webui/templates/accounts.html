@@ -43,7 +43,10 @@
         {{range $d.Accounts}}
         <tr class="cpr-state {{.Stripe}}" data-name="{{.User}} {{.PrimaryDomain}}" data-state="{{.Filter}}" {{if .Running}}data-running="1"{{end}}>
           <td class="cpr-acct"><a class="cpr-link" href="?p=account&amp;user={{.User}}">{{.User}}</a>
-            {{if .PrimaryDomain}}<div class="cpr-sublabel">{{.PrimaryDomain}}</div>{{end}}</td>
+            {{if .PrimaryDomain}}<div class="cpr-sublabel">{{.PrimaryDomain}}</div>{{end}}
+            {{if .Missing}}<div class="cpr-sublabel cpr-warntext"
+              title="cPanel lists this account, but nothing is at its home directory. Its backup will fail until that is sorted out — which is better than it quietly not being backed up at all.">
+              home directory missing</div>{{end}}</td>
           <td class="cpr-mono cpr-num">{{if .SizeBytes}}{{bytes .SizeBytes}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
           <td>{{if .LastBackup}}{{ago .LastBackup}}{{else}}<span class="cpr-mono">never</span>{{end}}</td>
           <td>

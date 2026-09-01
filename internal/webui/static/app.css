@@ -166,6 +166,8 @@
 .cprest td.cpr-right, .cprest th.cpr-right { text-align:right; }
 .cprest .cpr-acct { font-weight:600; }
 .cprest .cpr-acct .cpr-link { display:block; }
+/* A sublabel that is a warning rather than a detail. */
+.cprest .cpr-warntext { color:var(--warn); }
 .cprest .cpr-sublabel { color:var(--faint); font-size:12px; margin-top:1px; }
 
 /* severity stripe: state readable without colour alone */

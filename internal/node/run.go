@@ -335,11 +335,20 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 		// The server's own settings are not an account, and asking cPanel
 		// about them fails on the name alone.
 		account = cpanel.AccountInfo{User: cpanel.SystemAccount}
+	} else if found, lookupErr := e.provider.Account(ctx, stored.Account); lookupErr == nil {
+		account = found
 	} else {
-		account, err = e.provider.Account(ctx, stored.Account)
-		if err != nil {
-			return e.failRestore(stored, fmt.Sprintf("account: %v", err))
-		}
+		// An account that is not on this server is the case this whole
+		// program exists for: the machine was lost and is being rebuilt.
+		// Refusing to restore one because it is not already here made
+		// recovery impossible on the only server that ever needs it.
+		//
+		// The lookup gives the size estimate and nothing else, so
+		// without it the restore proceeds and the estimate is whatever
+		// the snapshot turns out to hold.
+		e.log.Info("restoring an account this server does not have",
+			"account", stored.Account, "detail", lookupErr)
+		account = cpanel.AccountInfo{User: stored.Account}
 	}
 
 	now := time.Now().UTC()
