@@ -116,14 +116,14 @@ type userView struct {
 	Err          string
 
 	// The browser, when one is open.
-	Repository  string
-	Snapshot    string
-	SnapshotAt  time.Time
-	Snapshots   []resticrun.Snapshot
-	Path        string
-	Up          string
-	Entries     []browseEntry
-	Kind        granular.Kind
+	Repository string
+	Snapshot   string
+	SnapshotAt time.Time
+	Snapshots  []resticrun.Snapshot
+	Path       string
+	Up         string
+	Entries    []browseEntry
+	Kind       granular.Kind
 }
 
 // userRepository is one destination as an account sees it: how many
