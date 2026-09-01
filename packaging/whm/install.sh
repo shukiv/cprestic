@@ -113,9 +113,16 @@ entryurl=cprest.cgi
 user=root
 acls=software-cprest
 displayname=cP:Restic Backups
+icon=cprest.svg
 searchtext=backup restore restic
 target=_self
 APPCONFIG
+
+# The icon has to be in place before the registration that names it.
+ICON_DIR=/usr/local/cpanel/whostmgr/docroot/addon_plugins
+if [ -d "$ICON_DIR" ] && [ -f "$SOURCE_DIR/branding/cprestic-icon.svg" ]; then
+    install -m 644 "$SOURCE_DIR/branding/cprestic-icon.svg" "$ICON_DIR/cprest.svg"
+fi
 
 /usr/local/cpanel/bin/register_appconfig "$APPCONFIG_DIR/cprest.conf"
 
@@ -154,6 +161,14 @@ if [ -d "$FRONTEND" ]; then
             install -m 644 "$SOURCE_DIR/cpanel/$page" "$FRONTEND/cprest/$page"
         fi
     done
+
+    # cPanel draws a plugin's tile from assets/application_icons/<file>.png,
+    # where <file> is what the menu entry below calls itself.
+    if [ -d "$FRONTEND/assets/application_icons" ] &&
+       [ -f "$SOURCE_DIR/branding/cprestic-icon.png" ]; then
+        install -m 644 "$SOURCE_DIR/branding/cprestic-icon.png" \
+            "$FRONTEND/assets/application_icons/cprest.png"
+    fi
 
     install -d -m 755 "$FRONTEND/dynamicui"
     cat > "$FRONTEND/dynamicui/dynamicui_cprest.conf" <<'MENU'
