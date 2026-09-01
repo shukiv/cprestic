@@ -179,6 +179,26 @@ type Restore struct {
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
 }
 
+// Channel is somewhere this server tells someone what happened.
+type Channel struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Kind is smtp, ntfy, telegram or webhook.
+	Kind string `json:"kind"`
+	// Config is the channel's settings. Nothing secret is in here: the
+	// credentials are sealed like a destination's and referenced by id.
+	Config map[string]string `json:"config"`
+	// SecretsID names the sealed credentials, empty for a channel that
+	// needs none.
+	SecretsID string `json:"secrets_id,omitempty"`
+	// Events it asked for. Empty means the ones that report a problem.
+	Events    []string   `json:"events,omitempty"`
+	Enabled   bool       `json:"enabled"`
+	LastSent  *time.Time `json:"last_sent,omitempty"`
+	LastError string     `json:"last_error,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
 // Secret is a sealed credential. The plaintext never reaches this file.
 type Secret struct {
 	ID         string    `json:"id"`

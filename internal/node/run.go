@@ -14,8 +14,10 @@ import (
 
 	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/destination"
+	"github.com/shuki/cprest/internal/human"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shuki/cprest/internal/notify"
 	"github.com/shuki/cprest/internal/protocol"
 	"github.com/shuki/cprest/internal/reassemble"
 	"github.com/shuki/cprest/internal/resticrun"
@@ -216,7 +218,94 @@ func (e *Engine) runBackup(ctx context.Context, stored nodestore.Job) error {
 	}
 	e.log.Info("backup finished",
 		"job_id", stored.ID, "account", stored.Account, "status", stored.Status)
+	e.notifyBackup(ctx, stored)
 	return nil
+}
+
+// notifyBackup says what a finished backup came to, for whoever asked to
+// be told. A backup that fails silently is the same as no backup.
+func (e *Engine) notifyBackup(ctx context.Context, stored nodestore.Job) {
+	message := notify.Message{Account: stored.Account}
+	switch stored.Status {
+	case job.StatusSuccess:
+		message.Event = notify.EventBackupSucceeded
+		message.Subject = fmt.Sprintf("Backed up %s", stored.Account)
+	case job.StatusPartialSuccess:
+		message.Event = notify.EventBackupPartial
+		message.Subject = fmt.Sprintf("Backed up %s, with files it could not read", stored.Account)
+	case job.StatusFailed:
+		message.Event = notify.EventBackupFailed
+		message.Subject = fmt.Sprintf("The backup of %s failed", stored.Account)
+	default:
+		return
+	}
+	message.Body = e.backupDetail(stored)
+	e.Notify(ctx, message)
+}
+
+// destinationNames maps each repository to the destination an operator
+// named it, so a message says "Backup server" rather than the first eight
+// characters of an identifier nobody has seen before.
+func (e *Engine) destinationNames() map[string]string {
+	names := map[string]string{}
+	destinations, err := e.store.Destinations()
+	if err != nil {
+		e.log.Error("read destinations", "error", err)
+		return names
+	}
+	byID := map[string]string{}
+	for _, dest := range destinations {
+		byID[dest.ID] = dest.Name
+	}
+	repos, err := e.store.Repositories()
+	if err != nil {
+		e.log.Error("read repositories", "error", err)
+		return names
+	}
+	for _, repo := range repos {
+		names[repo.ID] = byID[repo.DestinationID]
+	}
+	return names
+}
+
+// backupDetail is what the message says under its first line: what went
+// wrong, or what it cost — per destination, because a backup that reached
+// one of two is a different situation from one that reached both.
+func (e *Engine) backupDetail(stored nodestore.Job) string {
+	if stored.StagingErr != "" {
+		return stored.StagingErr
+	}
+	names := e.destinationNames()
+	var lines []string
+	for _, target := range stored.Targets {
+		where := names[target.RepositoryID]
+		if where == "" {
+			where = short(target.RepositoryID)
+		}
+		switch {
+		case target.Error != "":
+			lines = append(lines, fmt.Sprintf("%s: %s", where, target.Error))
+		case target.Incomplete:
+			lines = append(lines, fmt.Sprintf(
+				"%s: stored, but some files could not be read", where))
+		default:
+			lines = append(lines, fmt.Sprintf("%s: %s stored, out of %s read",
+				where, human.Bytes(target.BytesAdded), human.Bytes(target.BytesProcessed)))
+		}
+	}
+	if stored.StartedAt != nil && stored.FinishedAt != nil {
+		lines = append(lines, fmt.Sprintf("It took %s.",
+			roughly(stored.FinishedAt.Sub(*stored.StartedAt))))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// short is an id an operator can recognise without being a whole line.
+func short(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 func (e *Engine) failJob(stored nodestore.Job, reason string) error {
@@ -291,6 +380,18 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 	}
 	e.log.Info("restore finished",
 		"restore_id", stored.ID, "account", stored.Account, "status", stored.Status)
+	subject := fmt.Sprintf("Restored %s", stored.Account)
+	if stored.Status == job.StatusFailed {
+		subject = fmt.Sprintf("The restore of %s failed", stored.Account)
+	}
+	body := stored.Detail
+	if stored.Error != "" {
+		body = stored.Error
+	}
+	e.Notify(ctx, notify.Message{
+		Event: notify.EventRestore, Account: stored.Account,
+		Subject: subject, Body: body,
+	})
 	return nil
 }
 
@@ -345,6 +446,7 @@ func (e *Engine) Schedule(ctx context.Context, now time.Time) (int, error) {
 	if err := e.SweepWorkdir(); err != nil {
 		e.log.Error("sweep the work directory", "error", err)
 	}
+	e.watchForTrouble(ctx, now)
 
 	policies, err := e.store.Policies()
 	if err != nil {
@@ -405,6 +507,186 @@ func (e *Engine) Schedule(ctx context.Context, now time.Time) (int, error) {
 
 // catchUpWindow bounds how far back a restart looks for missed schedules.
 const catchUpWindow = 2 * time.Hour
+
+// watchForTrouble raises the two things no run reports, because no run
+// happens: an account whose backups have stopped, and a run that started
+// and never finished. Each is said once, when it becomes true.
+func (e *Engine) watchForTrouble(ctx context.Context, now time.Time) {
+	// The scheduler ticks every 15 seconds; nothing here changes that
+	// fast, and accountsFor reads the account registry per policy.
+	e.alertedMu.Lock()
+	if now.Sub(e.lastWatch) < watchEvery {
+		e.alertedMu.Unlock()
+		return
+	}
+	e.lastWatch = now
+	e.alertedMu.Unlock()
+
+	// Nothing is listening yet. Say nothing rather than marking every
+	// current problem as already told, which would leave the operator's
+	// first channel silent about the very thing they added it for.
+	channels, err := e.store.Channels()
+	if err != nil {
+		e.log.Error("read notification channels", "error", err)
+		return
+	}
+	listening := false
+	for _, channel := range channels {
+		if channel.Enabled {
+			listening = true
+			break
+		}
+	}
+	if !listening {
+		return
+	}
+
+	e.probeDestinations(ctx, now)
+
+	jobs, err := e.store.Jobs(0)
+	if err != nil {
+		e.log.Error("read jobs", "error", err)
+		return
+	}
+	policies, err := e.store.Policies()
+	if err != nil {
+		e.log.Error("read policies", "error", err)
+		return
+	}
+
+	stuckAfter := 6 * time.Hour
+	for _, policy := range policies {
+		if policy.AlertRunHours > 0 {
+			if asked := time.Duration(policy.AlertRunHours) * time.Hour; asked < stuckAfter {
+				stuckAfter = asked
+			}
+		}
+	}
+
+	e.alertedMu.Lock()
+	defer e.alertedMu.Unlock()
+	if e.alerted == nil {
+		e.alerted = map[string]bool{}
+	}
+
+	for _, stored := range jobs {
+		if stored.Status.Terminal() || stored.StartedAt == nil {
+			continue
+		}
+		key := "stuck:" + stored.ID
+		if now.Sub(*stored.StartedAt) < stuckAfter || e.alerted[key] {
+			continue
+		}
+		e.alerted[key] = true
+		e.Notify(ctx, notify.Message{
+			Event:   notify.EventStuck,
+			Account: stored.Account,
+			Subject: fmt.Sprintf("The backup of %s has been running for %s",
+				stored.Account, roughly(now.Sub(*stored.StartedAt))),
+			Body: "A run that long is usually stuck rather than slow. It is holding the " +
+				"staging space and the queue behind it.",
+		})
+	}
+
+	// An account is overdue when its own schedule has come and gone
+	// without a good backup, twice over.
+	latest := map[string]nodestore.Job{}
+	for _, stored := range jobs {
+		if stored.Status != job.StatusSuccess {
+			continue
+		}
+		if previous, seen := latest[stored.Account]; !seen || stored.QueuedAt.After(previous.QueuedAt) {
+			latest[stored.Account] = stored
+		}
+	}
+	for _, policy := range policies {
+		if !policy.Enabled || len(policy.RepositoryIDs) == 0 {
+			continue
+		}
+		schedule, err := cron.ParseStandard(policy.ScheduleCron)
+		if err != nil {
+			continue
+		}
+		first := schedule.Next(now)
+		overdue := 2 * schedule.Next(first).Sub(first)
+		if policy.AlertNoBackupDays > 0 {
+			overdue = time.Duration(policy.AlertNoBackupDays) * 24 * time.Hour
+		}
+		if overdue <= 0 {
+			continue
+		}
+
+		accounts, err := e.accountsFor(ctx, policy)
+		if err != nil {
+			continue
+		}
+		for _, account := range accounts {
+			last, backedUp := latest[account]
+			if backedUp && now.Sub(last.QueuedAt) < overdue {
+				delete(e.alerted, "overdue:"+account)
+				continue
+			}
+			key := "overdue:" + account
+			if e.alerted[key] {
+				continue
+			}
+			e.alerted[key] = true
+			body := fmt.Sprintf("Nothing has backed it up in the last %s, and %q says it should have.",
+				roughly(overdue), policy.Name)
+			if !backedUp {
+				body = fmt.Sprintf("It has never been backed up successfully, and %q says it should have been.",
+					policy.Name)
+			}
+			e.Notify(ctx, notify.Message{
+				Event:   notify.EventOverdue,
+				Account: account,
+				Subject: fmt.Sprintf("%s has no recent backup", account),
+				Body:    body,
+			})
+		}
+	}
+}
+
+// probeDestinations reaches each destination on a slow cadence, so that a
+// backup server which went away is reported when it goes rather than at
+// the next backup — which is the night the operator finds out they have
+// none.
+func (e *Engine) probeDestinations(ctx context.Context, now time.Time) {
+	e.alertedMu.Lock()
+	if now.Sub(e.lastProbe) < probeEvery {
+		e.alertedMu.Unlock()
+		return
+	}
+	e.lastProbe = now
+	e.alertedMu.Unlock()
+
+	destinations, err := e.store.Destinations()
+	if err != nil {
+		e.log.Error("read destinations", "error", err)
+		return
+	}
+	for _, dest := range destinations {
+		// TestDestination records the result and says so if it changed.
+		if err := e.TestDestination(ctx, dest.ID); err != nil {
+			e.log.Warn("destination unreachable", "destination", dest.Name, "error", err)
+		}
+	}
+}
+
+// roughly says a duration the way a person would, for a sentence rather
+// than a table.
+func roughly(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%d seconds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%d minutes", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%d hours", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%d days", int(d.Hours()/24))
+	}
+}
 
 func (e *Engine) accountsFor(ctx context.Context, policy nodestore.Policy) ([]string, error) {
 	if !policy.AllAccounts() {
@@ -821,3 +1103,13 @@ func (e *Engine) statArchive(restore nodestore.Restore) (path, filename string, 
 	}
 	return resolved, filepath.Base(resolved), info.Size(), nil
 }
+
+const (
+	// watchEvery is how often the overdue and stuck checks run. Long
+	// enough that reading the account registry costs nothing, short
+	// enough that a stuck run is reported the same hour it wedges.
+	watchEvery = 5 * time.Minute
+	// probeEvery is how often each destination is reached for. A
+	// destination that is down is down for hours, not seconds.
+	probeEvery = time.Hour
+)

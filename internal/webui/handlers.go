@@ -22,6 +22,7 @@ import (
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/node"
 	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shuki/cprest/internal/notify"
 	"github.com/shuki/cprest/internal/pkgacct"
 	"github.com/shuki/cprest/internal/protocol"
 	"github.com/shuki/cprest/internal/reassemble"
@@ -2343,15 +2344,259 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		split++
 	}
 
-	s.render(w, r, "settings.html", "Settings", "settings", struct {
-		Settings    nodestore.Settings
-		StagingFree uint64
-		Outputs     []staging.Output
-		OutputBytes uint64
-		KeepDays    int
-		Split       int
-		Monolithic  int
-	}{settings, free, outputs, held, keepDays(settings), split, monolithic})
+	view := settingsView{
+		Settings:    settings,
+		StagingFree: free,
+		Outputs:     outputs,
+		OutputBytes: held,
+		KeepDays:    keepDays(settings),
+		Split:       split,
+		Monolithic:  monolithic,
+		Kinds:       notify.Kinds,
+		Events:      notify.Events,
+		Submitted:   map[string]string{},
+	}
+	if view.Channels, err = s.engine.Channels(); err != nil {
+		s.fail(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	// The form for one channel, when it was asked for: the drawer fetches
+	// this page and lifts it out, and a browser without JavaScript gets
+	// the same form on a page of its own.
+	if id := r.URL.Query().Get("channel"); id != "" {
+		for i := range view.Channels {
+			if view.Channels[i].ID == id {
+				view.Editing = &view.Channels[i]
+				break
+			}
+		}
+	}
+	view.Adding = r.URL.Query().Get("addchannel") != ""
+
+	s.render(w, r, "settings.html", "Settings", "settings", view)
+}
+
+// settingsView is the settings page. It is a named type because the
+// notification form needs to come back with what was typed into it.
+type settingsView struct {
+	Settings    nodestore.Settings
+	StagingFree uint64
+	Outputs     []staging.Output
+	OutputBytes uint64
+	KeepDays    int
+	Split       int
+	Monolithic  int
+
+	Channels []nodestore.Channel
+	Kinds    []notify.Kind
+	Events   []notify.Event
+	Editing  *nodestore.Channel
+	Adding   bool
+	// FormError is what was wrong with the channel that was just
+	// submitted, shown in the form rather than on the page behind it.
+	FormError string
+	// Submitted is what they typed, so a refused form comes back filled
+	// in. Secrets are not in here.
+	Submitted map[string]string
+}
+
+// Field is what the form should show: what was typed if the form is
+// coming back refused, otherwise what is stored.
+func (v settingsView) Field(name string) string {
+	if value, typed := v.Submitted[name]; typed {
+		return value
+	}
+	if v.Editing == nil {
+		return ""
+	}
+	if name == "name" {
+		return v.Editing.Name
+	}
+	return v.Editing.Config[name]
+}
+
+// Wants reports whether the channel being edited asked about an event, so
+// its checkbox comes back ticked.
+func (v settingsView) Wants(event notify.Event) bool {
+	if len(v.Submitted) > 0 {
+		return v.Submitted["event_"+string(event)] != ""
+	}
+	if v.Editing == nil {
+		return false
+	}
+	for _, asked := range v.Editing.Events {
+		if asked == string(event) {
+			return true
+		}
+	}
+	return false
+}
+
+// Kind is the kind the form should open on.
+func (v settingsView) Kind() string {
+	if value := v.Submitted["kind"]; value != "" {
+		return value
+	}
+	if v.Editing != nil {
+		return v.Editing.Kind
+	}
+	return string(notify.KindSMTP)
+}
+
+// Enabled reports whether the channel being edited is on. A new one is.
+func (v settingsView) Enabled() bool {
+	if len(v.Submitted) > 0 {
+		return v.Submitted["enabled"] != ""
+	}
+	if v.Editing == nil {
+		return true
+	}
+	return v.Editing.Enabled
+}
+
+// --- notification channels ---
+
+// handleSaveChannel adds or edits somewhere to send notifications.
+func (s *Server) handleSaveChannel(w http.ResponseWriter, r *http.Request) {
+	channel := nodestore.Channel{
+		ID:      strings.TrimSpace(r.PostFormValue("id")),
+		Name:    strings.TrimSpace(r.PostFormValue("name")),
+		Kind:    strings.TrimSpace(r.PostFormValue("kind")),
+		Config:  map[string]string{},
+		Enabled: r.PostFormValue("enabled") != "",
+	}
+	if channel.ID != "" {
+		// The kind is fixed once the channel exists: its settings mean
+		// different things, and silently reinterpreting them is worse
+		// than making the operator add a new one.
+		existing, err := s.engine.Store().Channel(channel.ID)
+		if err != nil {
+			s.redirect(w, r, "/settings", "error", "That channel no longer exists.")
+			return
+		}
+		channel.Kind = existing.Kind
+	}
+
+	secrets := map[string]string{}
+	for _, field := range channelConfigFields(channel.Kind) {
+		if value := strings.TrimSpace(r.PostFormValue(field)); value != "" {
+			channel.Config[field] = value
+		}
+	}
+	for _, field := range channelSecretFields(channel.Kind) {
+		secrets[field] = r.PostFormValue(field)
+	}
+	for _, event := range notify.Events {
+		if r.PostFormValue("event_"+string(event)) != "" {
+			channel.Events = append(channel.Events, string(event))
+		}
+	}
+
+	saved, err := s.engine.SaveChannel(channel, secrets)
+	if err != nil {
+		s.refuseChannel(w, r, err)
+		return
+	}
+	s.redirect(w, r, "/settings", "ok",
+		fmt.Sprintf("Saved %q. Send a test to make sure it arrives.", saved.Name))
+}
+
+// handleTestChannel sends one message now.
+func (s *Server) handleTestChannel(w http.ResponseWriter, r *http.Request) {
+	id := r.PostFormValue("id")
+	if err := s.engine.TestChannel(r.Context(), id); err != nil {
+		s.redirect(w, r, "/settings", "error", "It did not go: "+err.Error())
+		return
+	}
+	s.redirect(w, r, "/settings", "ok", "Sent. If it has not arrived, it was not delivered.")
+}
+
+// handleDeleteChannel removes one.
+func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
+	if err := s.engine.DeleteChannel(r.PostFormValue("id")); err != nil {
+		s.redirect(w, r, "/settings", "error", err.Error())
+		return
+	}
+	s.redirect(w, r, "/settings", "ok", "Removed. Nothing will be sent there.")
+}
+
+// refuseChannel re-renders the settings page with the channel form open,
+// filled in as it was, and the reason on it — rather than sending the
+// operator back to an empty form to type it all again.
+func (s *Server) refuseChannel(w http.ResponseWriter, r *http.Request, cause error) {
+	channels, err := s.engine.Channels()
+	if err != nil {
+		s.fail(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	settings := s.engine.Settings()
+	view := settingsView{
+		Settings:  settings,
+		KeepDays:  keepDays(settings),
+		Channels:  channels,
+		Kinds:     notify.Kinds,
+		Events:    notify.Events,
+		FormError: cause.Error(),
+		Submitted: map[string]string{},
+		Adding:    true,
+	}
+	secret := map[string]bool{"csrf": true}
+	for _, kind := range notify.Kinds {
+		for _, field := range channelSecretFields(string(kind)) {
+			secret[field] = true
+		}
+	}
+	for name, values := range r.PostForm {
+		// Secrets are not handed back: they would then live in a page
+		// rather than only in the vault.
+		if secret[name] || len(values) == 0 {
+			continue
+		}
+		view.Submitted[name] = values[0]
+	}
+	if id := r.PostFormValue("id"); id != "" {
+		for i := range channels {
+			if channels[i].ID == id {
+				view.Editing = &channels[i]
+				view.Adding = false
+				break
+			}
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+	s.render(w, r, "settings.html", "Settings", "settings", view)
+}
+
+// channelConfigFields is what a kind is configured with, in the order the
+// form asks for it.
+func channelConfigFields(kind string) []string {
+	switch notify.Kind(kind) {
+	case notify.KindSMTP:
+		return []string{"host", "port", "from", "to", "username"}
+	case notify.KindNtfy:
+		return []string{"server", "topic"}
+	case notify.KindTelegram:
+		return []string{"chat_id"}
+	case notify.KindWebhook:
+		return []string{"url"}
+	}
+	return nil
+}
+
+// channelSecretFields is what a kind is configured with that must never be
+// rendered back into a page.
+func channelSecretFields(kind string) []string {
+	switch notify.Kind(kind) {
+	case notify.KindSMTP:
+		return []string{"password"}
+	case notify.KindNtfy:
+		return []string{"token"}
+	case notify.KindTelegram:
+		return []string{"token"}
+	case notify.KindWebhook:
+		return []string{"token"}
+	}
+	return nil
 }
 
 // keepDays is the retention shown in the form, with the default spelt out

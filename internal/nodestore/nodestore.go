@@ -31,11 +31,13 @@ var (
 	bucketRestores     = []byte("restores")
 	bucketSecrets      = []byte("secrets")
 	bucketSettings     = []byte("settings")
+	bucketChannels     = []byte("channels")
 )
 
 var allBuckets = [][]byte{
 	bucketDestinations, bucketRepositories, bucketPolicies, bucketAccounts,
 	bucketJobs, bucketRestores, bucketSecrets, bucketSettings,
+	bucketChannels,
 }
 
 // Store is the on-disk state file.

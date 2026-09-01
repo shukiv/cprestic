@@ -45,6 +45,101 @@
   </div>
 </div>
 
+{{/* Nobody reads a page for a server that is working, which is exactly when
+     it stops. This is how the server speaks first. */}}
+<div class="cpr-card">
+  <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
+    <div>
+      <h2 style="margin:0">Where problems are reported</h2>
+      <p class="cpr-hint" style="margin:var(--s1) 0 0">A backup that fails quietly is the same
+      as no backup at all.</p>
+    </div>
+    <a class="cpr-btn cpr-primary" href="?p=settings&amp;addchannel=1"
+       data-dialog="add-channel">Add a channel</a>
+  </div>
+  {{if $data.Channels}}
+  <div class="cpr-tablewrap"><table>
+    <thead><tr><th>Channel</th><th>Sends</th><th>Last sent</th><th class="cpr-right">&nbsp;</th></tr></thead>
+    <tbody>
+      {{range $data.Channels}}
+      <tr>
+        <td>
+          <span class="cpr-acct">{{.Name}}</span>
+          <div class="cpr-sublabel">{{kindTitle .Kind}}{{with channelWhere .}} — <span class="cpr-mono">{{.}}</span>{{end}}</div>
+        </td>
+        <td>
+          {{if .Events}}
+            {{range $i, $e := .Events}}{{if $i}}<br>{{end}}{{eventTitle $e}}{{end}}
+          {{else}}
+            Anything that has gone wrong
+            <div class="cpr-sublabel">Failures, overdue accounts, stuck runs, unreachable destinations.</div>
+          {{end}}
+        </td>
+        <td>
+          {{if not .Enabled}}<span class="cpr-pill">Off</span>
+          {{else if .LastError}}<span class="cpr-pill cpr-bad">Not working</span>
+            <div class="cpr-sublabel">{{.LastError}}</div>
+          {{else if .LastSent}}{{stamp .LastSent}}<div class="cpr-sublabel">{{ago .LastSent}}</div>
+          {{else}}<span class="cpr-hint">Nothing sent yet</span>{{end}}
+        </td>
+        <td class="cpr-right"><div class="cpr-actions">
+          <form method="post" action="?p=settings/channels/test" class="cpr-inline">
+            <input type="hidden" name="csrf" value="{{$.CSRF}}">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <button class="cpr-btn">Send a test</button>
+          </form>
+          <a class="cpr-btn" href="?p=settings&amp;channel={{.ID}}"
+             data-dialog="add-channel" data-dialog-fetch
+             data-dialog-title="Edit &ldquo;{{.Name}}&rdquo;">Edit</a>
+          <form method="post" action="?p=settings/channels/delete" class="cpr-inline"
+                data-confirm="Remove this channel? Nothing will be sent there.">
+            <input type="hidden" name="csrf" value="{{$.CSRF}}">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <button class="cpr-btn cpr-danger">Remove</button>
+          </form>
+        </div></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table></div>
+  {{else}}
+  <div class="cpr-empty">
+    <p><b>Nothing is being told.</b><br>If a backup fails tonight, this page is the only place
+    it will say so.</p>
+    <a class="cpr-btn cpr-primary" href="?p=settings&amp;addchannel=1"
+       data-dialog="add-channel">Add a channel</a>
+  </div>
+  {{end}}
+</div>
+
+{{if $data.Editing}}
+<div class="cpr-card">
+  <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
+    <h2 style="margin:0">Edit &ldquo;{{$data.Editing.Name}}&rdquo;</h2>
+    <a class="cpr-btn cpr-quiet" href="?p=settings">Cancel</a>
+  </div>
+  <div class="cpr-pad" data-drawer-content>{{template "channelform" .}}</div>
+</div>
+{{else if $data.Adding}}
+<div class="cpr-card">
+  <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
+    <h2 style="margin:0">Add a channel</h2>
+    <a class="cpr-btn cpr-quiet" href="?p=settings">Cancel</a>
+  </div>
+  <div class="cpr-pad" data-drawer-content>{{template "channelform" .}}</div>
+</div>
+{{else}}
+<dialog id="add-channel" class="cpr-sheet" aria-label="Add a channel">
+  <div class="cpr-sheet-head">
+    <h2 style="margin:0" data-drawer-title>Add a channel</h2>
+    <button type="button" class="cpr-btn cpr-quiet" data-dialog-close aria-label="Close">&#10005;</button>
+  </div>
+  <div class="cpr-sheet-body" data-drawer-body>
+    {{template "channelform" .}}
+  </div>
+</dialog>
+{{end}}
+
 <div class="cpr-card">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Staging</h2></div>
   <div class="cpr-pad">
@@ -172,4 +267,156 @@
   </div>
   {{end}}
 </div>
+{{end}}
+
+{{define "channelform"}}
+{{$data := .Data}}
+{{$editing := $data.Editing}}
+{{with $data.FormError}}
+<div class="cpr-banner cpr-bad" style="margin-bottom:var(--s4)"><div class="cpr-body">{{.}}</div></div>
+{{end}}
+<form method="post" action="?p=settings/channels/save">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  {{with $editing}}<input type="hidden" name="id" value="{{.ID}}">{{end}}
+  <div class="cpr-grid2">
+    <div>
+      <label for="channel_name">Name</label>
+      <input type="text" id="channel_name" name="name" required
+             placeholder="On call, Ops channel, &hellip;" value="{{$data.Field "name"}}">
+      <small class="cpr-help">Yours, so you can tell two of them apart.</small>
+    </div>
+    <div>
+      <label for="kind">How to reach you</label>
+      {{if $editing}}
+      <input type="text" value="{{kindTitle $editing.Kind}}" disabled>
+      <input type="hidden" name="kind" value="{{$editing.Kind}}">
+      <small class="cpr-help">A channel's type cannot change. Remove it and add a new one instead.</small>
+      {{else}}
+      <select id="kind" name="kind" data-type-toggle>
+        {{range $data.Kinds}}
+        <option value="{{.}}" {{if eq (printf "%s" .) $data.Kind}}selected{{end}}>{{.Title}}</option>
+        {{end}}
+      </select>
+      {{end}}
+    </div>
+  </div>
+
+  <div data-for-type="smtp" {{if ne $data.Kind "smtp"}}hidden{{end}}>
+    <div class="cpr-grid2" style="margin-top:var(--s4)">
+      <div>
+        <label for="host">Mail server</label>
+        <input type="text" id="host" name="host" placeholder="smtp.example.com" value="{{$data.Field "host"}}">
+      </div>
+      <div>
+        <label for="port">Port</label>
+        <input type="text" id="port" name="port" placeholder="587" value="{{$data.Field "port"}}">
+        <small class="cpr-help">587 for STARTTLS, 465 for TLS, 25 for a local relay.</small>
+      </div>
+      <div>
+        <label for="from">From</label>
+        <input type="text" id="from" name="from" placeholder="cprest@example.com" value="{{$data.Field "from"}}">
+      </div>
+      <div>
+        <label for="to">To</label>
+        <input type="text" id="to" name="to" placeholder="ops@example.com" value="{{$data.Field "to"}}">
+        <small class="cpr-help">Several addresses, separated by commas, if more than one person
+        should know.</small>
+      </div>
+      <div>
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="off" value="{{$data.Field "username"}}">
+        <small class="cpr-help">Leave both blank for a relay that does not ask.</small>
+      </div>
+      <div>
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="new-password">
+        {{if $editing}}<small class="cpr-help">Blank leaves the stored one alone.</small>
+        {{else}}<small class="cpr-help">Sent only over an encrypted connection; cprest will not
+        hand it to a server that refuses one.</small>{{end}}
+      </div>
+    </div>
+  </div>
+
+  <div data-for-type="ntfy" {{if ne $data.Kind "ntfy"}}hidden{{end}}>
+    <div class="cpr-grid2" style="margin-top:var(--s4)">
+      <div>
+        <label for="topic">Topic</label>
+        <input type="text" id="topic" name="topic" placeholder="my-server-backups" value="{{$data.Field "topic"}}">
+        <small class="cpr-help">Anyone who knows a topic on the public server can read it.
+        Choose one nobody would guess.</small>
+      </div>
+      <div>
+        <label for="server">Server</label>
+        <input type="text" id="server" name="server" placeholder="https://ntfy.sh" value="{{$data.Field "server"}}">
+        <small class="cpr-help">Blank uses ntfy.sh. Put your own here if you run one.</small>
+      </div>
+      <div>
+        <label for="ntfy_token">Access token</label>
+        <input type="password" id="ntfy_token" name="token" autocomplete="new-password">
+        <small class="cpr-help">{{if $editing}}Blank leaves the stored one alone. {{end}}Only for
+        a topic that is protected.</small>
+      </div>
+    </div>
+  </div>
+
+  <div data-for-type="telegram" {{if ne $data.Kind "telegram"}}hidden{{end}}>
+    <div class="cpr-grid2" style="margin-top:var(--s4)">
+      <div>
+        <label for="telegram_token">Bot token</label>
+        <input type="password" id="telegram_token" name="token" autocomplete="new-password">
+        <small class="cpr-help">{{if $editing}}Blank leaves the stored one alone. {{end}}From
+        BotFather, in the form <span class="cpr-mono">123456:ABC-DEF&hellip;</span></small>
+      </div>
+      <div>
+        <label for="chat_id">Chat</label>
+        <input type="text" id="chat_id" name="chat_id" placeholder="-1001234567890" value="{{$data.Field "chat_id"}}">
+        <small class="cpr-help">The chat the bot should write in. Message the bot once first,
+        or it cannot start the conversation.</small>
+      </div>
+    </div>
+  </div>
+
+  <div data-for-type="webhook" {{if ne $data.Kind "webhook"}}hidden{{end}}>
+    <div class="cpr-grid2" style="margin-top:var(--s4)">
+      <div>
+        <label for="url">URL</label>
+        <input type="text" id="url" name="url" placeholder="https://hooks.slack.com/services/&hellip;" value="{{$data.Field "url"}}">
+        <small class="cpr-help">A Slack or Discord incoming webhook works as it is; anything
+        else receives the same JSON.</small>
+      </div>
+      <div>
+        <label for="webhook_token">Bearer token</label>
+        <input type="password" id="webhook_token" name="token" autocomplete="new-password">
+        <small class="cpr-help">{{if $editing}}Blank leaves the stored one alone. {{end}}Sent as
+        an Authorization header, for an endpoint that wants one.</small>
+      </div>
+    </div>
+  </div>
+
+  <fieldset style="margin-top:var(--s5)">
+    <legend>What to send here</legend>
+    <p class="cpr-hint" style="margin:0 0 var(--s3)">Tick nothing and this channel gets
+    everything that has gone wrong — a failed backup, an account that has stopped being backed
+    up, a run that has hung, a destination that cannot be reached. That is what most people
+    want.</p>
+    <div class="cpr-checks">
+      {{range $data.Events}}
+      <label class="cpr-check">
+        <input type="checkbox" name="event_{{.}}" value="1" {{if $data.Wants .}}checked{{end}}>
+        <span>{{.Title}}</span>
+      </label>
+      {{end}}
+    </div>
+  </fieldset>
+
+  <label class="cpr-check" style="margin-top:var(--s4)">
+    <input type="checkbox" name="enabled" value="1" {{if $data.Enabled}}checked{{end}}>
+    <span>Send to this channel</span>
+  </label>
+
+  <div class="cpr-row" style="margin-top:var(--s4)">
+    <button class="cpr-btn cpr-primary" type="submit">Save</button>
+    <a class="cpr-btn cpr-quiet" href="?p=settings">Cancel</a>
+  </div>
+</form>
 {{end}}

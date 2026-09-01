@@ -192,7 +192,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
         <input type="text" value="{{$editing.Type}}" disabled>
         <small class="cpr-help">A destination's type cannot change. Remove it and add a new one instead.</small>
         {{else}}
-        <select id="type" name="type" data-destination-type>
+        <select id="type" name="type" data-type-toggle>
           <option value="rest">Backup server (restic REST)</option>
           <option value="sftp">Another Linux server (SFTP)</option>
           <option value="s3">S3 or S3-compatible</option>

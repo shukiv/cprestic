@@ -9,6 +9,10 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/shuki/cprest/internal/human"
+	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shuki/cprest/internal/notify"
 )
 
 // page is the data every template receives.
@@ -114,6 +118,28 @@ func (s *Server) renderUser(w http.ResponseWriter, r *http.Request, name string,
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
 		"bytes": humanBytes,
+		// kindTitle and eventTitle name a stored channel's kind and
+		// events the way the operator chose them, rather than showing
+		// the identifiers they are stored as.
+		"kindTitle":  func(kind string) string { return notify.Kind(kind).Title() },
+		"eventTitle": func(event string) string { return notify.Event(event).Title() },
+		// channelWhere is the one detail that tells two channels of the
+		// same kind apart, without ever showing a credential.
+		"channelWhere": func(channel nodestore.Channel) string {
+			switch notify.Kind(channel.Kind) {
+			case notify.KindSMTP:
+				return channel.Config["to"]
+			case notify.KindNtfy:
+				return channel.Config["topic"]
+			case notify.KindTelegram:
+				return channel.Config["chat_id"]
+			case notify.KindWebhook:
+				if parsed, err := url.Parse(channel.Config["url"]); err == nil && parsed.Host != "" {
+					return parsed.Host
+				}
+			}
+			return ""
+		},
 		// barwidth is the CSS for a progress bar's filled part. It is
 		// built here rather than interpolated in the template so the
 		// value is a number this program produced, not markup.
@@ -187,18 +213,7 @@ func templateFuncs() template.FuncMap {
 	}
 }
 
-func humanBytes(value uint64) string {
-	const unit = 1024
-	if value < unit {
-		return fmt.Sprintf("%d B", value)
-	}
-	size, exponent := float64(value), 0
-	for size >= unit && exponent < 4 {
-		size /= unit
-		exponent++
-	}
-	return fmt.Sprintf("%.1f %ciB", size, "KMGT"[exponent-1])
-}
+func humanBytes(value uint64) string { return human.Bytes(value) }
 
 func humanAgo(t *time.Time) string {
 	if t == nil || t.IsZero() {

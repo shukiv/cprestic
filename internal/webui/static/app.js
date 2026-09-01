@@ -157,7 +157,7 @@
   }
 
   // Show the fields that belong to the chosen destination type.
-  var typeSelect = document.querySelector("[data-destination-type]");
+  var typeSelect = document.querySelector("[data-type-toggle]");
   if (typeSelect) {
     var syncType = function () {
       Array.prototype.forEach.call(document.querySelectorAll("[data-for-type]"), function (block) {

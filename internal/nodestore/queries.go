@@ -309,6 +309,46 @@ func (s *Store) SetPolicyLastRun(id string, at time.Time) error {
 	return s.put(bucketPolicies, id, policy)
 }
 
+// --- notification channels ---
+
+// PutChannel stores somewhere to send notifications.
+func (s *Store) PutChannel(channel Channel) (Channel, error) {
+	if channel.ID == "" {
+		channel.ID = NewID()
+		channel.CreatedAt = time.Now().UTC()
+	}
+	return channel, s.put(bucketChannels, channel.ID, channel)
+}
+
+// Channel reads one back.
+func (s *Store) Channel(id string) (Channel, error) {
+	var channel Channel
+	return channel, s.get(bucketChannels, id, &channel)
+}
+
+// Channels lists them, oldest first, so the order does not move about.
+func (s *Store) Channels() ([]Channel, error) {
+	var channels []Channel
+	err := s.forEach(bucketChannels, func(_ string, raw []byte) error {
+		var channel Channel
+		if err := json.Unmarshal(raw, &channel); err != nil {
+			return err
+		}
+		channels = append(channels, channel)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(channels, func(i, j int) bool {
+		return channels[i].CreatedAt.Before(channels[j].CreatedAt)
+	})
+	return channels, nil
+}
+
+// DeleteChannel removes one.
+func (s *Store) DeleteChannel(id string) error { return s.delete(bucketChannels, id) }
+
 // --- jobs ---
 
 // PutJob stores a job.

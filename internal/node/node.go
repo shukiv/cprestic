@@ -25,6 +25,7 @@ import (
 	"github.com/shuki/cprest/internal/destination"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shuki/cprest/internal/notify"
 	"github.com/shuki/cprest/internal/protocol"
 	"github.com/shuki/cprest/internal/resticrun"
 	"github.com/shuki/cprest/internal/staging"
@@ -43,8 +44,16 @@ type Engine struct {
 	// job's percentage is written.
 	progressMu   sync.Mutex
 	lastProgress map[string]progressMark
-	staging      *staging.Manager
-	log          *slog.Logger
+
+	// alertedMu guards alerted, which remembers what has already been
+	// said so a server that is down for a week does not send a week of
+	// identical messages.
+	alertedMu sync.Mutex
+	alerted   map[string]bool
+	lastWatch time.Time
+	lastProbe time.Time
+	staging   *staging.Manager
+	log       *slog.Logger
 
 	settings nodestore.Settings
 }
@@ -332,6 +341,32 @@ func (e *Engine) openSecret(id string) ([]byte, error) {
 	return e.vault.Open(secret.Ciphertext)
 }
 
+// notifyDestination reports a destination that could not be reached, and
+// says so only when the state changes: a nightly check against a server
+// that is down for a week should not be a week of identical messages.
+func (e *Engine) notifyDestination(ctx context.Context, dest nodestore.Destination, reachErr error) {
+	wasDown := dest.LastCheckError != ""
+	if reachErr == nil {
+		if wasDown {
+			e.Notify(ctx, notify.Message{
+				Event:   notify.EventDestinationDown,
+				Level:   notify.SeverityInfo,
+				Subject: fmt.Sprintf("%s can be reached again", dest.Name),
+				Body:    "Backups to it will run as scheduled.",
+			})
+		}
+		return
+	}
+	if wasDown {
+		return
+	}
+	e.Notify(ctx, notify.Message{
+		Event:   notify.EventDestinationDown,
+		Subject: fmt.Sprintf("%s could not be reached", dest.Name),
+		Body:    reachErr.Error() + "\n\nNothing can be backed up there until it answers.",
+	})
+}
+
 // TestDestination checks that a destination is reachable and configured,
 // without touching any repository.
 func (e *Engine) TestDestination(ctx context.Context, destinationID string) error {
@@ -351,6 +386,10 @@ func (e *Engine) TestDestination(ctx context.Context, destinationID string) erro
 	checkCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	checkErr := built.Preflight(checkCtx)
+
+	// Read before it is overwritten: whether this is news depends on what
+	// the destination was doing last time.
+	e.notifyDestination(ctx, dest, checkErr)
 
 	now := time.Now().UTC()
 	dest.LastCheckedAt = &now

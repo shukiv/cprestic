@@ -319,6 +319,12 @@
   padding:var(--s3); border-radius:var(--r); border:1px solid var(--line-strong);
   background:var(--surface-2); color:var(--ink); min-height:5rem; line-height:1.6;
 }
+/* Event choices: several short lines that read as one list rather than a
+   column of stacked rows. */
+.cprest .cpr-checks { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:0 var(--s5); }
+.cprest .cpr-checks label.cpr-check { margin:var(--s2) 0; }
+.cprest fieldset { border:1px solid var(--line); border-radius:var(--r); padding:var(--s4); margin:0; }
+.cprest legend { font-size:13px; font-weight:600; padding:0 var(--s2); color:var(--muted); }
 .cprest label.cpr-check { display:flex; gap:var(--s2); align-items:flex-start; font-size:14px; margin:var(--s3) 0; font-weight:400; }
 .cprest label.cpr-check input { margin-top:4px; flex:none; }
 .cprest .cpr-muted { color:var(--muted); }
