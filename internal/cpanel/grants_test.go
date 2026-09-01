@@ -24,6 +24,7 @@ case "$last" in
   *"SHOW GRANTS FOR "*)
     printf 'GRANT USAGE ON *.* TO ` + "`cprtest1_app`@`localhost`" + `\n'
     printf 'GRANT ALL PRIVILEGES ON ` + "`cprtest1\\\\_proof`.* TO `cprtest1_app`@`localhost`" + `\n'
+    printf 'GRANT SELECT ON ` + "`cprtest1\\\\_proof`.* TO `cprtest1_app`@`localhost` WITH GRANT OPTION" + `\n'
     ;;
 esac
 `
@@ -88,6 +89,13 @@ func TestTheGrantsFileIsTheOneRestorepkgReads(t *testing.T) {
 	}
 	if !strings.Contains(written, "`cprtest1\\_proof`") {
 		t.Errorf("the database name lost the escape MySQL needs:\n%s", written)
+	}
+	// A grant an operator made by hand can carry a trailing clause, and
+	// the quoting has to leave it alone: one malformed line in the middle
+	// of the file restorepkg reads is a half-restored account.
+	const withOption = "TO 'cprtest1_app'@'localhost' WITH GRANT OPTION"
+	if !strings.Contains(written, withOption) {
+		t.Errorf("a grant with a trailing clause was mangled:\n%s", written)
 	}
 
 	// The authentication file travels with it: "IDENTIFIED BY PASSWORD"

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -485,6 +486,15 @@ func (r *Real) databaseUserAccounts(ctx context.Context, name string) ([]databas
 	return accounts, nil
 }
 
+// grantee matches the "TO `user`@`host`" clause of a grant.
+var grantee = regexp.MustCompile("TO `((?:[^`]|``)*)`@`((?:[^`]|``)*)`")
+
+// quoteGrantee rewrites a grant's TO clause the way cPanel writes it,
+// leaving the rest of the statement alone.
+func quoteGrantee(row string) string {
+	return grantee.ReplaceAllString(row, "TO '$1'@'$2'")
+}
+
 // grantsFor reads a user's privileges, leaving out the USAGE line that
 // carries no privilege of its own -- that one is written separately,
 // because it is where the password goes.
@@ -503,13 +513,15 @@ func (r *Real) grantsFor(ctx context.Context, who string) ([]string, error) {
 		if row == "" || strings.HasPrefix(row, "GRANT USAGE ON *.* TO") {
 			continue
 		}
-		// cPanel's own file quotes the account with single quotes.
-		row = strings.ReplaceAll(row, "TO `", "TO '")
-		row = strings.ReplaceAll(row, "`@`", "'@'")
-		if strings.HasSuffix(row, "`") {
-			row = strings.TrimSuffix(row, "`") + "'"
-		}
-		grants = append(grants, strings.TrimSuffix(row, ";"))
+		// cPanel's own file quotes the account with single quotes. Only
+		// the TO clause is rewritten: the database name before it stays
+		// backtick-quoted, and anything after it -- WITH GRANT OPTION,
+		// which an operator can have granted by hand -- has to survive
+		// intact. Three string swaps got this wrong: they turned
+		// "TO `u`@`h` WITH GRANT OPTION" into a line with one quote
+		// missing, which is a malformed statement in the middle of the
+		// file restorepkg reads.
+		grants = append(grants, strings.TrimSuffix(quoteGrantee(row), ";"))
 	}
 	return grants, nil
 }
