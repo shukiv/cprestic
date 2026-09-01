@@ -2,22 +2,30 @@
 <!--
   cP:Restic, as a square icon.
 
-  WHM and cPanel both draw a plugin's icon in a 48x48 box, and the full
-  lockup does not survive it: "Backup" under the mark would be six pixels
-  tall. This is the monogram alone, which is what a favicon-sized mark can
-  actually say.
+  Drawn from the artwork in claude-share/cprestic_logo.svg, re-authored so
+  it survives being an <img>: WHM draws this from addon_plugins/cprest.svg
+  in a 48x48 box, on a machine that has none of our fonts.
 
-  The cP is #CF470C, cPanel's orange, exactly as in the wordmark. The
-  rest is the interface's own ink rather than pure black, so the two
-  marks look like one family.
+  Two things make it font-independent. textLength pins each line to an
+  exact width whatever face the browser falls back to, so the mark never
+  overflows the box or shrinks to a stripe down the middle of it. And the
+  ink colour is set from a media query rather than left to inherit,
+  because an <img> inherits nothing from the page around it and WHM has a
+  dark theme.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300"
      role="img" aria-label="cP:Restic">
-  <title>cP:Restic</title>
-  <rect width="48" height="48" rx="9" fill="#FFFFFF"/>
-  <text x="24" y="24" text-anchor="middle" dominant-baseline="central"
-        font-family="Inter, 'Fira Sans', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
-        font-weight="700" font-size="19" letter-spacing="-0.5">
-    <tspan fill="#CF470C">cP</tspan><tspan fill="#141A22">:R</tspan>
-  </text>
+  <style>
+    .cpr-ink { fill:#141A22; }
+    .cpr-cp  { fill:#CF470C; }
+    text {
+      font-family:"Fira Sans","Inter","Helvetica Neue",Helvetica,Arial,sans-serif;
+      font-weight:700; text-anchor:middle;
+    }
+    @media (prefers-color-scheme: dark) {
+      .cpr-ink { fill:#E8EDF2; }
+    }
+  </style>
+  <text class="cpr-ink" x="150" y="148" font-size="118" textLength="266" lengthAdjust="spacingAndGlyphs"><tspan class="cpr-cp">cP</tspan>:R</text>
+  <text class="cpr-ink" x="150" y="222" font-size="70" textLength="252" lengthAdjust="spacingAndGlyphs">Backup</text>
 </svg>

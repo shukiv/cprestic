@@ -55,6 +55,13 @@ func peerAccount(conn net.Conn) (string, error) {
 	if !isCPanelAccount(account.Username) {
 		return "", fmt.Errorf("webui: %q is not a cPanel account", account.Username)
 	}
+	// A suspended account is one the operator has cut off. Its files are
+	// still backed up — that is the point of a backup — but the person
+	// behind it does not get to keep driving this service, and a
+	// suspended account's processes can still be running.
+	if isSuspended(account.Username) {
+		return "", fmt.Errorf("webui: %q is suspended", account.Username)
+	}
 	return account.Username, nil
 }
 
@@ -63,9 +70,46 @@ func peerAccount(conn net.Conn) (string, error) {
 var cpanelUsersDir = "/var/cpanel/users"
 
 func isCPanelAccount(name string) bool {
-	if name == "" || strings.ContainsAny(name, "/.") {
+	if !plainName(name) {
 		return false
 	}
 	info, err := os.Stat(filepath.Join(cpanelUsersDir, name))
 	return err == nil && info.Mode().IsRegular()
+}
+
+// cpanelSuspendedDir is where cPanel marks a suspended account. A variable
+// for the same reason as cpanelUsersDir.
+var cpanelSuspendedDir = "/var/cpanel/suspended"
+
+// isSuspended reports whether cPanel has this account suspended. cPanel
+// records it two ways depending on version and on what suspended it, so
+// both are checked: an account that is suspended by only one of them is
+// still suspended.
+func isSuspended(name string) bool {
+	if !plainName(name) {
+		// Not a name this program will act on either way.
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(cpanelSuspendedDir, name)); err == nil {
+		return true
+	}
+	raw, err := os.ReadFile(filepath.Join(cpanelUsersDir, name))
+	if err != nil {
+		// The account file is what made this a cPanel account a moment
+		// ago. If it cannot be read now, do not assume the account is in
+		// good standing.
+		return true
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.TrimSpace(line) == "SUSPENDED=1" {
+			return true
+		}
+	}
+	return false
+}
+
+// plainName keeps a name that is about to be joined onto a path to
+// something that cannot climb out of it.
+func plainName(name string) bool {
+	return name != "" && !strings.ContainsAny(name, "/.")
 }

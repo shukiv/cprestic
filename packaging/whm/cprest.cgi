@@ -143,7 +143,9 @@ sub stream {
 # chrome prints the fragment inside WHM's own interface.
 sub chrome {
     my ($fragment) = @_;
-    print "Content-type: text/html\r\n\r\n";
+    # No copy of a page that shows a repository password or a private key
+    # should outlive the session that was allowed to see it.
+    print "Content-type: text/html\r\nCache-Control: no-store, max-age=0\r\nPragma: no-cache\r\n\r\n";
     Whostmgr::HTMLInterface::defheader( 'cP:Restic Backups', '', '/cgi/cprest.cgi' );
     print $fragment;
     Whostmgr::HTMLInterface::deffooter();
@@ -151,7 +153,7 @@ sub chrome {
 
 sub deny {
     my ($message) = @_;
-    print "Content-type: text/html\r\nStatus: 403 Forbidden\r\n\r\n";
+    print "Content-type: text/html\r\nStatus: 403 Forbidden\r\nCache-Control: no-store, max-age=0\r\n\r\n";
     print '<div style="font:14px system-ui,sans-serif;padding:2rem"><h1>cprest backups</h1><p>'
       . $message . '</p></div>';
 }

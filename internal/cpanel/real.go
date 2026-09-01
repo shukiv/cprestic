@@ -38,6 +38,15 @@ type Real struct {
 	// EasyApachePath is the tool that writes an EasyApache profile.
 	// Empty means the standard location.
 	EasyApachePath string
+	// SuspendedDir holds one file per suspended account. Empty means the
+	// standard location.
+	SuspendedDir string
+	// DatabasesDir holds cPanel's own record of which databases belong to
+	// which account. Empty means the standard location.
+	DatabasesDir string
+	// DBOwnersPath is the server-wide database-to-owner map. Empty means
+	// the standard location.
+	DBOwnersPath string
 }
 
 var _ Provider = (*Real)(nil)
@@ -109,10 +118,16 @@ func (r *Real) Accounts(_ context.Context) ([]AccountInfo, error) {
 		if err := validateUser(user); err != nil {
 			continue
 		}
-		home := filepath.Join(r.homeRoot(), user)
+		// Where cPanel says this account lives, which is not always
+		// /home/<name>: an account moved to another partition kept its
+		// name and changed its path, and reconstructing the path from
+		// the name dropped it out of every backup without an error.
+		home := r.homeFor(user)
 		if info, err := os.Stat(home); err != nil || !info.IsDir() {
-			// No home directory means no account to back up, as opposed
-			// to an account we merely failed to measure.
+			// Still listed. An account cPanel knows about whose home is
+			// missing is a problem to be shown, not one to be hidden by
+			// leaving it off the page that says what gets backed up.
+			accounts = append(accounts, AccountInfo{User: user, HomeDir: home, Missing: true})
 			continue
 		}
 		accounts = append(accounts, AccountInfo{User: user, HomeDir: home})
@@ -153,14 +168,25 @@ func (r *Real) Account(ctx context.Context, user string) (AccountInfo, error) {
 	return AccountInfo{User: user, HomeDir: home, Databases: databases, SizeBytes: size}, nil
 }
 
-// databases lists the account's MySQL databases by the cPanel convention
-// that they are prefixed with the account name.
+// databases lists the account's MySQL databases.
+//
+// cPanel keeps its own record of which databases belong to which account,
+// and that record is what this reads. The naming convention — everything
+// starting with "<account>_" — is only a fallback, because it is wrong in
+// both directions: a server with database prefixing turned off has
+// databases that carry no account name at all, and an account called
+// "rozin" would otherwise claim "rozingroup_data" from the account called
+// "rozingroup".
 //
 // A failure here is returned rather than swallowed. Backing an account up
 // while quietly omitting its databases would produce a backup that looks
 // fine and restores a site with no content.
 func (r *Real) databases(ctx context.Context, user string) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "mysql", "--batch", "--skip-column-names",
+	if recorded, _, found := r.recordedDatabases(user); found {
+		return recorded, nil
+	}
+
+	cmd := exec.CommandContext(ctx, r.mysql(), "--batch", "--skip-column-names",
 		"-e", "SHOW DATABASES")
 	output, err := cmd.Output()
 	if err != nil {
@@ -180,7 +206,58 @@ func (r *Real) databases(ctx context.Context, user string) ([]string, error) {
 			databases = append(databases, name)
 		}
 	}
-	return databases, nil
+	// The prefix caught them; the server-wide owner map says which of
+	// them are actually this account's.
+	return r.ownedDatabases(user, databases), nil
+}
+
+// databaseUsersByName finds an account's database users by the cPanel
+// naming convention. It is the fallback for a server that has no record.
+func (r *Real) databaseUsersByName(ctx context.Context, account string) ([]string, error) {
+	// account is checked by plainAccountName before this is reached, so
+	// it cannot carry a quote; there is no parameter binding in the
+	// mysql client and this is the whole reason that check exists.
+	list := exec.CommandContext(ctx, r.mysql(), "--batch", "--skip-column-names", "--execute",
+		fmt.Sprintf("SELECT DISTINCT user FROM mysql.user "+
+			"WHERE user = '%s' OR user LIKE '%s\\_%%'", account, account))
+	output, err := list.Output()
+	if err != nil {
+		return nil, fmt.Errorf("cpanel: list database users for %s: %w", account, err)
+	}
+	var users []string
+	for _, line := range strings.Split(string(output), "\n") {
+		if name := strings.TrimSpace(line); name != "" {
+			users = append(users, name)
+		}
+	}
+	return users, nil
+}
+
+// qualifyDatabaseUsers turns bare user names into the quoted user@host
+// forms SHOW CREATE USER and SHOW GRANTS need. One name can have several
+// hosts, and a grant on the wrong one restores an application that cannot
+// connect.
+func (r *Real) qualifyDatabaseUsers(ctx context.Context, names []string) ([]string, error) {
+	var qualified []string
+	for _, name := range names {
+		if !plainDatabaseUser(name) {
+			// Not a name this program will interpolate into a statement.
+			continue
+		}
+		out, err := exec.CommandContext(ctx, r.mysql(), "--batch", "--skip-column-names",
+			"--execute", fmt.Sprintf(
+				"SELECT CONCAT(QUOTE(user), '@', QUOTE(host)) FROM mysql.user WHERE user = '%s'",
+				name)).Output()
+		if err != nil {
+			return nil, fmt.Errorf("cpanel: look up database user %s: %w", name, err)
+		}
+		for _, row := range strings.Split(string(out), "\n") {
+			if row = strings.TrimSpace(row); row != "" {
+				qualified = append(qualified, row)
+			}
+		}
+	}
+	return qualified, nil
 }
 
 // Stage runs pkgacct and, in split mode, dumps each database separately.
@@ -247,21 +324,26 @@ func (r *Real) dumpDatabaseUsers(ctx context.Context, req StageRequest, dir stri
 		return fmt.Errorf("cpanel: %q is not a cPanel account name", account)
 	}
 
-	// cPanel prefixes an account's database users with the account name.
-	// The account itself is also a database user on most servers.
-	list := exec.CommandContext(ctx, r.mysql(), "--batch", "--skip-column-names", "--execute",
-		fmt.Sprintf(
-			"SELECT CONCAT(QUOTE(user), '@', QUOTE(host)) FROM mysql.user "+
-				"WHERE user = '%s' OR user LIKE '%s\\_%%'", account, account))
-	users, err := list.Output()
+	// Which database users are this account's is a question cPanel has
+	// already answered, in the same record that says which databases are.
+	// The name convention is the fallback, and it is wrong in the same
+	// two directions: it misses a user that carries no prefix, and it
+	// claims one belonging to an account whose name starts with this one.
+	named, recorded := r.recordedDatabaseUsers(account)
+	if !recorded {
+		var err error
+		if named, err = r.databaseUsersByName(ctx, account); err != nil {
+			return err
+		}
+	}
+	users, err := r.qualifyDatabaseUsers(ctx, named)
 	if err != nil {
-		return fmt.Errorf("cpanel: list database users for %s: %w", account, err)
+		return err
 	}
 
 	var script strings.Builder
 	script.WriteString("-- Database users and grants for " + account + "\n")
-	for _, line := range strings.Split(string(users), "\n") {
-		user := strings.TrimSpace(line)
+	for _, user := range users {
 		if user == "" {
 			continue
 		}
@@ -304,6 +386,12 @@ func plainAccountName(name string) bool {
 	}
 	return true
 }
+
+// plainDatabaseUser holds a database user name to the same shape. It is
+// separate from plainAccountName because these come from a file cPanel
+// wrote rather than from a directory of account names, and a name from a
+// file is exactly the kind that has never been checked.
+func plainDatabaseUser(name string) bool { return plainAccountName(name) }
 
 func (r *Real) dumpDatabases(ctx context.Context, req StageRequest, payload pkgacct.Payload) error {
 	if len(payload.DumpPaths) == 0 {

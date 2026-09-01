@@ -33,6 +33,12 @@ type flash struct {
 
 // render writes a page, or an error page if the template fails.
 func (s *Server) render(w http.ResponseWriter, r *http.Request, name, title, nav string, data any) {
+	// These pages show repository passwords and private keys. A shared
+	// browser, a back button, or a proxy that keeps a copy would each be
+	// a way for the key to the backups to outlive the session that was
+	// allowed to see it.
+	w.Header().Set("Cache-Control", "no-store, max-age=0")
+	w.Header().Set("Pragma", "no-cache")
 	view := page{
 		Title: title, Nav: nav, CSRF: s.csrfToken,
 		Flash: flashFrom(r), Data: data, Assets: s.assets,
@@ -112,6 +118,8 @@ func flashFrom(r *http.Request) *flash {
 // the operator's pages and its own layout: a customer is not an operator,
 // and none of the operator's navigation means anything to them.
 func (s *Server) renderUser(w http.ResponseWriter, r *http.Request, name string, data any) {
+	w.Header().Set("Cache-Control", "no-store, max-age=0")
+	w.Header().Set("Pragma", "no-cache")
 	s.render(w, r, name, "Backups", "", data)
 }
 

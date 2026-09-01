@@ -61,7 +61,12 @@ func (s *Server) ListenUser(ctx context.Context, socketPath string) error {
 	server := &http.Server{
 		Handler:           s.UserHandler(),
 		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      5 * time.Minute,
+		// A body has to arrive as well as start. Without this a local
+		// process can open connections and dribble a form into them for
+		// as long as it likes, and this service runs as root.
+		ReadTimeout:  60 * time.Second,
+		IdleTimeout:  60 * time.Second,
+		WriteTimeout: 5 * time.Minute,
 		ConnContext: func(ctx context.Context, conn net.Conn) context.Context {
 			account, err := peerAccount(conn)
 			if err != nil {
@@ -325,8 +330,18 @@ func (s *Server) handleUserRestore(w http.ResponseWriter, r *http.Request) {
 		RepositoryID: r.PostFormValue("repository"),
 		SnapshotID:   r.PostFormValue("snapshot"),
 		Kind:         protocol.RestoreItems,
-		ItemKind:     r.PostFormValue("item"),
 	}
+	// What an account may ask for is the list the page offers, checked
+	// here rather than only rendered there. The parts of an account this
+	// list leaves out are the ones nobody may pull out of a backup on
+	// their own: the settings archive carries shadow, digestshadow and
+	// cPanel's own metadata for the account.
+	asked := granular.Kind(r.PostFormValue("item"))
+	if !isUserKind(asked) {
+		s.redirect(w, r, "/", "error", "That is not something you can restore here.")
+		return
+	}
+	restore.ItemKind = string(asked)
 	for _, name := range r.PostForm["name"] {
 		if trimmed := name; trimmed != "" {
 			restore.ItemNames = append(restore.ItemNames, trimmed)
@@ -342,6 +357,17 @@ func (s *Server) handleUserRestore(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUserDownload hands over a restore this account asked for.
+// isUserKind reports whether a customer may ask for this part of their
+// own account.
+func isUserKind(kind granular.Kind) bool {
+	for _, offered := range userKinds {
+		if offered == kind {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) handleUserDownload(w http.ResponseWriter, r *http.Request) {
 	restore, err := s.engine.Store().Restore(r.URL.Query().Get("id"))
 	if err != nil {

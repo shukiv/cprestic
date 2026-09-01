@@ -300,8 +300,20 @@ func (s *Server) Listen(ctx context.Context, socketPath string) error {
 
 // guard rejects a mutating request that does not carry this process's CSRF
 // token.
+// maxFormBytes is as large as a submitted form is allowed to be.
+//
+// The biggest form this program has is a list of files to restore, which
+// is thousands of paths at worst. A megabyte is far more than that and far
+// less than a local process can use to make the service chew through
+// memory it never gets back.
+const maxFormBytes = 1 << 20
+
 func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// ParseForm reads the whole body, and without this it reads
+		// however much the other end feels like sending, for however
+		// long it feels like taking.
+		r.Body = http.MaxBytesReader(w, r.Body, maxFormBytes)
 		if err := r.ParseForm(); err != nil {
 			s.fail(w, r, http.StatusBadRequest, fmt.Errorf("unreadable form: %w", err))
 			return

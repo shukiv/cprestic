@@ -86,8 +86,10 @@ func TestAccountsSkipsEntriesThatAreNotAccounts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// An account file with no home directory is not an account we can
-	// back up, as opposed to one we merely failed to measure.
+	// An account cPanel knows about whose home directory is not there is
+	// still listed, and marked. Leaving it off the page is how an account
+	// stops being backed up without anybody finding out: nothing fails,
+	// because nothing is attempted.
 	if err := os.WriteFile(filepath.Join(usersDir, "homeless"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -96,8 +98,20 @@ func TestAccountsSkipsEntriesThatAreNotAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Accounts: %v", err)
 	}
-	if len(accounts) != 1 || accounts[0].User != "customer1" {
-		t.Errorf("accounts = %+v, want only customer1", accounts)
+	found := map[string]bool{}
+	for _, account := range accounts {
+		found[account.User] = account.Missing
+	}
+	if len(found) != 2 {
+		t.Fatalf("accounts = %+v, want customer1 and homeless only", accounts)
+	}
+	if missing, listed := found["customer1"]; !listed || missing {
+		t.Errorf("customer1 should be listed and present, got missing=%v listed=%v", missing, listed)
+	}
+	if missing, listed := found["homeless"]; !listed {
+		t.Error("an account with no home directory was hidden rather than reported")
+	} else if !missing {
+		t.Error("an account with no home directory was not marked as such")
 	}
 }
 

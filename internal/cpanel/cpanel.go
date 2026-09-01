@@ -25,6 +25,11 @@ type AccountInfo struct {
 	SizeBytes uint64
 	// PrimaryDomain is shown in listings where it is known.
 	PrimaryDomain string
+	// Missing says cPanel knows about this account but its home directory
+	// is not there. Such an account is still listed, because an account
+	// left off the page is an account nobody notices is not being backed
+	// up; its backup will fail, loudly, which is the point.
+	Missing bool
 }
 
 // StageRequest asks a provider to materialise one account's payload.

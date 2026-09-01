@@ -67,7 +67,11 @@ function cprest_page(string $path): void {
     // A redirect and a download have to reach the browser as themselves.
     foreach (array_slice($head, 1) as $line) {
         $name = strtolower(trim(explode(':', $line, 2)[0] ?? ''));
-        if (in_array($name, ['location', 'content-disposition', 'content-type', 'content-length'], true)) {
+        // cache-control travels too: these pages carry the account's own
+        // backups, and a proxy or a shared browser keeping a copy of one
+        // outlives the session that was allowed to see it.
+        if (in_array($name, ['location', 'content-disposition', 'content-type',
+                             'content-length', 'cache-control', 'pragma'], true)) {
             header($line);
         }
     }
