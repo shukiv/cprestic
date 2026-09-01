@@ -34,6 +34,11 @@ const (
 	// authSuffix names the file cPanel keeps beside the grants, holding
 	// each user's real password hash and authentication plugin.
 	authSuffix = "-auth.json"
+	// RunnableDatabaseUsersFile is the readable copy staged beside the
+	// grants. It is granular.RunnableDatabaseUsersFile spelt out, for
+	// the same reason as StagedDatabaseUsersFile: granular imports this
+	// package.
+	RunnableDatabaseUsersFile = "_users-runnable.sql"
 )
 
 // Request describes a restore of one account.
@@ -314,6 +319,14 @@ func placeDatabaseUsers(root string) error {
 	// cannot authenticate.
 	if err := os.Rename(from+authSuffix, to+authSuffix); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("reassemble: place the database authentication: %w", err)
+	}
+	// The readable copy of the same users is staged for whoever pulls
+	// them out of a backup by hand. It has no business in an archive
+	// handed to restorepkg, which would find a file it does not know in
+	// a directory where it expects one file per database.
+	runnable := filepath.Join(root, DatabaseDir, RunnableDatabaseUsersFile)
+	if err := os.Remove(runnable); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reassemble: %w", err)
 	}
 	return nil
 }

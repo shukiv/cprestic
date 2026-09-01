@@ -50,6 +50,9 @@ type Real struct {
 	// DBOwnersPath is the server-wide database-to-owner map. Empty means
 	// the standard location.
 	DBOwnersPath string
+	// PostgresPaths are where PostgreSQL would be if this server had it.
+	// Empty means the standard locations.
+	PostgresPaths []string
 }
 
 var _ Provider = (*Real)(nil)
@@ -166,10 +169,12 @@ func (r *Real) Account(ctx context.Context, user string) (AccountInfo, error) {
 	}
 	hasPostgreSQL, postgresRecorded := r.recordedPostgreSQL(user)
 	if !postgresRecorded {
-		// Split mode cannot independently dump PostgreSQL. When cPanel's
-		// authoritative map is absent or unreadable, a larger monolithic
-		// backup is safer than silently asserting that PostgreSQL is absent.
-		hasPostgreSQL = true
+		// Split mode cannot dump PostgreSQL itself, so an account that
+		// has it needs cPanel's complete archive. When the map cannot
+		// say, ask the server instead of assuming the worst: assuming it
+		// costs a full copy of the account every night, for ever, and
+		// nothing anywhere says why.
+		hasPostgreSQL = r.postgresInstalled()
 	}
 	size, err := directorySize(home)
 	if err != nil {
@@ -380,13 +385,32 @@ func (r *Real) dumpDatabaseUsers(ctx context.Context, req StageRequest, dir stri
 		}
 	}
 
-	// The file is written the way cPanel writes its own, because
-	// restorepkg is what reads it. A restore proved this: a file of
-	// modern CREATE USER statements is valid SQL, sits in the right
-	// place, and restorepkg ignores every line of it -- the account came
-	// back with its tables and without the user that reads them.
+	// Two files, for two readers.
+	//
+	// The first is written the way cPanel writes its own, because
+	// restorepkg is what reads it, and a restore proved that it reads
+	// nothing else: a file of modern CREATE USER statements is valid
+	// SQL, sits in exactly the right place, and every line of it was
+	// ignored -- the account came back with its tables and without the
+	// user that reads them.
+	//
+	// The second is for a person. cPanel's format uses IDENTIFIED BY
+	// PASSWORD, which MySQL 8 removed, so the file the restore needs is
+	// one nobody can run. An operator or a customer who pulls their
+	// database users out of a backup gets one they can paste into a
+	// client, with the same hashes.
 	var script strings.Builder
 	script.WriteString("-- cPanel mysql backup\n")
+	script.WriteString("--\n-- This is the file cPanel's own restore reads. Its GRANT ... " +
+		"IDENTIFIED BY\n-- PASSWORD syntax was removed in MySQL 8 and will not run there: to " +
+		"recreate\n-- these users by hand, use " + granular.RunnableDatabaseUsersFile + " beside it.\n")
+
+	var runnable strings.Builder
+	runnable.WriteString("-- Database users and grants for " + account + "\n")
+	runnable.WriteString("--\n-- The same users as " + granular.DatabaseUsersFile +
+		", written so they can be run against\n-- a current MySQL. Passwords are carried as " +
+		"their stored hashes, so the users\n-- come back with the passwords they had.\n")
+
 	auth := map[string]map[string]databaseAuth{}
 
 	for _, name := range named {
@@ -413,6 +437,17 @@ func (r *Real) dumpDatabaseUsers(ctx context.Context, req StageRequest, dir stri
 				script.WriteString(grant + ";\n")
 			}
 
+			// The same thing in statements a current MySQL accepts.
+			runnable.WriteString(fmt.Sprintf(
+				"CREATE USER IF NOT EXISTS `%s`@`%s` IDENTIFIED WITH '%s' AS '%s';\n",
+				who.User, who.Host, who.Plugin, who.Hash))
+			for _, grant := range grants {
+				// grantsFor rewrote the account into cPanel's single
+				// quotes; MySQL takes either, and backticks are what it
+				// prints itself.
+				runnable.WriteString(grant + ";\n")
+			}
+
 			if auth[who.User] == nil {
 				auth[who.User] = map[string]databaseAuth{}
 			}
@@ -426,6 +461,10 @@ func (r *Real) dumpDatabaseUsers(ctx context.Context, req StageRequest, dir stri
 	path := filepath.Join(dir, granular.DatabaseUsersFile)
 	if err := os.WriteFile(path, []byte(script.String()), 0o600); err != nil {
 		return fmt.Errorf("cpanel: write database users: %w", err)
+	}
+	runnablePath := filepath.Join(dir, granular.RunnableDatabaseUsersFile)
+	if err := os.WriteFile(runnablePath, []byte(runnable.String()), 0o600); err != nil {
+		return fmt.Errorf("cpanel: write the runnable database users: %w", err)
 	}
 	// cPanel keeps the authentication plugin and the hash beside the
 	// grants, because "IDENTIFIED BY PASSWORD" is not valid on MySQL 8

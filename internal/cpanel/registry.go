@@ -67,6 +67,31 @@ func (r *Real) suspendedDir() string {
 	return "/var/cpanel/suspended"
 }
 
+// postgresPaths are where a cPanel server keeps PostgreSQL if it has it.
+var postgresPaths = []string{
+	"/usr/local/cpanel/3rdparty/bin/psql",
+	"/var/lib/pgsql",
+	"/usr/bin/psql",
+}
+
+// postgresInstalled reports whether this server has PostgreSQL at all.
+//
+// It is the fallback for an account whose database map cannot be read. A
+// server without PostgreSQL has no account with PostgreSQL databases, and
+// assuming otherwise costs a full copy of that account every night.
+func (r *Real) postgresInstalled() bool {
+	paths := postgresPaths
+	if len(r.PostgresPaths) > 0 {
+		paths = r.PostgresPaths
+	}
+	for _, path := range paths {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Real) databasesDir() string {
 	if r.DatabasesDir != "" {
 		return r.DatabasesDir
@@ -155,6 +180,16 @@ func (r *Real) recordedPostgreSQL(name string) (present, recorded bool) {
 	}
 	rawPGSQL, found := sections["PGSQL"]
 	if !found || string(rawPGSQL) == "null" {
+		// A map that answers about MySQL is a map cPanel wrote and keeps
+		// current, and cPanel writes a PGSQL section when the account
+		// has PostgreSQL databases. Its absence from such a map is an
+		// answer -- "none" -- not a gap. Reading it as a gap made every
+		// account on a server with no PostgreSQL fall back to the
+		// single-archive payload, which stores a full copy of every
+		// account every night.
+		if _, answered := sections["MYSQL"]; answered {
+			return false, true
+		}
 		return false, false
 	}
 	var pgsql map[string]json.RawMessage

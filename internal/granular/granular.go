@@ -266,13 +266,26 @@ func buildDatabase(parts reassemble.Parts, req Request) (Plan, error) {
 // snapshot's paths do not change when an account gains or loses one.
 const DatabaseUsersFile = "_users.sql"
 
+// RunnableDatabaseUsersFile holds the same users written so a person can
+// run them.
+//
+// DatabaseUsersFile is cPanel's format because cPanel's restore is what
+// reads it, and that format uses GRANT ... IDENTIFIED BY PASSWORD, which
+// MySQL 8 removed. Handing somebody who asked for their database users a
+// file their database will not accept is not giving them their database
+// users.
+const RunnableDatabaseUsersFile = "_users-runnable.sql"
+
 func buildDatabaseUsers(parts reassemble.Parts) (Plan, error) {
 	if parts.Databases == "" {
 		return Plan{}, fmt.Errorf(
 			"granular: this backup holds no databases, so it holds no database users either")
 	}
 	return Plan{
-		Include:     []string{path.Join(parts.Databases, DatabaseUsersFile)},
+		Include: []string{
+			path.Join(parts.Databases, DatabaseUsersFile),
+			path.Join(parts.Databases, RunnableDatabaseUsersFile),
+		},
 		Description: "the database users and their grants",
 	}, nil
 }

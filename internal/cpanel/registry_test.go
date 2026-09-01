@@ -172,3 +172,61 @@ func TestPostgreSQLIsDetectedInCurrentAndLegacyDatabaseMaps(t *testing.T) {
 		t.Fatalf("empty PGSQL = %v, %v; want false, true", present, recorded)
 	}
 }
+
+// TestAnAccountWithoutPostgreSQLStaysOnTheSplitPayload covers a silent
+// cost regression rather than a failure. Split mode cannot dump
+// PostgreSQL itself, so an account that has it needs cPanel's complete
+// archive -- which stores a full copy of the account every night. Reading
+// "no PGSQL section" as "cannot tell" put every account on a server with
+// no PostgreSQL onto that payload: nothing failed, nothing was logged
+// where anyone would see it, and the nightly cost went up fifteenfold.
+//
+// cPanel writes the section when there is something to write. Its
+// absence from a map that answers about MySQL is an answer.
+func TestAnAccountWithoutPostgreSQLStaysOnTheSplitPayload(t *testing.T) {
+	databasesDir := filepath.Join(t.TempDir(), "databases")
+	if err := os.MkdirAll(databasesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	host := newFakeHost(t, "studio")
+	host.DatabasesDir = databasesDir
+	// Nowhere PostgreSQL could be, so the fallback cannot claim it.
+	host.PostgresPaths = []string{filepath.Join(t.TempDir(), "nothing-here")}
+
+	record := `{"MYSQL":{"owner":"studio","dbs":{"studio_kpeh1":"127.0.0.1"}},"version":1}`
+	if err := os.WriteFile(filepath.Join(databasesDir, "studio.json"),
+		[]byte(record), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	present, recorded := host.recordedPostgreSQL("studio")
+	if !recorded {
+		t.Fatal("a map that answers about MySQL was read as unable to answer about PostgreSQL")
+	}
+	if present {
+		t.Error("PostgreSQL was found in a map that has no PGSQL section")
+	}
+
+	// An account that really does have PostgreSQL still gets the
+	// complete archive.
+	withPG := `{"MYSQL":{"owner":"studio"},"PGSQL":{"owner":"studio",` +
+		`"dbs":{"studio_pg":"127.0.0.1"}},"version":1}`
+	if err := os.WriteFile(filepath.Join(databasesDir, "studio.json"),
+		[]byte(withPG), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if present, recorded := host.recordedPostgreSQL("studio"); !present || !recorded {
+		t.Error("an account with PostgreSQL databases was put on the split payload")
+	}
+
+	// And a map that cannot be read at all falls back to whether this
+	// server has PostgreSQL, rather than to the expensive assumption.
+	if err := os.Remove(filepath.Join(databasesDir, "studio.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, recorded := host.recordedPostgreSQL("studio"); recorded {
+		t.Error("a missing map was treated as an answer")
+	}
+	if host.postgresInstalled() {
+		t.Error("PostgreSQL was reported on a server that has none of it")
+	}
+}

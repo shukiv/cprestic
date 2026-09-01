@@ -138,9 +138,25 @@ func TestDatabaseUsersComeFromBesideTheDumps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := split.Databases + "/" + DatabaseUsersFile
-	if len(plan.Include) != 1 || plan.Include[0] != want {
-		t.Errorf("include = %v, want %q", plan.Include, want)
+	// Both files travel. The first is the one cPanel's restore reads;
+	// the second is the same users written so a person can run them,
+	// because cPanel's format uses syntax MySQL 8 removed and a customer
+	// who asked for their database users should not be handed a file
+	// their database refuses.
+	for _, want := range []string{
+		split.Databases + "/" + DatabaseUsersFile,
+		split.Databases + "/" + RunnableDatabaseUsersFile,
+	} {
+		found := false
+		for _, included := range plan.Include {
+			if included == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("include = %v, want it to carry %q", plan.Include, want)
+		}
 	}
 
 	// A backup with no databases has no users to restore either, and says
@@ -160,5 +176,9 @@ func TestTheStagedUsersFileNameMatchesReassemble(t *testing.T) {
 	if DatabaseUsersFile != reassemble.StagedDatabaseUsersFile {
 		t.Fatalf("granular calls it %q, reassemble looks for %q",
 			DatabaseUsersFile, reassemble.StagedDatabaseUsersFile)
+	}
+	if RunnableDatabaseUsersFile != reassemble.RunnableDatabaseUsersFile {
+		t.Fatalf("granular calls it %q, reassemble takes out %q",
+			RunnableDatabaseUsersFile, reassemble.RunnableDatabaseUsersFile)
 	}
 }

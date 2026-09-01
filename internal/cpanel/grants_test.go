@@ -98,6 +98,29 @@ func TestTheGrantsFileIsTheOneRestorepkgReads(t *testing.T) {
 		t.Errorf("a grant with a trailing clause was mangled:\n%s", written)
 	}
 
+	// And the same users written so a person can run them. cPanel's
+	// format uses GRANT ... IDENTIFIED BY PASSWORD, which MySQL 8
+	// removed: handing somebody who asked for their database users a
+	// file their database refuses is not giving them their database
+	// users.
+	runnableRaw, err := os.ReadFile(filepath.Join(out, "_users-runnable.sql"))
+	if err != nil {
+		t.Fatalf("no runnable copy of the users beside the grants: %v", err)
+	}
+	runnable := string(runnableRaw)
+	const create = "CREATE USER IF NOT EXISTS `cprtest1_app`@`localhost` " +
+		"IDENTIFIED WITH 'mysql_native_password' AS " +
+		"'*E237814D1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';"
+	if !strings.Contains(runnable, create) {
+		t.Errorf("the runnable copy cannot create the user:\n%s", runnable)
+	}
+	if strings.Contains(runnable, "IDENTIFIED BY PASSWORD") {
+		t.Errorf("the runnable copy uses syntax MySQL 8 removed:\n%s", runnable)
+	}
+	if !strings.Contains(runnable, "`cprtest1\\_proof`") {
+		t.Errorf("the runnable copy lost the grants:\n%s", runnable)
+	}
+
 	// The authentication file travels with it: "IDENTIFIED BY PASSWORD"
 	// is not valid on MySQL 8, and this is where cPanel's restore reads
 	// the real hash and plugin from.
