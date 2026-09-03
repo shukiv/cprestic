@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -211,11 +212,20 @@ func lifecycleAccount(raw []byte) string {
 					return candidate
 				}
 			}
-			for key, child := range typed {
-				if key == "data" {
-					continue
+			// Sorted, because Go randomises map iteration and this
+			// answer decides which account a blocking removal hook
+			// evaluates. An envelope with a usable name in more than one
+			// branch would otherwise name a different account from one
+			// run to the next.
+			keys := make([]string, 0, len(typed))
+			for key := range typed {
+				if key != "data" {
+					keys = append(keys, key)
 				}
-				if found := walk(child); found != "" {
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				if found := walk(typed[key]); found != "" {
 					return found
 				}
 			}

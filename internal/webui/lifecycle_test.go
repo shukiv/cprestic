@@ -241,3 +241,27 @@ func TestCoverageAndLifecycleTemplatesParse(t *testing.T) {
 		t.Fatal("blocked account has no removal preparation action")
 	}
 }
+
+// TestLifecycleAccountIsDeterministic covers a nondeterminism that decides
+// which account a blocking removal hook evaluates. Go randomises map
+// iteration, so an envelope carrying a usable name in more than one branch
+// answered differently from one run to the next -- and the hook would then
+// check one account's backup coverage before deleting another.
+func TestLifecycleAccountIsDeterministic(t *testing.T) {
+	raw := []byte(`{"alpha":{"user":"aaccount"},"zeta":{"user":"zaccount"},` +
+		`"context":{"event":"Accounts::Remove"}}`)
+	first := lifecycleAccount(raw)
+	if first == "" {
+		t.Fatal("no account was found in an envelope that names one")
+	}
+	for i := 0; i < 200; i++ {
+		if got := lifecycleAccount(raw); got != first {
+			t.Fatalf("the same envelope named %q and then %q", first, got)
+		}
+	}
+	// data still wins outright, whatever else the envelope carries.
+	withData := []byte(`{"zeta":{"user":"zaccount"},"data":{"user":"realaccount"}}`)
+	if got := lifecycleAccount(withData); got != "realaccount" {
+		t.Fatalf("account = %q, want the one cPanel put in data", got)
+	}
+}
