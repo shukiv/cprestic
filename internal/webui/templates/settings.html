@@ -37,6 +37,26 @@
         <small class="cpr-help">Days. A restore leaves its files here to be collected;
         after this they are swept. −1 keeps them until you delete them.</small>
       </div>
+      <div>
+        <label class="cpr-check">
+          <input type="checkbox" name="protect_account_removal" value="1"
+                 {{if $data.Settings.ProtectAccountRemoval}}checked{{end}}>
+          <span>Block unsafe cPanel account termination
+          <small class="cpr-help">Refuse removal unless every destination promised by a full-account
+          schedule has a recent, successful and complete copy. A partial backup does not count;
+          after first enabling this, let the schedule complete a new backup.</small></span>
+        </label>
+      </div>
+      <div>
+        <label class="cpr-check">
+          <input type="checkbox" name="backup_on_suspension" value="1"
+                 {{if $data.Settings.BackupOnSuspension}}checked{{end}}>
+          <span>Preserve accounts when cPanel suspends them
+          <small class="cpr-help">Immediately queue the smallest set of full-account schedules
+          needed to reach every promised destination. The hook queues work and returns; it does
+          not wait for the backup to finish.</small></span>
+        </label>
+      </div>
     </div>
     <div class="cpr-row" style="margin-top:var(--s4)">
       <button class="cpr-btn cpr-primary" type="submit">Save</button>

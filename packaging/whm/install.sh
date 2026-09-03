@@ -29,7 +29,11 @@ SOURCE_DIR=$(cd "$(dirname "$0")" && pwd)
 [ -f "$SOURCE_DIR/cprest-agent" ] || die "cprest-agent is not next to this script"
 [ -f "$SOURCE_DIR/cprest.cgi" ] || die "cprest.cgi is not next to this script"
 [ -f "$SOURCE_DIR/cpanel/install.json" ] || die "cpanel/install.json is missing from the package"
+[ -f "$SOURCE_DIR/cpanel/uapi/Cprest.pm" ] || die "the cPanel UAPI bridge is missing from the package"
+[ -f "$SOURCE_DIR/cpanel/admin/Cprest/Session.pm" ] || die "the cPanel AdminBin bridge is missing from the package"
 [ -f "$SOURCE_DIR/branding/cprestic-icon.svg" ] || die "the cPanel plugin icon is missing from the package"
+[ -d /var/cpanel/sessions/raw ] || die "cPanel's session store is missing (/var/cpanel/sessions/raw)"
+[ -x /usr/local/cpanel/bin/uapi ] || die "cPanel's uapi command is missing"
 
 # --- where WHM keeps plugin CGIs -------------------------------------------
 # Sources disagree about this path and it has moved between versions, so it
@@ -63,8 +67,42 @@ say "restic: $(restic version 2>/dev/null | head -1)"
 install -d -m 0700 "$CONFIG_DIR" "$STATE_DIR" "$STAGING_DIR" "$CACHE_DIR" "$RUN_DIR"
 install -d -m 0755 "$APPCONFIG_DIR"
 install -m 0755 "$SOURCE_DIR/cprest-agent" "$PREFIX/cprest-agent"
+HOOK_BIN=/usr/local/cpanel/3rdparty/bin/cprest-hook
+install -m 0755 "$SOURCE_DIR/cprest-agent" "$HOOK_BIN"
 install -m 0755 "$SOURCE_DIR/cprest.cgi" "$CGI_DIR/cprest.cgi"
 say "installed $PREFIX/cprest-agent and $CGI_DIR/cprest.cgi"
+
+# LivePHP intentionally does not expose the browser's cpsession cookie. The
+# UAPI module enters cPanel's authenticated engine; its root-owned AdminBin
+# counterpart restores the matching server-side session and exchanges that
+# opaque proof with cprest over the root-only admin socket. An account process
+# calling the module outside a live cPanel session has no session to restore.
+CPANEL_UAPI_DIR=/usr/local/cpanel/Cpanel/API
+CPANEL_ADMIN_DIR=/var/cpanel/perl/Cpanel/Admin/Modules/Cprest
+install -d -o root -g root -m 0755 "$CPANEL_ADMIN_DIR"
+install -o root -g root -m 0644 "$SOURCE_DIR/cpanel/uapi/Cprest.pm" \
+    "$CPANEL_UAPI_DIR/Cprest.pm"
+install -o root -g root -m 0700 "$SOURCE_DIR/cpanel/admin/Cprest/Session.pm" \
+    "$CPANEL_ADMIN_DIR/Session.pm"
+say "installed cPanel UAPI/AdminBin session bridge"
+
+# cPanel account lifecycle integration. Standardized Hooks are the
+# supported registry; do not edit /var/cpanel/hooks/data directly. Remove
+# the old manual post-hook registrations first when upgrading from a release
+# before --describe support, then let the executable register all current
+# descriptors. cPanel requires descriptor registration for a blocking hook.
+MANAGE_HOOKS=/usr/local/cpanel/bin/manage_hooks
+[ -x "$MANAGE_HOOKS" ] || die "cPanel's manage_hooks utility is missing"
+for hook in "Accounts::Create:create" "Accounts::Modify:modify" "Accounts::Remove:remove"; do
+    event=${hook%:*}
+    action=${hook#*:}
+    "$MANAGE_HOOKS" delete script "$HOOK_BIN" --manual \
+        --category Whostmgr --event "$event" --stage post \
+        --action="--cpanel-hook=$action" >/dev/null 2>&1 || true
+done
+"$MANAGE_HOOKS" delete script "$HOOK_BIN" >/dev/null 2>&1 || true
+"$MANAGE_HOOKS" add script "$HOOK_BIN"
+say "registered cPanel account lifecycle hooks"
 
 if [ -f "$SOURCE_DIR/cprest.png" ]; then
     install -m 0644 "$SOURCE_DIR/cprest.png" "$CGI_DIR/cprest.png" || true
@@ -142,21 +180,30 @@ fi
 # Confirm WHM kept what we sent. It accepts a registration with an invalid
 # ACL by discarding the ACL, which leaves a plugin that exists and is
 # invisible — so check rather than trust.
-REGISTERED=$(/usr/local/cpanel/bin/whmapi1 get_appconfig_application_list 2>/dev/null |
-    sed -n '/name: cprest$/,$p; /displayname: cP:Restic Backups/,/name: cprest/p')
-for key in entryurl acls; do
-    if ! printf '%s' "$REGISTERED" | grep -q "$key"; then
-        cat >&2 <<PROBLEM
+CPANEL_PERL=/usr/local/cpanel/3rdparty/bin/perl
+[ -x "$CPANEL_PERL" ] || die "cPanel's bundled perl is missing"
+if ! /usr/local/cpanel/bin/whmapi1 --output=json get_appconfig_application_list 2>/dev/null |
+    "$CPANEL_PERL" -MJSON::PP -e '
+        local $/;
+        my $response = decode_json(<STDIN>);
+        for my $app (@{$response->{data}{whostmgr} || []}) {
+            next unless (($app->{name} || "") eq "cprest");
+            my %acls = map { $_ => 1 } @{$app->{acls} || []};
+            exit((($app->{entryurl} || "") eq "cprest.cgi" && $acls{all}) ? 0 : 2);
+        }
+        exit 3;
+    '
+then
+    cat >&2 <<PROBLEM
 
-warning: WHM registered cprest without "$key".
+warning: WHM did not retain cprest's entry URL and root-level ACL.
 
 The plugin will not appear in the WHM menu. Check the output of:
 
   /usr/local/cpanel/bin/whmapi1 get_appconfig_application_list
 
 PROBLEM
-    fi
-done
+fi
 
 # ---------------------------------------------------------------------------
 # The account-facing plugin.
@@ -192,11 +239,30 @@ if [ -d "$FRONTEND" ]; then
     PLUGIN_META=$(mktemp -d /var/tmp/cprest-cpanel.XXXXXX)
     trap 'if [ -n "${PLUGIN_META:-}" ]; then rm -rf -- "$PLUGIN_META"; fi' 0 1 2 15
     install -m 0644 "$SOURCE_DIR/cpanel/install.json" "$PLUGIN_META/install.json"
-    install -m 0644 "$SOURCE_DIR/branding/cprestic-icon.svg" "$PLUGIN_META/cprest.svg"
+    install -m 0644 "$SOURCE_DIR/branding/cprestic-icon.png" "$PLUGIN_META/cprest.png"
     # Remove the entry written by older releases; if left behind it can
     # override the Feature Manager-aware entry generated below.
-    rm -f "$FRONTEND/dynamicui/dynamicui_cprest.conf"
-    /usr/local/cpanel/scripts/install_plugin "$PLUGIN_META" --theme=jupiter
+    DYNAMICUI="$FRONTEND/dynamicui/dynamicui_cprest.conf"
+    rm -f "$DYNAMICUI"
+    # Jupiter prefers an SVG over a PNG with the same application id. cPanel's
+    # SVG installer rewrites geometry attributes in custom artwork, so remove
+    # the generated SVG left by older releases and register the exact 48px PNG.
+    rm -f "$FRONTEND/assets/application_icons/cprest.svg"
+    # This command creates only public plugin metadata. Keep the restrictive
+    # process-wide umask for service state and credentials, but do not pass it
+    # into cPanel's registration writer.
+    ( umask 022; /usr/local/cpanel/scripts/install_plugin "$PLUGIN_META" --theme=jupiter )
+    [ -f "$DYNAMICUI" ] || die "cPanel did not generate $DYNAMICUI"
+    # install_plugin inherits this script's security-first umask (077), but
+    # Jupiter reads DynamicUI records while building an account's application
+    # list. A root-only record is silently omitted even when Feature Manager
+    # enables cprest for the account. Plugin metadata is public, like every
+    # other record in this directory, so make the generated file readable.
+    chown root:root "$DYNAMICUI"
+    chmod 0644 "$DYNAMICUI"
+    # Permission changes update ctime, while cPanel invalidates its parsed
+    # per-account application cache using this record's mtime.
+    touch "$DYNAMICUI"
     rm -rf -- "$PLUGIN_META"
     PLUGIN_META=
     trap - 0 1 2 15

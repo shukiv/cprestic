@@ -8,6 +8,8 @@ if (!cprest_feature_enabled()) {
     print $cpanel->footer();
     exit;
 }
+ob_start();
 print $cpanel->header('cP:Restic');
 cprest_page('/browse');
 print $cpanel->footer();
+ob_end_flush();

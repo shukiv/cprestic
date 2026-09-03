@@ -10,8 +10,12 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/shuki/cprest/internal/granular"
 	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shuki/cprest/internal/protocol"
+	"github.com/shuki/cprest/internal/resticrun"
 )
 
 func TestFeatureResponseMustExplicitlyAllowTheAccount(t *testing.T) {
@@ -122,5 +126,81 @@ func TestAccountRestoreHistoryDoesNotExposeRootDiagnostics(t *testing.T) {
 	if strings.Contains(restore.Error, "internal.example") || restore.Detail != "" ||
 		restore.ArchivePath != "" || restore.RestoredTo != "" {
 		t.Fatalf("account-visible restore still carries root diagnostics: %+v", restore)
+	}
+}
+
+func TestAccountRecoveryRequestsStayDownloadOnly(t *testing.T) {
+	full, err := userRestoreRequest("studio", "repo", "snapshot", userKindAccount, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if full.Kind != protocol.RestoreAccount || full.Apply || full.ItemKind != "" {
+		t.Fatalf("full account request crossed the safe-download boundary: %+v", full)
+	}
+
+	database, err := userRestoreRequest("studio", "repo", "snapshot",
+		granular.KindDatabase, []string{" studio_wp ", ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if database.Kind != protocol.RestoreItems || database.Apply ||
+		database.ItemKind != string(granular.KindDatabase) ||
+		len(database.ItemNames) != 1 || database.ItemNames[0] != "studio_wp" {
+		t.Fatalf("database request = %+v", database)
+	}
+
+	if _, err := userRestoreRequest("studio", "repo", "snapshot",
+		granular.KindDatabase, nil); !errors.Is(err, errUserRestoreNeedsNames) {
+		t.Fatalf("database without a selection was accepted: %v", err)
+	}
+	if _, err := userRestoreRequest("studio", "repo", "snapshot",
+		granular.KindSettings, nil); err == nil {
+		t.Fatal("raw panel settings were exposed to the account interface")
+	}
+}
+
+func TestAccountRecoveryPagesRenderTheGuidedFlow(t *testing.T) {
+	server, err := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_800_000_000, 0).UTC()
+	request := httptest.NewRequest(http.MethodGet, "/browse", nil)
+	request = request.WithContext(context.WithValue(request.Context(), accountKey{}, "studio"))
+	response := httptest.NewRecorder()
+	server.renderUser(response, request, "user_browse.html", userView{
+		Account: "studio", Kinds: userKinds, Repository: "repo", Snapshot: "abcdef",
+		SnapshotAt: now, Snapshots: []resticrun.Snapshot{{ID: "abcdef", Time: now}},
+	})
+	if response.Code != http.StatusOK {
+		t.Fatalf("render status = %d: %s", response.Code, response.Body.String())
+	}
+	page := response.Body.String()
+	for _, want := range []string{
+		"Restore &amp; download", "Restore point", "Full account", "Home directory",
+		"Cron jobs", "Databases", "Database users", "Domains", "SSL certificates",
+		"Email accounts", "FTP accounts", `aria-label="Use system theme"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("account recovery page is missing %q", want)
+		}
+	}
+}
+
+func TestAccountRedirectUsesTheCPanelLivePHPEntryPoint(t *testing.T) {
+	response := httptest.NewRecorder()
+	redirectUser(response, "/browse?repository=repo&snapshot=abc&item=database",
+		"error", "Choose an item")
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("redirect status = %d", response.Code)
+	}
+	location := response.Header().Get("Location")
+	if !strings.HasPrefix(location, "browse.live.php?") || strings.Contains(location, "p=") {
+		t.Fatalf("account redirect escaped the .live.php route: %q", location)
+	}
+	for _, want := range []string{"repository=repo", "snapshot=abc", "item=database", "kind=error"} {
+		if !strings.Contains(location, want) {
+			t.Errorf("redirect %q is missing %q", location, want)
+		}
 	}
 }

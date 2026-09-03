@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/nodestore"
 	"github.com/shuki/cprest/internal/resticrun"
 )
@@ -46,7 +47,7 @@ func (e *Engine) BackfillIdentities(ctx context.Context) error {
 		if _, err := e.store.Identity(account.User); err == nil {
 			continue
 		}
-		uid, err := accountUID(account.User)
+		uid, err := e.accountUID(account.User)
 		if err != nil {
 			// An account cPanel lists that the system does not know is a
 			// problem for the backup to report, not for this to guess at.
@@ -74,7 +75,7 @@ func (e *Engine) BackfillIdentities(ctx context.Context) error {
 // noteIdentity records which unix account a name means, and reports
 // whether the name has just changed hands.
 func (e *Engine) noteIdentity(account string) (nodestore.AccountIdentity, error) {
-	uid, err := accountUID(account)
+	uid, err := e.accountUID(account)
 	if err != nil {
 		return nodestore.AccountIdentity{}, err
 	}
@@ -97,6 +98,11 @@ func (e *Engine) noteIdentity(account string) (nodestore.AccountIdentity, error)
 				"older_backups_hidden_from_the_account", true)
 		}
 		return e.store.PutIdentity(fresh)
+	case stored.RetiredAt != nil:
+		return e.store.PutIdentity(nodestore.AccountIdentity{
+			Account: account, UID: uid, SinceAt: now, Recycled: true,
+			CreatedAt: stored.CreatedAt,
+		})
 	case stored.UID == uid:
 		stored.SinceAt = orZero(stored.SinceAt, now)
 		return e.store.PutIdentity(stored)
@@ -135,7 +141,7 @@ func (e *Engine) visibleSince(account string) time.Time {
 // recorded, because the record is what the last backup saw and the socket
 // is who is asking now.
 func (e *Engine) OwnedByCaller(account string, callerUID uint32) (since time.Time, err error) {
-	uid, err := accountUID(account)
+	uid, err := e.accountUID(account)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -145,6 +151,301 @@ func (e *Engine) OwnedByCaller(account string, callerUID uint32) (since time.Tim
 			account, uid, callerUID)
 	}
 	return e.visibleSince(account), nil
+}
+
+// ReconcileAccounts applies cPanel account lifecycle changes to the local
+// identity and policy records. All-account policies need no edit: they are
+// deliberately resolved against cPanel at run time. Named policies do need
+// a rename carried across, otherwise a customer can silently fall out of
+// protection when WHM changes their username.
+func (e *Engine) ReconcileAccounts(ctx context.Context) error {
+	return e.reconcileAccounts(ctx, false)
+}
+
+// ReconcileAccountRenames is used only after cPanel reports an account
+// modification. A missing old name with the same uid can then safely be
+// treated as a rename. Ordinary polling and create hooks must not make that
+// inference because Linux may reuse a deleted account's uid.
+func (e *Engine) ReconcileAccountRenames(ctx context.Context) error {
+	return e.reconcileAccounts(ctx, true)
+}
+
+// AccountCreated records a hard ownership boundary reported by cPanel.
+// Unlike polling, the create event is proof that this is a new account even
+// when Linux reused both the former username and its uid.
+func (e *Engine) AccountCreated(account string) error {
+	uid, err := e.accountUID(account)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	identity := nodestore.AccountIdentity{
+		Account: account, UID: uid, SinceAt: now, Recycled: true,
+	}
+	if previous, lookupErr := e.store.Identity(account); lookupErr == nil {
+		identity.CreatedAt = previous.CreatedAt
+	}
+	_, err = e.store.PutIdentity(identity)
+	return err
+}
+
+// QueueInitialBackup gives a newly-created account a baseline immediately
+// instead of leaving it exposed until the next nightly schedule. Only an
+// all-account policy is eligible: an explicitly named policy did not opt in
+// to future customers. When several apply, the one writing the most copies
+// is the safest single job; the ordinary scheduler will run the others.
+func (e *Engine) QueueInitialBackup(account string) (bool, error) {
+	running, err := e.store.RunningJobFor(account)
+	if err != nil || running {
+		return false, err
+	}
+	policies, err := e.store.Policies()
+	if err != nil {
+		return false, err
+	}
+	var selected *nodestore.Policy
+	selectedFull := false
+	for i := range policies {
+		policy := &policies[i]
+		if !policy.Enabled || !policy.AllAccounts() || len(policy.RepositoryIDs) == 0 {
+			continue
+		}
+		full := !policy.SkipHomedir && !policy.SkipDatabases && !policy.SkipEmail
+		if selected == nil || full && !selectedFull ||
+			full == selectedFull && len(policy.RepositoryIDs) > len(selected.RepositoryIDs) {
+			selected = policy
+			selectedFull = full
+		}
+	}
+	if selected == nil {
+		return false, nil
+	}
+	if _, err := e.QueueBackup(selected.ID, account); err != nil {
+		return false, err
+	}
+	e.log.Info("queued initial backup for new cPanel account",
+		"account", account, "policy", selected.Name)
+	return true, nil
+}
+
+// SuspensionBackup describes what the post-suspension lifecycle hook did.
+type SuspensionBackup struct {
+	Enabled  bool
+	Queued   bool
+	Busy     bool
+	Policies []nodestore.Policy
+}
+
+// QueueSuspensionBackup preserves an account at the point cPanel suspends it.
+// It queues the smallest set of full-account policies that reaches every
+// destination those policies promise. The hook itself stays quick: it only
+// writes pending jobs and never waits for pkgacct or remote storage.
+func (e *Engine) QueueSuspensionBackup(account string) (SuspensionBackup, error) {
+	settings, err := e.store.Settings()
+	if err != nil {
+		return SuspensionBackup{}, err
+	}
+	result := SuspensionBackup{Enabled: settings.BackupOnSuspension}
+	if !result.Enabled {
+		return result, nil
+	}
+	policies, err := e.store.Policies()
+	if err != nil {
+		return result, err
+	}
+	var candidates []nodestore.Policy
+	wanted := map[string]bool{}
+	for _, policy := range policies {
+		if !fullAccountPolicy(policy, account) {
+			continue
+		}
+		candidates = append(candidates, policy)
+		for _, repositoryID := range policy.RepositoryIDs {
+			wanted[repositoryID] = true
+		}
+	}
+	missing := make([]string, 0, len(wanted))
+	for repositoryID := range wanted {
+		missing = append(missing, repositoryID)
+	}
+	result.Policies = minimumPolicyCover(missing, candidates)
+	if len(result.Policies) == 0 {
+		return result, nil
+	}
+
+	e.workMu.Lock()
+	defer e.workMu.Unlock()
+	busy, err := e.store.RunningJobFor(account)
+	if err != nil {
+		return result, err
+	}
+	if busy {
+		result.Busy = true
+		return result, nil
+	}
+	jobs := make([]nodestore.Job, 0, len(result.Policies))
+	for _, policy := range result.Policies {
+		jobs = append(jobs, nodestore.Job{
+			PolicyID: policy.ID, Account: account, Status: job.StatusPending,
+		})
+	}
+	if _, err := e.store.PutJobs(jobs); err != nil {
+		return result, err
+	}
+	result.Queued = true
+	return result, nil
+}
+
+func (e *Engine) reconcileAccounts(ctx context.Context, allowRenames bool) error {
+	accounts, err := e.provider.Accounts(ctx)
+	if err != nil {
+		return err
+	}
+	identities, err := e.store.Identities()
+	if err != nil {
+		return err
+	}
+
+	current := make(map[string]int, len(accounts))
+	for _, account := range accounts {
+		uid, lookupErr := e.accountUID(account.User)
+		if lookupErr != nil {
+			e.log.Warn("cannot reconcile cPanel account identity",
+				"account", account.User, "error", lookupErr)
+			continue
+		}
+		current[account.User] = uid
+	}
+
+	byName := make(map[string]nodestore.AccountIdentity, len(identities))
+	for _, identity := range identities {
+		byName[identity.Account] = identity
+	}
+	for name, uid := range current {
+		if identity, exists := byName[name]; exists {
+			if identity.UID == uid && identity.RetiredAt == nil {
+				_, err = e.store.PutIdentity(identity)
+			} else {
+				_, err = e.noteIdentity(name)
+			}
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		// A cPanel rename keeps the Unix uid. Only match an identity whose
+		// old name is no longer present; an extant account with the same uid
+		// would indicate corrupt system state, not a rename.
+		var renamedFrom *nodestore.AccountIdentity
+		if allowRenames {
+			for i := range identities {
+				candidate := &identities[i]
+				if candidate.UID != uid || candidate.RetiredAt != nil {
+					// A retired identity was removed by cPanel, and a
+					// removal is not a rename. Linux reuses a deleted
+					// account's uid, so without this a new account that
+					// reached the server without a create hook -- one
+					// restored by restorepkg, or created while this
+					// service was stopped -- would inherit the departed
+					// customer's visibility window and be shown their
+					// backups.
+					continue
+				}
+				if _, stillPresent := current[candidate.Account]; !stillPresent {
+					renamedFrom = candidate
+					break
+				}
+			}
+		}
+		if renamedFrom == nil {
+			if _, err := e.noteIdentity(name); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := e.renamePolicyAccount(renamedFrom.Account, name); err != nil {
+			return err
+		}
+		if _, err := e.store.PutIdentity(nodestore.AccountIdentity{
+			Account: name, UID: uid, SinceAt: renamedFrom.SinceAt,
+			Recycled: renamedFrom.Recycled, CreatedAt: renamedFrom.CreatedAt,
+		}); err != nil {
+			return err
+		}
+		retiredAt := time.Now().UTC()
+		renamedFrom.RetiredAt = &retiredAt
+		if _, err := e.store.PutIdentity(*renamedFrom); err != nil {
+			return err
+		}
+		e.log.Info("reconciled a cPanel account rename",
+			"old_account", renamedFrom.Account, "new_account", name, "uid", uid)
+	}
+	return nil
+}
+
+func (e *Engine) renamePolicyAccount(oldName, newName string) error {
+	policies, err := e.store.Policies()
+	if err != nil {
+		return err
+	}
+	for _, policy := range policies {
+		changed := false
+		for i, account := range policy.Accounts {
+			if account == oldName {
+				policy.Accounts[i] = newName
+				changed = true
+			}
+		}
+		if changed {
+			if _, err := e.store.PutPolicy(policy); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// AccountRemoved removes a terminated username from explicitly named
+// policies. Its snapshots and identity record remain: retention decides
+// when backups expire, while the identity record prevents a future owner of
+// the same username from seeing the former customer's data.
+func (e *Engine) AccountRemoved(account string) error {
+	if identity, err := e.store.Identity(account); err == nil {
+		now := time.Now().UTC()
+		identity.RetiredAt = &now
+		if _, err := e.store.PutIdentity(identity); err != nil {
+			return err
+		}
+	}
+	policies, err := e.store.Policies()
+	if err != nil {
+		return err
+	}
+	for _, policy := range policies {
+		if policy.AllAccounts() {
+			continue
+		}
+		kept := policy.Accounts[:0]
+		for _, name := range policy.Accounts {
+			if name != account {
+				kept = append(kept, name)
+			}
+		}
+		if len(kept) == len(policy.Accounts) {
+			continue
+		}
+		policy.Accounts = append([]string(nil), kept...)
+		// Empty means all accounts in the stored model. Disabling a policy
+		// that lost its only named account avoids accidentally widening it.
+		if len(policy.Accounts) == 0 {
+			policy.Enabled = false
+		}
+		if _, err := e.store.PutPolicy(policy); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // accountUID is the unix account a cPanel name means right now.

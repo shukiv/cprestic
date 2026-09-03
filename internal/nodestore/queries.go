@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/shuki/cprest/internal/job"
+	bolt "go.etcd.io/bbolt"
 )
 
 // NewID returns a random identifier for a stored record.
@@ -360,6 +361,40 @@ func (s *Store) PutJob(j Job) (Job, error) {
 	return j, s.put(bucketJobs, j.ID, j)
 }
 
+// PutJobs stores a sequence of queued jobs atomically. Their timestamps are
+// ordered a nanosecond apart so PendingWork processes the policy plan in the
+// order supplied, even though bbolt keys are random IDs.
+func (s *Store) PutJobs(jobs []Job) ([]Job, error) {
+	now := time.Now().UTC()
+	encoded := make([][]byte, len(jobs))
+	for i := range jobs {
+		if jobs[i].ID == "" {
+			jobs[i].ID = NewID()
+		}
+		if jobs[i].QueuedAt.IsZero() {
+			jobs[i].QueuedAt = now.Add(time.Duration(i) * time.Nanosecond)
+		}
+		if jobs[i].Status == "" {
+			jobs[i].Status = job.StatusPending
+		}
+		var err error
+		encoded[i], err = json.Marshal(jobs[i])
+		if err != nil {
+			return nil, fmt.Errorf("nodestore: encode jobs: %w", err)
+		}
+	}
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket(bucketJobs)
+		for i := range jobs {
+			if err := bucket.Put([]byte(jobs[i].ID), encoded[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return jobs, err
+}
+
 // Job reads one job.
 // SetJobProgress records how far a running job has got.
 //
@@ -536,4 +571,65 @@ func (s *Store) Identities() ([]AccountIdentity, error) {
 		return identities[i].Account < identities[j].Account
 	})
 	return identities, nil
+}
+
+// PutLifecycleEvent records a hook outcome and retains only the most recent
+// hundred. Lifecycle history is operational evidence, not an audit archive.
+func (s *Store) PutLifecycleEvent(event LifecycleEvent) (LifecycleEvent, error) {
+	event.Event = limitText(event.Event, 32)
+	// 32 is what this program accepts as a cPanel account name elsewhere.
+	// Truncating at 16 recorded the wrong name for a longer account, and
+	// could record two different accounts under one name.
+	event.Account = limitText(event.Account, 32)
+	event.Detail = limitText(event.Detail, 1024)
+	if event.At.IsZero() {
+		event.At = time.Now().UTC()
+	}
+	if event.ID == "" {
+		event.ID = event.At.Format("20060102T150405.000000000") + "-" + NewID()
+	}
+	if err := s.put(bucketLifecycle, event.ID, event); err != nil {
+		return event, err
+	}
+	events, err := s.LifecycleEvents(0)
+	if err != nil {
+		return event, err
+	}
+	for len(events) > 100 {
+		oldest := events[len(events)-1]
+		if err := s.delete(bucketLifecycle, oldest.ID); err != nil {
+			return event, err
+		}
+		events = events[:len(events)-1]
+	}
+	return event, nil
+}
+
+func limitText(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit])
+}
+
+// LifecycleEvents lists newest first. Limit zero means all retained events.
+func (s *Store) LifecycleEvents(limit int) ([]LifecycleEvent, error) {
+	var events []LifecycleEvent
+	err := s.forEach(bucketLifecycle, func(_ string, raw []byte) error {
+		var event LifecycleEvent
+		if err := json.Unmarshal(raw, &event); err != nil {
+			return err
+		}
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(events, func(i, j int) bool { return events[i].At.After(events[j].At) })
+	if limit > 0 && len(events) > limit {
+		events = events[:limit]
+	}
+	return events, nil
 }

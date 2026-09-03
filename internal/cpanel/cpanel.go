@@ -32,6 +32,18 @@ type ApplyOptions struct {
 	// Without it restorepkg will not replace what is there, and a restore
 	// the interface promised would overwrite the account quietly did not.
 	Overwrite bool
+	// NewUser asks restorepkg to create the archive under a disposable
+	// username. It is used only by live restore certification.
+	NewUser string
+	// SkipDNS prevents a certification restore from changing production
+	// DNS zones.
+	SkipDNS bool
+}
+
+// Certifier is implemented by a real cPanel provider that can prove an
+// archive is accepted by restorepkg on an isolated certification host.
+type Certifier interface {
+	Certify(ctx context.Context, archivePath, disposableUser string) error
 }
 
 type AccountInfo struct {

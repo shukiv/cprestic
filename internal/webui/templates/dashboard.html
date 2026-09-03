@@ -12,24 +12,22 @@
     <div style="margin-top:var(--s3)"><a class="cpr-btn cpr-primary" href="?p=destinations">Add a destination</a></div>
   </div>
 </div>
+{{else if $d.Unscheduled}}
+<div class="cpr-banner cpr-bad">
+  <div class="cpr-body"><b>{{$d.Unscheduled}} account{{if ne $d.Unscheduled 1}}s are{{else}} is{{end}} outside every enabled schedule.</b>
+    An old backup is not continuing protection. Add the account to a schedule, or use an
+    all-account schedule so future cPanel accounts are enrolled automatically.
+    <div style="margin-top:var(--s3)"><a class="cpr-btn cpr-primary" href="?p=schedule">Review schedules</a></div>
+  </div>
+</div>
 {{else if $d.Unprotected}}
 <div class="cpr-banner cpr-bad">
   <div class="cpr-body"><b>{{$d.Unprotected}} account{{if ne $d.Unprotected 1}}s have{{else}} has{{end}} never been backed up.</b>
-    {{if $d.Policies}}They are covered by
-    {{range $i, $p := $d.Policies}}{{if $i}}, {{end}}<span class="cpr-mono">{{$p.Name}}</span>{{end}}.
-    Start them now if you would rather not wait — one account runs at a time.
-    <div style="margin-top:var(--s3)">
-      <form method="post" action="?p=schedule/run" class="cpr-inline">
-        <input type="hidden" name="csrf" value="{{$.CSRF}}">
-        <input type="hidden" name="id" value="{{(index $d.Policies 0).ID}}">
-        <button class="cpr-btn cpr-primary">Back up every account now</button>
-      </form>
-    </div>
-    {{else}}No schedule covers them yet.
-    <div style="margin-top:var(--s3)"><a class="cpr-btn cpr-primary" href="?p=schedule">Add a schedule</a></div>
-    {{end}}
+    Open Accounts to start the affected accounts now instead of waiting for their next schedule.
+    <div style="margin-top:var(--s3)"><a class="cpr-btn cpr-primary" href="?p=accounts">Review accounts</a></div>
   </div>
 </div>
+
 {{end}}
 
 <div class="cpr-grid3">
@@ -46,6 +44,10 @@
       <span><span class="cpr-key" style="background:var(--warn)"></span><b>{{$d.Stale}}</b> need attention</span>
       <span><span class="cpr-key" style="background:var(--bad)"></span><b>{{$d.Unprotected}}</b> never</span>
     </div>
+    <p class="cpr-hint">
+      {{$d.OutOfDate}} overdue · {{$d.CopyGaps}} copy gaps · {{$d.Partial}} partial · {{$d.Failed}} failed ·
+      {{$d.Unscheduled}} unscheduled · {{$d.Verified}} restore-tested
+    </p>
   </div>
 
   <div class="cpr-card cpr-pad">
@@ -83,11 +85,18 @@
           <td>{{if .LastBackup}}{{ago .LastBackup}}{{else}}<span class="cpr-mono">never</span>{{end}}</td>
           <td>{{template "accountstate" .}}</td>
           <td class="cpr-right">
+            {{if .RepairPolicyID}}<form method="post" action="?p=accounts/repair" class="cpr-inline">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <input type="hidden" name="account" value="{{.User}}">
+              <input type="hidden" name="policy" value="{{.RepairPolicyID}}">
+              <button class="cpr-btn cpr-primary" {{if .Running}}disabled{{end}}>Repair copies</button>
+            </form>{{else}}
             <form method="post" action="?p=accounts/backup" class="cpr-inline">
               <input type="hidden" name="csrf" value="{{$.CSRF}}">
               <input type="hidden" name="account" value="{{.User}}">
               <button class="cpr-btn" {{if .Running}}disabled{{end}}>Back up now</button>
             </form>
+            {{end}}
           </td>
         </tr>
         {{end}}
@@ -101,6 +110,28 @@
   {{end}}
 </div>
 {{end}}
+
+<div class="cpr-card">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">cPanel account lifecycle</h2></div>
+  {{if $d.Lifecycle}}
+  <div class="cpr-tablewrap"><table>
+    <thead><tr><th>Event</th><th>Account</th><th>Result</th><th>When</th></tr></thead>
+    <tbody>
+      {{range $d.Lifecycle}}
+      <tr class="cpr-state {{if .OK}}cpr-s-ok{{else}}cpr-s-bad{{end}}">
+        <td>{{.Title}}</td>
+        <td class="cpr-acct">{{if .Account}}{{.Account}}{{else}}<span class="cpr-muted">unknown</span>{{end}}</td>
+        <td><span class="cpr-pill {{if .OK}}cpr-ok{{else}}cpr-bad{{end}}"><span class="cpr-dot"></span>{{.Outcome}}</span>
+          {{if .Detail}}<div class="cpr-sublabel">{{.Detail}}</div>{{end}}</td>
+        <td>{{ago .When}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table></div>
+  {{else}}
+  <div class="cpr-empty"><p>No account lifecycle hook has reached the service yet.</p></div>
+  {{end}}
+</div>
 
 <div class="cpr-grid2">
   <div class="cpr-card">

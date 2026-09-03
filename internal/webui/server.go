@@ -74,6 +74,10 @@ type Server struct {
 	// has been established, where an account cannot bypass it by replacing
 	// or avoiding the PHP frontend.
 	userFeatures accountFeatureGate
+	// userAuth requires a live cPanel session in addition to the account's
+	// Unix uid. Team users share the owner's uid, and arbitrary website
+	// processes run under it too, so SO_PEERCRED alone is not enough.
+	userAuth *accountSessionAuth
 }
 
 // assets is the stylesheet and script, embedded in the page.
@@ -101,16 +105,17 @@ func New(engine *node.Engine, log *slog.Logger) (*Server, error) {
 		return nil, fmt.Errorf("webui: read script: %w", err)
 	}
 
-	raw := make([]byte, 64)
+	raw := make([]byte, 96)
 	if _, err := rand.Read(raw); err != nil {
 		return nil, fmt.Errorf("webui: generate csrf token: %w", err)
 	}
 	return &Server{
 		engine: engine, log: log, templates: templates,
 		csrfToken:    hex.EncodeToString(raw[:32]),
-		userCSRFKey:  append([]byte(nil), raw[32:]...),
+		userCSRFKey:  append([]byte(nil), raw[32:64]...),
 		assets:       assets{CSS: template.CSS(css), JS: template.JS(script)},
 		userFeatures: newAccountFeatureGate(),
+		userAuth:     newAccountSessionAuth(raw[64:]),
 	}, nil
 }
 
@@ -178,6 +183,7 @@ func parseTemplates() (map[string]*template.Template, error) {
 // Handler returns the routed interface.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST "+adminCapabilityEndpoint, s.issueAdminUserCapability)
 	mux.Handle("GET /static/", http.FileServerFS(staticFS))
 
 	mux.HandleFunc("GET /{$}", s.handleDashboard)
@@ -202,6 +208,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /accounts", s.handleAccounts)
 	mux.HandleFunc("GET /account", s.handleAccount)
 	mux.HandleFunc("POST /accounts/backup", s.guard(s.handleBackupNow))
+	mux.HandleFunc("POST /accounts/repair", s.guard(s.handleRepairCoverage))
+	mux.HandleFunc("POST /accounts/prepare-removal", s.guard(s.handlePrepareRemoval))
 	mux.HandleFunc("POST /accounts/download", s.guard(s.handleDownloadRequest))
 	mux.HandleFunc("POST /accounts/verify", s.guard(s.handleVerifyRequest))
 	mux.HandleFunc("GET /download", s.handleDownload)

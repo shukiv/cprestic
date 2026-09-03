@@ -12,6 +12,8 @@
       title="This account has a good backup, but no enabled schedule covers it, so nothing will ever take another. What is stored now is all there will ever be."><span class="cpr-dot"></span>Not scheduled</span>
   {{else if eq $state "partial"}}<span class="cpr-pill cpr-warn"
       title="The last backup completed, but restic could not read every file. Open the report to see which ones and whether they matter."><span class="cpr-dot"></span>Partial</span>
+  {{else if eq $state "copy-gap"}}<span class="cpr-pill cpr-warn"
+      title="At least one destination promised by an enabled schedule has no recent successful copy for this account."><span class="cpr-dot"></span>Copy gap</span>
   {{else if eq $state "failed"}}<span class="cpr-pill cpr-bad"
       title="The last backup of this account failed. Whatever was stored before it is still there, but nothing newer was taken."><span class="cpr-dot"></span>Last run failed</span>
   {{else}}<span class="cpr-pill cpr-bad"

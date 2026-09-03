@@ -103,6 +103,56 @@ func TestAnOperatorCanStillAskForAnUnrestrictedRestore(t *testing.T) {
 	}
 }
 
+func TestLiveCertificationUsesDisposableAccountAndCleansItUp(t *testing.T) {
+	root := t.TempDir()
+	users := filepath.Join(root, "users")
+	homes := filepath.Join(root, "home")
+	if err := os.MkdirAll(users, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	restoreRecord := filepath.Join(root, "restore-args")
+	removeRecord := filepath.Join(root, "remove-args")
+	restoreScript := filepath.Join(root, "restorepkg")
+	removeScript := filepath.Join(root, "removeacct")
+	restoreBody := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$@\" > " + restoreRecord + "\n" +
+		"user=\nfor arg in \"$@\"; do case \"$arg\" in --newuser=*) user=${arg#*=};; esac; done\n" +
+		"mkdir -p " + homes + "/$user\n: > " + users + "/$user\n"
+	removeBody := "#!/bin/sh\n" +
+		"printf '%s\\n' \"$@\" > " + removeRecord + "\n" +
+		"rm -f " + users + "/$1\nrm -rf " + homes + "/$1\n"
+	if err := os.WriteFile(restoreScript, []byte(restoreBody), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(removeScript, []byte(removeBody), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(root, "cpmove-customer1.tar")
+	if err := os.WriteFile(archive, []byte("archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	host := &Real{
+		RestorepkgPath: restoreScript, RemoveacctPath: removeScript,
+		UsersDir: users, HomeRoot: homes,
+	}
+
+	if err := host.Certify(context.Background(), archive, "cprv1234"); err != nil {
+		t.Fatalf("Certify: %v", err)
+	}
+	restoreArgs := readArgs(t, restoreRecord)
+	if !restoreArgs["--restricted"] || !restoreArgs["--newuser=cprv1234"] ||
+		!restoreArgs["--update_dns_zone=0"] {
+		t.Fatalf("unsafe certification restore arguments: %v", restoreArgs)
+	}
+	removeArgs := readArgs(t, removeRecord)
+	if !removeArgs["cprv1234"] || !removeArgs["--force"] {
+		t.Fatalf("disposable account was not removed: %v", removeArgs)
+	}
+	if _, err := os.Stat(filepath.Join(users, "cprv1234")); !os.IsNotExist(err) {
+		t.Fatal("certification account remains registered")
+	}
+}
+
 func readArgs(t *testing.T, record string) map[string]bool {
 	t.Helper()
 	raw, err := os.ReadFile(record)

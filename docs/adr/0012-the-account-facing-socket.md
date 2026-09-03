@@ -1,6 +1,6 @@
 # 0012 — What an account is allowed to reach
 
-Status: accepted
+Status: superseded by ADR 0013
 Date: 2026-09-01
 
 ## Context
@@ -88,4 +88,5 @@ and each of them is a thing that can be tested — several are, in
 `internal/webui/access_test.go` and `internal/node/identity_test.go`.
 The residual risk is stated here rather than in a comment nobody reads:
 if one of those checks is wrong, the failure is an account reaching root,
-not an account seeing a page it should not.
+not an account seeing a page it should not. ADR 0013 replaces the
+shared-uid part of this decision with a cPanel-session capability.

@@ -81,6 +81,12 @@ func (e *Engine) QueueSystemBackup(policyID string) (nodestore.Job, error) {
 }
 
 func (e *Engine) QueueBackup(policyID, account string) (nodestore.Job, error) {
+	e.workMu.Lock()
+	defer e.workMu.Unlock()
+	return e.queueBackup(policyID, account)
+}
+
+func (e *Engine) queueBackup(policyID, account string) (nodestore.Job, error) {
 	running, err := e.store.RunningJobFor(account)
 	if err != nil {
 		return nodestore.Job{}, err
@@ -94,6 +100,29 @@ func (e *Engine) QueueBackup(policyID, account string) (nodestore.Job, error) {
 	})
 }
 
+// QueueCoverageRepair re-runs an enabled policy that actually covers the
+// account. It rejects stale or edited forms that name an unrelated policy.
+func (e *Engine) QueueCoverageRepair(policyID, account string) (nodestore.Job, error) {
+	policy, err := e.store.Policy(policyID)
+	if err != nil {
+		return nodestore.Job{}, err
+	}
+	if !policy.Enabled || len(policy.RepositoryIDs) == 0 {
+		return nodestore.Job{}, errors.New("node: that schedule is not enabled with a destination")
+	}
+	covered := policy.AllAccounts()
+	for _, selected := range policy.Accounts {
+		if selected == account {
+			covered = true
+			break
+		}
+	}
+	if !covered {
+		return nodestore.Job{}, fmt.Errorf("node: schedule %q does not cover %s", policy.Name, account)
+	}
+	return e.QueueBackup(policy.ID, account)
+}
+
 // QueueRestore queues a restore.
 func (e *Engine) QueueRestore(restore nodestore.Restore) (nodestore.Restore, error) {
 	if restore.SnapshotID == "" {
@@ -102,6 +131,8 @@ func (e *Engine) QueueRestore(restore nodestore.Restore) (nodestore.Restore, err
 	if restore.Kind == "" {
 		restore.Kind = protocol.RestoreAccount
 	}
+	e.workMu.Lock()
+	defer e.workMu.Unlock()
 	if restore.Kind == KindVerify {
 		// A rehearsal keeps nothing and applies nothing, so the checks
 		// that follow do not apply to it.
@@ -177,6 +208,8 @@ func (e *Engine) runBackup(ctx context.Context, stored nodestore.Job) error {
 	if err != nil {
 		return e.failJob(stored, err.Error())
 	}
+	stored.CompleteAccount = stored.Account != cpanel.SystemAccount &&
+		!policy.SkipHomedir && !policy.SkipDatabases && !policy.SkipEmail
 
 	now := time.Now().UTC()
 	stored.Status = job.StatusRunning
@@ -521,6 +554,13 @@ func (e *Engine) Schedule(ctx context.Context, now time.Time) (int, error) {
 	}
 	e.watchForTrouble(ctx, now)
 	e.sweepRetention(ctx, now)
+	if now.Sub(e.lastReconcile) >= time.Minute {
+		if err := e.ReconcileAccounts(ctx); err != nil {
+			e.log.Warn("reconcile cPanel accounts", "error", err)
+		} else {
+			e.lastReconcile = now
+		}
+	}
 
 	policies, err := e.store.Policies()
 	if err != nil {

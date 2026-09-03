@@ -11,17 +11,19 @@ import (
 
 // TestAnAccountCannotAskForTheThingsThePageDoesNotOffer covers a gap
 // between what the customer page shows and what its form handler accepted.
-// The page offered a short list; the handler took whatever was posted. The
-// settings archive holds shadow, digestshadow and cPanel's own metadata,
-// so anyone who could read the form could pull their account's password
-// hashes out of a backup by editing one field.
+// A full account is an explicit safe-download flow; the raw panel-settings
+// subset is not, because it exposes shadow, digestshadow and other metadata
+// without the context of a cPanel account archive.
 func TestAnAccountCannotAskForTheThingsThePageDoesNotOffer(t *testing.T) {
-	for _, kind := range []granular.Kind{granular.KindFiles, granular.KindDatabase, granular.KindDNS} {
-		if !webui.IsUserKindForTest(string(kind)) {
+	for _, kind := range []string{
+		string(granular.KindFiles), string(granular.KindDatabase),
+		string(granular.KindDNS), "account",
+	} {
+		if !webui.IsUserKindForTest(kind) {
 			t.Errorf("%s is on the customer page but the handler refuses it", kind)
 		}
 	}
-	for _, kind := range []string{string(granular.KindSettings), "", "../settings", "account"} {
+	for _, kind := range []string{string(granular.KindSettings), "", "../settings"} {
 		if webui.IsUserKindForTest(kind) {
 			t.Errorf("an account was allowed to ask for %q", kind)
 		}

@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/shuki/cprest/internal/granular"
 	"github.com/shuki/cprest/internal/pkgacct"
@@ -30,6 +31,9 @@ type Real struct {
 	// RestorepkgPath applies an account archive. Empty means the standard
 	// location.
 	RestorepkgPath string
+	// RemoveacctPath removes a disposable certification account. Empty
+	// means the standard cPanel script.
+	RemoveacctPath string
 	// HomeRoot is where account home directories live.
 	HomeRoot string
 	// UsersDir holds one file per cPanel account. Empty means the standard
@@ -664,6 +668,13 @@ func (r *Real) restorepkg() string {
 	return "/scripts/restorepkg"
 }
 
+func (r *Real) removeacct() string {
+	if r.RemoveacctPath != "" {
+		return r.RemoveacctPath
+	}
+	return "/usr/local/cpanel/scripts/removeacct"
+}
+
 // Apply hands a rebuilt archive to cPanel.
 //
 // This overwrites the live account, so the agent only reaches it when an
@@ -684,6 +695,14 @@ func (r *Real) Apply(ctx context.Context, archivePath string, options ApplyOptio
 	if info.IsDir() {
 		return fmt.Errorf("cpanel: restore archive %s is a directory", archivePath)
 	}
+	if options.NewUser != "" {
+		if err := validateUser(options.NewUser); err != nil {
+			return err
+		}
+		if options.Overwrite {
+			return fmt.Errorf("cpanel: a restore cannot overwrite and use a new username")
+		}
+	}
 
 	// cPanel refuses --force with --restricted: "You may not force
 	// Restricted Restore." Restoring into an account that is already
@@ -702,6 +721,12 @@ func (r *Real) Apply(ctx context.Context, archivePath string, options ApplyOptio
 			args = append(args, "--skipaccount")
 		}
 	}
+	if options.NewUser != "" {
+		args = append(args, "--newuser="+options.NewUser)
+	}
+	if options.SkipDNS {
+		args = append(args, "--update_dns_zone=0")
+	}
 	// The separator matters: everything after it is the archive, whatever
 	// it is called.
 	args = append(args, "--", archivePath)
@@ -715,6 +740,74 @@ func (r *Real) Apply(ctx context.Context, archivePath string, options ApplyOptio
 		return fmt.Errorf("cpanel: restorepkg failed: %w: %s", err, restoreFailure(output))
 	}
 	return nil
+}
+
+// Certify performs the destructive half of a restore drill on a dedicated
+// cPanel test host: restore under a disposable username, confirm cPanel can
+// enumerate it, and remove it again. DNS updates are disabled. Operators
+// must not run this on a host where the archive's domains are live.
+func (r *Real) Certify(ctx context.Context, archivePath, disposableUser string) error {
+	if err := validateUser(disposableUser); err != nil {
+		return err
+	}
+	if r.accountRegistered(disposableUser) {
+		return fmt.Errorf("cpanel: certification account %s already exists", disposableUser)
+	}
+
+	applyErr := r.Apply(ctx, archivePath, ApplyOptions{
+		NewUser: disposableUser, SkipDNS: true,
+	})
+	created := r.accountRegistered(disposableUser)
+	certifyErr := applyErr
+	if created && certifyErr == nil {
+		accounts, listErr := r.Accounts(context.Background())
+		if listErr != nil {
+			certifyErr = fmt.Errorf("cpanel: list accounts after certification restore: %w", listErr)
+		} else {
+			found := false
+			for _, account := range accounts {
+				if account.User == disposableUser && !account.Missing {
+					found = true
+					break
+				}
+			}
+			if !found {
+				certifyErr = fmt.Errorf("cpanel: restored account %s has no usable home directory",
+					disposableUser)
+			}
+		}
+	}
+	if created {
+		// Cleanup must still run if the restore context was cancelled. A
+		// disposable hosting account is not safe debris to leave behind.
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		cmd := exec.CommandContext(cleanupCtx, r.removeacct(), disposableUser, "--force")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			cleanupErr := fmt.Errorf("remove disposable account: %w: %s", err, strings.TrimSpace(string(output)))
+			if certifyErr != nil {
+				return errors.Join(certifyErr, cleanupErr)
+			}
+			return cleanupErr
+		}
+		if r.accountRegistered(disposableUser) {
+			return fmt.Errorf("cpanel: removeacct returned success but certification account %s still exists",
+				disposableUser)
+		}
+	}
+	if certifyErr != nil {
+		return certifyErr
+	}
+	if !created {
+		return fmt.Errorf("cpanel: restorepkg returned success but account %s was not created: %w",
+			disposableUser, os.ErrNotExist)
+	}
+	return nil
+}
+
+func (r *Real) accountRegistered(user string) bool {
+	info, err := os.Stat(filepath.Join(r.usersDir(), user))
+	return err == nil && !info.IsDir()
 }
 
 // restoreFailure picks the line an operator needs out of restorepkg's

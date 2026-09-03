@@ -39,6 +39,10 @@ type Engine struct {
 	provider cpanel.Provider
 	runner   *resticrun.Runner
 	worker   *agent.Agent
+	// workMu makes the "is this account busy?" check and enqueue one
+	// operation. Without it, two simultaneous WHM requests could both see
+	// an idle account and stage work into the same directory.
+	workMu sync.Mutex
 
 	// progressMu guards lastProgress, which throttles how often a running
 	// job's percentage is written.
@@ -48,14 +52,18 @@ type Engine struct {
 	// alertedMu guards alerted, which remembers what has already been
 	// said so a server that is down for a week does not send a week of
 	// identical messages.
-	alertedMu sync.Mutex
-	alerted   map[string]bool
-	lastWatch time.Time
-	lastProbe time.Time
-	staging   *staging.Manager
-	log       *slog.Logger
+	alertedMu     sync.Mutex
+	alerted       map[string]bool
+	lastWatch     time.Time
+	lastProbe     time.Time
+	lastReconcile time.Time
+	staging       *staging.Manager
+	log           *slog.Logger
 
 	settings nodestore.Settings
+	// accountUID is replaceable in tests; on a cPanel host it resolves the
+	// Unix identity behind a username.
+	accountUID func(string) (int, error)
 }
 
 // Config assembles an Engine.
@@ -68,6 +76,9 @@ type Config struct {
 	// substitutes one so the paths that only happen when restic fails
 	// can be exercised at all.
 	Exec resticrun.Execer
+	// AccountUID overrides Unix account lookup in tests. Production leaves
+	// it nil and resolves identities through the operating system.
+	AccountUID func(string) (int, error)
 }
 
 // New builds an Engine from stored settings.
@@ -122,10 +133,15 @@ func New(cfg Config) (*Engine, error) {
 		ResticVersion: "",
 	})
 
+	uidLookup := cfg.AccountUID
+	if uidLookup == nil {
+		uidLookup = accountUID
+	}
 	engine := &Engine{
 		store: cfg.Store, vault: cfg.Vault, provider: cfg.Provider,
 		runner: runner, worker: worker, staging: stagingManager,
 		log: log, settings: settings, lastProgress: map[string]progressMark{},
+		accountUID: uidLookup,
 	}
 	// A backup of a large account takes minutes, and an operator watching
 	// it deserves to see it move. restic reports about once a second per

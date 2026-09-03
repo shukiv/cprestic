@@ -21,7 +21,28 @@ if [ -x /usr/local/cpanel/bin/unregister_appconfig ]; then
 fi
 rm -f /var/cpanel/apps/cprest.conf
 rm -f /usr/local/cpanel/whostmgr/docroot/cgi/cprest.cgi /usr/local/cpanel/cgi/cprest.cgi
+
+if [ -x /usr/local/cpanel/bin/manage_hooks ]; then
+    # Current releases describe every registration, including the blocking
+    # pre-remove hook, from the installed executable.
+    if [ -x /usr/local/cpanel/3rdparty/bin/cprest-hook ]; then
+        /usr/local/cpanel/bin/manage_hooks delete script /usr/local/cpanel/3rdparty/bin/cprest-hook \
+            >/dev/null 2>&1 || true
+    fi
+    # Also clean up post hooks from releases that registered manually.
+    for hook in "Accounts::Create:create" "Accounts::Modify:modify" "Accounts::Remove:remove"; do
+        event=${hook%:*}
+        action=${hook#*:}
+        /usr/local/cpanel/bin/manage_hooks delete script /usr/local/cpanel/3rdparty/bin/cprest-hook --manual \
+            --category Whostmgr --event "$event" --stage post \
+            --action="--cpanel-hook=$action" >/dev/null 2>&1 || true
+    done
+fi
+rm -f /usr/local/cpanel/3rdparty/bin/cprest-hook
 rm -f /usr/local/bin/cprest-agent
+rm -f /usr/local/cpanel/Cpanel/API/Cprest.pm
+rm -f /var/cpanel/perl/Cpanel/Admin/Modules/Cprest/Session.pm
+rmdir /var/cpanel/perl/Cpanel/Admin/Modules/Cprest 2>/dev/null || true
 
 # Remove the account-facing registration with the same supported mechanism
 # used at install time. Older releases wrote DynamicUI directly, so that

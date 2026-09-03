@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -74,6 +76,7 @@ func (s *Server) ListenUser(ctx context.Context, socketPath string) error {
 	server := &http.Server{
 		Handler:           s.UserHandler(),
 		ReadHeaderTimeout: 10 * time.Second,
+		MaxHeaderBytes:    16 << 10,
 		// A body has to arrive as well as start. Without this a local
 		// process can open connections and dribble a form into them for
 		// as long as it likes, and this service runs as root.
@@ -183,7 +186,11 @@ func (s *Server) UserHandler() http.Handler {
 	mux.HandleFunc("GET /browse", s.userPage(s.handleUserBrowse))
 	mux.HandleFunc("POST /restore", s.userPage(s.userGuard(s.handleUserRestore)))
 	mux.HandleFunc("GET /download", s.userPage(s.handleUserDownload))
-	return mux
+
+	outer := http.NewServeMux()
+	outer.HandleFunc("POST "+capabilityEndpoint, s.issueUserCapability)
+	outer.Handle("/", s.requireUserCapability(mux))
+	return outer
 }
 
 // userPage refuses anything that cannot be attributed to an account, and
@@ -266,6 +273,9 @@ type userView struct {
 	Restores     []restoreRow
 	Kinds        []granular.Kind
 	Err          string
+	TotalPoints  int
+	Ready        int
+	Latest       time.Time
 
 	// The browser, when one is open.
 	Repository string
@@ -287,8 +297,67 @@ type userRepository struct {
 	Latest    time.Time
 }
 
-// KindTitle lets the template name a kind.
-func (v userView) KindTitle(k granular.Kind) string { return k.Title() }
+// userKindAccount is a UI choice rather than a granular plan: it rebuilds
+// the complete cpmove archive, still as a download and never as an automatic
+// overwrite of the live account.
+const userKindAccount granular.Kind = "account"
+
+// KindTitle names account recovery choices in customer-facing language.
+func (v userView) KindTitle(k granular.Kind) string {
+	switch k {
+	case userKindAccount:
+		return "Full account"
+	case granular.KindFiles:
+		return "Home directory"
+	case granular.KindMailbox:
+		return "Email accounts"
+	case granular.KindDatabase:
+		return "Databases"
+	case granular.KindDBUsers:
+		return "Database users"
+	}
+	return k.Title()
+}
+
+// KindDescription gives each recovery choice enough context to be selected
+// without opening it first.
+func (v userView) KindDescription(k granular.Kind) string {
+	switch k {
+	case userKindAccount:
+		return "Everything in this backup as one cPanel account archive."
+	case granular.KindFiles:
+		return "The whole home directory, or only selected files and folders."
+	case granular.KindCron:
+		return "The account's scheduled cron jobs."
+	case granular.KindDatabase:
+		return "Choose one or more MySQL or MariaDB databases."
+	case granular.KindDBUsers:
+		return "Database users, authentication data, and grants."
+	case granular.KindDomains:
+		return "Domains, DNS zones, and their web-server configuration."
+	case granular.KindDNS:
+		return "DNS zone records for the account's domains."
+	case granular.KindSSL:
+		return "Certificates, private keys, and AutoSSL metadata."
+	case granular.KindMailbox:
+		return "Choose a mailbox or all mail for a domain."
+	case granular.KindFTP:
+		return "The account's FTP users and access configuration."
+	}
+	return "Recover this part of the account."
+}
+
+func (v userView) Selected(k granular.Kind) bool { return v.Kind == k }
+func (v userView) NeedsNames() bool              { return v.Kind.NeedsNames() }
+func (v userView) RestoreTitle(row restoreRow) string {
+	if row.ItemKind != "" {
+		return v.KindTitle(granular.Kind(row.ItemKind))
+	}
+	if row.Kind == protocol.RestoreAccount {
+		return v.KindTitle(userKindAccount)
+	}
+	return "Recovery package"
+}
 
 func (s *Server) handleUserHome(w http.ResponseWriter, r *http.Request) {
 	view := userView{Account: accountOf(r), Kinds: userKinds}
@@ -309,9 +378,13 @@ func (s *Server) handleUserHome(w http.ResponseWriter, r *http.Request) {
 			view.Err = "One of your backup destinations could not be read. Ask your host to check it."
 		}
 		row.Snapshots = len(snapshots)
+		view.TotalPoints += len(snapshots)
 		for _, snapshot := range snapshots {
 			if snapshot.Time.After(row.Latest) {
 				row.Latest = snapshot.Time
+			}
+			if snapshot.Time.After(view.Latest) {
+				view.Latest = snapshot.Time
 			}
 		}
 		view.Repositories = append(view.Repositories, row)
@@ -332,6 +405,9 @@ func (s *Server) handleUserHome(w http.ResponseWriter, r *http.Request) {
 			Restore:     accountSafeRestore(restore),
 			Collectable: restore.ArchivePath != "" && onDisk(restore.ArchivePath),
 		})
+		if restore.ArchivePath != "" && onDisk(restore.ArchivePath) {
+			view.Ready++
+		}
 	}
 	s.renderUser(w, r, "user_home.html", view)
 }
@@ -340,9 +416,16 @@ func (s *Server) handleUserHome(w http.ResponseWriter, r *http.Request) {
 // The server's own settings are not among them: they are not this
 // account's, and no account may see them.
 var userKinds = []granular.Kind{
-	granular.KindFiles, granular.KindWebsite, granular.KindMailbox,
-	granular.KindDatabase, granular.KindDBUsers, granular.KindDNS,
-	granular.KindSSL, granular.KindCron, granular.KindFTP,
+	userKindAccount,
+	granular.KindFiles,
+	granular.KindCron,
+	granular.KindDatabase,
+	granular.KindDBUsers,
+	granular.KindDomains,
+	granular.KindDNS,
+	granular.KindSSL,
+	granular.KindMailbox,
+	granular.KindFTP,
 }
 
 func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
@@ -353,6 +436,24 @@ func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
 		Snapshot:   r.URL.Query().Get("snapshot"),
 		Path:       r.URL.Query().Get("path"),
 		Kind:       granular.Kind(r.URL.Query().Get("item")),
+	}
+	if view.Repository == "" {
+		destinations, err := s.destinationViews()
+		if err != nil {
+			s.failUser(w, r, http.StatusInternalServerError, err)
+			return
+		}
+		for _, destination := range destinations {
+			if destination.Repository.ID != "" && destination.Repository.InitialisedAt != nil {
+				view.Repository = destination.Repository.ID
+				break
+			}
+		}
+	}
+	if view.Repository == "" {
+		view.Err = "No backup destination is ready for your account yet."
+		s.renderUser(w, r, "user_browse.html", view)
+		return
 	}
 
 	snapshots, err := s.engine.UserSnapshots(r.Context(), view.Repository, view.Account)
@@ -365,6 +466,11 @@ func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(snapshots, func(i, j int) bool { return snapshots[i].Time.After(snapshots[j].Time) })
 	view.Snapshots = snapshots
+	if len(snapshots) == 0 {
+		view.Err = "No restore points are available for your account in this destination yet."
+		s.renderUser(w, r, "user_browse.html", view)
+		return
+	}
 	if view.Snapshot == "" && len(snapshots) > 0 {
 		view.Snapshot = snapshots[0].ID
 	}
@@ -376,6 +482,20 @@ func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view.SnapshotAt = snapshot.Time
+	if view.Kind == "" {
+		s.renderUser(w, r, "user_browse.html", view)
+		return
+	}
+	if !isUserKind(view.Kind) {
+		view.Err = "That recovery option is not available for your account."
+		s.renderUser(w, r, "user_browse.html", view)
+		return
+	}
+	// Full-account and metadata-only choices have no child item to pick.
+	if view.Kind == userKindAccount || !view.Kind.NeedsNames() {
+		s.renderUser(w, r, "user_browse.html", view)
+		return
+	}
 
 	parts, err := reassemble.Classify(snapshot.Paths)
 	if err != nil {
@@ -385,17 +505,15 @@ func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
 		s.renderUser(w, r, "user_browse.html", view)
 		return
 	}
-	// A customer browses their own files. Everything else they can ask
-	// for is a whole item, chosen on the page rather than walked into.
-	root := parts.Homedir
+	root := userPickerRoot(view.Kind, parts)
 	if root == "" {
-		view.Err = "This backup holds no files to look through."
+		view.Err = "This backup does not contain that part of your account."
 		s.renderUser(w, r, "user_browse.html", view)
 		return
 	}
 	view.Path = root
-	if asked := filepath.Clean(r.URL.Query().Get("path")); asked != "." && asked != "" {
-		if asked == root || len(asked) > len(root) && asked[:len(root)+1] == root+"/" {
+	if asked := path.Clean(r.URL.Query().Get("path")); asked != "." && asked != "" {
+		if asked == root || strings.HasPrefix(asked, root+"/") {
 			view.Path = asked
 		}
 	}
@@ -409,13 +527,27 @@ func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
 		s.renderUser(w, r, "user_browse.html", view)
 		return
 	}
+	if view.Kind == granular.KindMailbox && view.Path == root {
+		view.Entries = append(view.Entries, browseEntry{
+			Name: "The account mailbox and all addresses",
+			Path: root, Item: ".",
+		})
+	}
 	for _, entry := range entries {
 		if entry.Path == view.Path {
 			continue
 		}
+		if view.Kind == granular.KindMailbox && view.Path == root &&
+			(!entry.IsDir() || maildirInternal(entry.Name)) {
+			continue
+		}
+		item := itemName(view.Kind, entry, parts)
+		if view.Kind == granular.KindDatabase && item == "" {
+			continue
+		}
 		view.Entries = append(view.Entries, browseEntry{
 			Name: entry.Name, Path: entry.Path, Size: entry.Size,
-			Dir: entry.IsDir(), Item: entry.Path,
+			Dir: entry.IsDir(), Item: item,
 		})
 	}
 	sort.Slice(view.Entries, func(i, j int) bool {
@@ -427,28 +559,46 @@ func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
 	s.renderUser(w, r, "user_browse.html", view)
 }
 
+func userPickerRoot(kind granular.Kind, parts reassemble.Parts) string {
+	switch kind {
+	case granular.KindFiles:
+		return parts.Homedir
+	case granular.KindMailbox:
+		if parts.Homedir == "" {
+			return ""
+		}
+		return path.Join(parts.Homedir, "mail")
+	case granular.KindDatabase:
+		return parts.Databases
+	default:
+		return ""
+	}
+}
+
 // handleUserRestore queues a restore of part of the account that asked for
 // it. The account comes from the socket, never from the form, so a request
 // cannot be pointed at anybody else.
 func (s *Server) handleUserRestore(w http.ResponseWriter, r *http.Request) {
 	account := accountOf(r)
-	restore := nodestore.Restore{
-		Account:      account,
-		RepositoryID: r.PostFormValue("repository"),
-		SnapshotID:   r.PostFormValue("snapshot"),
-		Kind:         protocol.RestoreItems,
-	}
 	// What an account may ask for is the list the page offers, checked
-	// here rather than only rendered there. The parts of an account this
-	// list leaves out are the ones nobody may pull out of a backup on
-	// their own: the settings archive carries shadow, digestshadow and
-	// cPanel's own metadata for the account.
+	// here rather than only rendered there. Raw panel settings are not a
+	// customer-facing granular choice: that subset carries shadow,
+	// digestshadow and cPanel internals without the context of a complete
+	// cPanel account archive. A complete archive is handled explicitly.
 	asked := granular.Kind(r.PostFormValue("item"))
-	if !isUserKind(asked) {
-		s.redirect(w, r, "/", "error", "That is not something you can restore here.")
+	restore, err := userRestoreRequest(account, r.PostFormValue("repository"),
+		r.PostFormValue("snapshot"), asked, r.PostForm["name"])
+	if err != nil {
+		if errors.Is(err, errUserRestoreNeedsNames) {
+			back := "/browse?repository=" + url.QueryEscape(r.PostFormValue("repository")) +
+				"&snapshot=" + url.QueryEscape(r.PostFormValue("snapshot")) +
+				"&item=" + url.QueryEscape(string(asked))
+			redirectUser(w, back, "error", "Choose at least one item to recover.")
+			return
+		}
+		redirectUser(w, "/", "error", "That is not something you can restore here.")
 		return
 	}
-	restore.ItemKind = string(asked)
 
 	// The backup has to be one of theirs. A name that has changed hands
 	// still has the previous owner's snapshots in the repository, and
@@ -456,13 +606,8 @@ func (s *Server) handleUserRestore(w http.ResponseWriter, r *http.Request) {
 	// no protection at all.
 	if err := s.engine.OwnsSnapshot(r.Context(), restore.RepositoryID, account,
 		restore.SnapshotID); err != nil {
-		s.redirect(w, r, "/", "error", "That backup is not one of yours.")
+		redirectUser(w, "/", "error", "That backup is not one of yours.")
 		return
-	}
-	for _, name := range r.PostForm["name"] {
-		if trimmed := name; trimmed != "" {
-			restore.ItemNames = append(restore.ItemNames, trimmed)
-		}
 	}
 	if _, err := s.engine.QueueRestore(restore); err != nil {
 		s.log.Error("queue account restore", "account", account, "error", err)
@@ -470,12 +615,66 @@ func (s *Server) handleUserRestore(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(err.Error(), "already has work in flight") {
 			message = "A backup or restore is already running for your account. Wait for it to finish."
 		}
-		s.redirect(w, r, "/", "error", message)
+		redirectUser(w, "/", "error", message)
 		return
 	}
-	s.redirect(w, r, "/", "ok",
+	redirectUser(w, "/", "ok",
 		"Started. What it recovers will appear below to download; nothing on your account "+
 			"is changed.")
+}
+
+// redirectUser keeps account-side navigation in cPanel's .live.php entry
+// points. The WHM interface uses a single CGI and a ?p= route; using that
+// redirect here would send a GET to restore.live.php after a POST, which is
+// not a valid account capability and strands the user on a 403 page.
+func redirectUser(w http.ResponseWriter, route, kind, message string) {
+	route = strings.TrimPrefix(route, "/")
+	query := url.Values{}
+	if base, extra, found := strings.Cut(route, "?"); found {
+		route = base
+		if parsed, err := url.ParseQuery(extra); err == nil {
+			query = parsed
+		}
+	}
+	entry := "index.live.php"
+	if route == "browse" {
+		entry = "browse.live.php"
+	}
+	query.Set("kind", kind)
+	query.Set("msg", message)
+	w.Header().Set("Location", entry+"?"+query.Encode())
+	w.WriteHeader(http.StatusSeeOther)
+}
+
+var errUserRestoreNeedsNames = errors.New("account recovery needs at least one item")
+
+// userRestoreRequest converts the account page's narrow vocabulary into an
+// engine request. In particular, "account" is the full archive flow rather
+// than an unrecognised granular kind, and no account-side request can turn on
+// Apply: recovery remains a downloadable copy until an operator takes an
+// explicit action outside this interface.
+func userRestoreRequest(account, repository, snapshot string, asked granular.Kind, names []string) (nodestore.Restore, error) {
+	if !isUserKind(asked) {
+		return nodestore.Restore{}, fmt.Errorf("account recovery kind %q is not allowed", asked)
+	}
+	restore := nodestore.Restore{
+		Account: account, RepositoryID: repository, SnapshotID: snapshot,
+	}
+	if asked == userKindAccount {
+		restore.Kind = protocol.RestoreAccount
+		return restore, nil
+	}
+	restore.Kind = protocol.RestoreItems
+	restore.ItemKind = string(asked)
+	for _, name := range names {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			restore.ItemNames = append(restore.ItemNames, trimmed)
+		}
+	}
+	if asked.NeedsNames() && len(restore.ItemNames) == 0 {
+		return nodestore.Restore{}, errUserRestoreNeedsNames
+	}
+	return restore, nil
 }
 
 // accountSafeRestore removes root-side diagnostics before a restore record

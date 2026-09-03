@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -45,19 +46,79 @@ type config struct {
 	fakeRoot      string
 	preflightOnly bool
 
-	standalone     bool
-	statePath      string
-	socketPath     string
-	userSocketPath string
-	masterKeyPath  string
+	standalone          bool
+	statePath           string
+	socketPath          string
+	userSocketPath      string
+	masterKeyPath       string
+	lifecycleSocketPath string
+	cpanelHookEvent     string
+	cpanelHookDescribe  bool
+	certifyArchive      string
+	certifyUser         string
+	certifyIsolatedHost bool
 }
 
 func main() {
 	cfg := parseFlags()
 	log := newLogger(cfg.logLevel)
+	if cfg.cpanelHookDescribe {
+		if err := writeCPanelHookDescription(os.Stdout); err != nil {
+			log.Error("describe cPanel lifecycle hooks", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if cfg.cpanelHookEvent != "" {
+		if err := runCPanelHook(cfg.lifecycleSocketPath, cfg.cpanelHookEvent); err != nil {
+			if cfg.cpanelHookEvent == "remove-pre" {
+				if detail, denied := blockingHookFailure(err); denied {
+					fmt.Printf("0 BAILOUT cprest blocked account removal: %s\n", hookMessage(detail))
+					log.Warn("cPanel account removal blocked", "reason", err)
+					os.Exit(1)
+				}
+				// Do not wedge WHM account administration merely because the
+				// backup service is restarting or unavailable. A reachable
+				// service makes policy failures explicit above; infrastructure
+				// failures are logged and deliberately fail open.
+				fmt.Println("1 cprest termination check unavailable; account removal allowed")
+				log.Error("cPanel account removal check unavailable; allowed removal", "error", err)
+				return
+			}
+			if !serviceAnswered(err) {
+				// The same reasoning as the blocking hook above, and for
+				// the same reason: a stopped or restarting service must
+				// not make every account create, modify or suspend on
+				// this server report a failed hook. What was missed is
+				// reconciled the next time the service looks.
+				fmt.Println("1 cprest lifecycle deferred; the backup service is unavailable")
+				log.Error("cPanel lifecycle hook could not reach the service; deferred",
+					"event", cfg.cpanelHookEvent, "error", err)
+				return
+			}
+			fmt.Println("0 cprest lifecycle reconciliation failed")
+			log.Error("cPanel lifecycle hook failed", "error", err)
+			os.Exit(1)
+		}
+		fmt.Println("1 cprest lifecycle reconciled")
+		return
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if cfg.certifyArchive != "" {
+		report, err := runLiveCertification(ctx, cfg)
+		if encodeErr := json.NewEncoder(os.Stdout).Encode(report); encodeErr != nil {
+			log.Error("write live certification report", "error", encodeErr)
+			os.Exit(1)
+		}
+		if err != nil {
+			log.Error("live restore certification failed", "error", err)
+			os.Exit(1)
+		}
+		log.Info("live restore certification passed", "archive", cfg.certifyArchive)
+		return
+	}
 
 	if err := run(ctx, cfg, log); err != nil && !errors.Is(err, context.Canceled) {
 		log.Error("agent stopped", "error", err)
@@ -104,8 +165,67 @@ func parseFlags() config {
 		"standalone: unix socket the WHM plugin connects to")
 	flag.StringVar(&cfg.masterKeyPath, "master-key", "/etc/cprest/master.key",
 		"standalone: key that encrypts stored destination credentials")
+	flag.StringVar(&cfg.lifecycleSocketPath, "lifecycle-socket", "/var/run/cprest/hooks/lifecycle.sock",
+		"root-only socket used by cPanel account lifecycle hooks")
+	flag.StringVar(&cfg.cpanelHookEvent, "cpanel-hook", "",
+		"internal: forward a cPanel create, modify, suspend, unsuspend, remove-pre or remove hook")
+	flag.BoolVar(&cfg.cpanelHookDescribe, "describe", false,
+		"internal: describe cPanel Standardized Hooks")
+	flag.StringVar(&cfg.certifyArchive, "certify-live-archive", "",
+		"restore an archive into a disposable cPanel account and remove it")
+	flag.StringVar(&cfg.certifyUser, "certify-user", "",
+		"disposable cPanel username for live certification")
+	flag.BoolVar(&cfg.certifyIsolatedHost, "certify-isolated-host", false,
+		"confirm live certification is running on an isolated cPanel host")
 	flag.Parse()
 	return cfg
+}
+
+type liveCertificationReport struct {
+	Archive        string    `json:"archive"`
+	DisposableUser string    `json:"disposable_user"`
+	StartedAt      time.Time `json:"started_at"`
+	FinishedAt     time.Time `json:"finished_at"`
+	Passed         bool      `json:"passed"`
+	Checks         []string  `json:"checks,omitempty"`
+	Error          string    `json:"error,omitempty"`
+}
+
+func runLiveCertification(ctx context.Context, cfg config) (report liveCertificationReport, returnErr error) {
+	report.Archive = filepath.Clean(cfg.certifyArchive)
+	report.DisposableUser = cfg.certifyUser
+	report.StartedAt = time.Now().UTC()
+	defer func() {
+		report.FinishedAt = time.Now().UTC()
+		report.Passed = returnErr == nil
+		if returnErr != nil {
+			report.Error = returnErr.Error()
+		}
+	}()
+	if !cfg.certifyIsolatedHost {
+		return report, errors.New("-certify-isolated-host is required: certification creates and removes a cPanel account")
+	}
+	if cfg.certifyUser == "" {
+		return report, errors.New("-certify-user is required")
+	}
+	provider, err := buildProvider(cfg)
+	if err != nil {
+		return report, err
+	}
+	certifier, ok := provider.(cpanel.Certifier)
+	if !ok {
+		return report, errors.New("this cPanel provider cannot certify restores")
+	}
+	if err := certifier.Certify(ctx, cfg.certifyArchive, cfg.certifyUser); err != nil {
+		return report, err
+	}
+	report.Checks = []string{
+		"restricted restorepkg accepted the archive",
+		"DNS zone updates were disabled",
+		"cPanel registered the disposable account and its home directory",
+		"removeacct removed the disposable account",
+	}
+	return report, nil
 }
 
 func run(ctx context.Context, cfg config, log *slog.Logger) error {

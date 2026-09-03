@@ -90,13 +90,16 @@ func runStandalone(ctx context.Context, cfg config, log *slog.Logger) error {
 		return err
 	}
 
-	errs := make(chan error, 2)
+	errs := make(chan error, 4)
 	go func() { errs <- ui.Listen(ctx, cfg.socketPath) }()
 	// The account-facing interface, which cPanel users reach through
 	// their own plugin. It is a separate socket because it answers a
 	// different question: not "what is on this server" but "what is mine".
 	if cfg.userSocketPath != "" {
 		go func() { errs <- ui.ListenUser(ctx, cfg.userSocketPath) }()
+	}
+	if cfg.lifecycleSocketPath != "" {
+		go func() { errs <- ui.ListenLifecycle(ctx, cfg.lifecycleSocketPath) }()
 	}
 	go func() { errs <- engine.Run(ctx) }()
 

@@ -112,9 +112,63 @@ type AccountIdentity struct {
 	// identity that has never changed hands does not filter anything:
 	// its SinceAt is only when this program first noticed the account,
 	// not a boundary between two owners.
-	Recycled  bool      `json:"recycled,omitempty"`
-	LastSeen  time.Time `json:"last_seen"`
-	CreatedAt time.Time `json:"created_at"`
+	Recycled bool `json:"recycled,omitempty"`
+	// RetiredAt records cPanel's remove event. It makes a later create a
+	// new identity even if Linux reuses both the username and uid.
+	RetiredAt *time.Time `json:"retired_at,omitempty"`
+	LastSeen  time.Time  `json:"last_seen"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+// LifecycleEvent is one cPanel Standardized Hook handled by the standalone
+// service. Raw hook payloads are deliberately not retained: they are large,
+// version-specific, and may contain account metadata the dashboard does not
+// need.
+type LifecycleEvent struct {
+	ID      string    `json:"id"`
+	Event   string    `json:"event"`
+	Account string    `json:"account,omitempty"`
+	OK      bool      `json:"ok"`
+	Detail  string    `json:"detail,omitempty"`
+	At      time.Time `json:"at"`
+}
+
+// When adapts the stored value to the pointer-shaped time helper used by
+// the WHM templates.
+func (e LifecycleEvent) When() *time.Time { return &e.At }
+
+// Title and Outcome keep stored machine event names out of the WHM UI and
+// ensure color is never the only description of lifecycle state.
+func (e LifecycleEvent) Title() string {
+	switch e.Event {
+	case "create":
+		return "Created"
+	case "modify":
+		return "Modified"
+	case "suspend":
+		return "Suspended"
+	case "unsuspend":
+		return "Unsuspended"
+	case "remove-pre":
+		return "Removal check"
+	case "remove":
+		return "Removed"
+	default:
+		return e.Event
+	}
+}
+
+func (e LifecycleEvent) Outcome() string {
+	if e.Event == "remove-pre" {
+		if e.OK {
+			return "Allowed"
+		}
+		return "Blocked"
+	}
+	if e.OK {
+		return "Handled"
+	}
+	return "Failed"
 }
 
 // Retention is the keep policy handed to "restic forget".
@@ -179,12 +233,17 @@ func (p Policy) AllAccounts() bool { return len(p.Accounts) == 0 }
 
 // Job is one backup run of one account.
 type Job struct {
-	ID         string      `json:"id"`
-	PolicyID   string      `json:"policy_id"`
-	Account    string      `json:"account"`
-	Status     job.Status  `json:"status"`
-	Targets    []JobTarget `json:"targets"`
-	StagingErr string      `json:"staging_error,omitempty"`
+	ID       string `json:"id"`
+	PolicyID string `json:"policy_id"`
+	Account  string `json:"account"`
+	// CompleteAccount records what this particular run staged. Looking at
+	// today's policy is insufficient because payload exclusions may have
+	// changed since an older snapshot was made. Jobs from before this field
+	// existed remain false and cannot authorize destructive account removal.
+	CompleteAccount bool        `json:"complete_account,omitempty"`
+	Status          job.Status  `json:"status"`
+	Targets         []JobTarget `json:"targets"`
+	StagingErr      string      `json:"staging_error,omitempty"`
 	// Progress is what restic last reported about a running job. It is
 	// cleared when the job finishes: a percentage on a job that is over
 	// says nothing, and "100%" beside a failure would be a lie.
@@ -315,6 +374,15 @@ type Settings struct {
 	// had been restored once, and the disk filled. Zero means the
 	// default; a negative number keeps them for ever.
 	KeepOutputDays int `json:"keep_output_days,omitempty"`
+	// ProtectAccountRemoval makes the blocking cPanel pre-remove hook
+	// refuse termination until every destination promised by an enabled,
+	// full-account policy has a recent complete copy. It is opt-in so an
+	// upgrade cannot unexpectedly change cPanel's account-removal behavior.
+	ProtectAccountRemoval bool `json:"protect_account_removal,omitempty"`
+	// BackupOnSuspension queues a fresh full-account copy when cPanel
+	// suspends an account. It is opt-in because billing systems may suspend
+	// large numbers of accounts automatically.
+	BackupOnSuspension bool `json:"backup_on_suspension,omitempty"`
 }
 
 // DefaultKeepOutputDays is a week: long enough that a restore taken on a

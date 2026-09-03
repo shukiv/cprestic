@@ -24,11 +24,11 @@
       <button type="button" class="cpr-chip" aria-pressed="false" data-state="bad">Never {{$d.Unprotected}}</button>
     </div>
   </div>
-  {{if $d.Policies}}
+  {{with $d.RunAll}}
   <form method="post" action="?p=schedule/run" class="cpr-inline">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
-    <input type="hidden" name="id" value="{{(index $d.Policies 0).ID}}">
-    <button class="cpr-btn cpr-primary">Back up all</button>
+    <input type="hidden" name="id" value="{{.ID}}">
+    <button class="cpr-btn cpr-primary" title="Run {{.Name}} for every account">Back up all</button>
   </form>
   {{end}}
 </div>
@@ -59,12 +59,32 @@
             {{if .Copies}}<div class="cpr-sublabel"
               title="Backups of this account written to each destination, counted from this server's records. Retention prunes older snapshots in the repository, so open the account to see what is actually there now.">
               {{range $i, $copy := .Copies}}{{if $i}} · {{end}}{{$copy.Written}} to {{$copy.Destination}}{{end}}</div>{{end}}
+            {{if .FreshCopies}}<div class="cpr-sublabel" title="Scheduled destinations with a successful copy inside their required freshness window.">
+              current: {{range $i, $name := .FreshCopies}}{{if $i}}, {{end}}{{$name}}{{end}}</div>{{end}}
+            {{if .MissingCopies}}<div class="cpr-sublabel cpr-warntext" title="Scheduled destinations with no successful copy inside their required freshness window.">
+              missing recent copy: {{range $i, $name := .MissingCopies}}{{if $i}}, {{end}}{{$name}}{{end}}</div>{{end}}
             {{if .Verified}}<div class="cpr-sublabel"
               title="A rehearsal rebuilt this account's backup and checked what came out. It is the only thing that shows a backup restores.">
               {{if .VerifiedOK}}verified {{ago .Verified}}{{else}}rehearsal failed {{ago .Verified}}{{end}}</div>{{end}}
           </td>
-          <td>{{template "accountstate" .}}{{template "jobprogress" .}}</td>
+          <td>{{template "accountstate" .}}{{template "jobprogress" .}}
+            {{with .RemovalSafety}}<div class="cpr-sublabel" title="{{.Detail}}">
+              {{if .Allowed}}<span class="cpr-pill cpr-ok"><span class="cpr-dot"></span>Safe to terminate</span>
+              {{else}}<span class="cpr-pill cpr-bad"><span class="cpr-dot"></span>Termination blocked</span>{{end}}
+            </div>{{end}}
+          </td>
           <td class="cpr-right"><div class="cpr-actions">
+            {{if .NeedsRemovalPreparation}}<form method="post" action="?p=accounts/prepare-removal" class="cpr-inline">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <input type="hidden" name="account" value="{{.User}}">
+              <button class="cpr-btn cpr-primary" title="Queue the smallest set of full-account schedules needed before cPanel may terminate this account." {{if .Running}}disabled{{end}}>Prepare removal</button>
+            </form>{{end}}
+            {{if .RepairPolicyID}}<form method="post" action="?p=accounts/repair" class="cpr-inline">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <input type="hidden" name="account" value="{{.User}}">
+              <input type="hidden" name="policy" value="{{.RepairPolicyID}}">
+              <button class="cpr-btn cpr-primary" title="Run {{.RepairPolicyName}} now to repair the most missing scheduled copies." {{if .Running}}disabled{{end}}>Repair copies</button>
+            </form>{{end}}
             <form method="post" action="?p=accounts/backup" class="cpr-inline">
               <input type="hidden" name="csrf" value="{{$.CSRF}}">
               <input type="hidden" name="account" value="{{.User}}">

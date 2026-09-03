@@ -78,6 +78,21 @@ and nothing else.
 - How a request reaches the plugin is settled separately in
   [ADR 8](0008-query-string-routing-under-whm.md): cpsrvd will not route a
   path after the script name, so routes travel in a query parameter.
+- The installer registers descriptor-based `Whostmgr` Standardized Hooks for
+  account creation, modification, suspension, unsuspension, and removal. The
+  create, modify, suspend, unsuspend, and remove actions run post-stage; an
+  opt-in blocking removal safety check runs pre-stage (ADR 14), and an opt-in
+  preservation backup may be queued after suspension (ADR 15). They call a
+  copy of the agent in cPanel's supported third-party binary directory, which
+  forwards the event to a separate root-only Unix socket. All-account policies
+  therefore cover new users immediately, and the create hook queues a baseline
+  that prefers a complete payload before copy count; rename events carry
+  explicitly named policies across using the unchanged Unix uid; termination
+  removes the name from named policies without deleting its retained snapshots.
+  Ordinary polling never infers a rename from a uid, because Linux may reuse
+  one after an account is deleted. The most recent 100 hook outcomes are stored
+  for WHM diagnostics, but raw hook payloads are not: they are version-specific
+  and may carry unrelated account metadata, including suspension reasons.
 - Two state stores now exist for the same concepts. Their types deliberately
   share field names and semantics, so migrating a standalone server into a
   fleet is a data copy rather than a translation.

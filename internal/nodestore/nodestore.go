@@ -33,6 +33,7 @@ var (
 	bucketSettings     = []byte("settings")
 	bucketChannels     = []byte("channels")
 	bucketIdentities   = []byte("account_identities")
+	bucketLifecycle    = []byte("lifecycle_events")
 )
 
 var allBuckets = [][]byte{
@@ -40,6 +41,7 @@ var allBuckets = [][]byte{
 	bucketJobs, bucketRestores, bucketSecrets, bucketSettings,
 	bucketChannels,
 	bucketIdentities,
+	bucketLifecycle,
 }
 
 // Store is the on-disk state file.

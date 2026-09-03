@@ -135,7 +135,11 @@ func flashFrom(r *http.Request) *flash {
 func (s *Server) renderUser(w http.ResponseWriter, r *http.Request, name string, data any) {
 	w.Header().Set("Cache-Control", "no-store, max-age=0")
 	w.Header().Set("Pragma", "no-cache")
-	s.renderWithCSRF(w, r, name, "Backups", "", data, s.userCSRFToken(accountOf(r)))
+	nav := "overview"
+	if name == "user_browse.html" {
+		nav = "restore"
+	}
+	s.renderWithCSRF(w, r, name, "Backups", nav, data, s.userCSRFToken(accountOf(r)))
 }
 
 func templateFuncs() template.FuncMap {
@@ -249,6 +253,9 @@ func templateFuncs() template.FuncMap {
 			return fmt.Sprintf("%.0f%%", math.Round(value))
 		},
 		"ago": humanAgo,
+		"agoTime": func(t time.Time) string {
+			return humanAgo(&t)
+		},
 		"stamp": func(t time.Time) string {
 			if t.IsZero() {
 				return "never"

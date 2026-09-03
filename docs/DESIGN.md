@@ -436,6 +436,17 @@ This is the most common real-world request and does not require a full account r
 
 The checks are structural — the archive exists and is non-empty, the extracted tree has exactly one top-level directory, the home directory contains files, every SQL dump is non-empty and contains a `CREATE` statement. Nothing here can tell you cPanel would accept the archive; only a real `restorepkg` on a real host can. But a drill that fails means the backup certainly cannot be restored, which is the question worth answering nightly.
 
+For acceptance testing, `cprest-agent -certify-live-archive` runs on an
+isolated cPanel certification host. It restores under a caller-supplied
+disposable username with Restricted Restore enabled and DNS updates disabled,
+checks that the account entered cPanel's registry, and removes it with
+`removeacct --force`. Cleanup uses its own bounded context so cancellation of
+the restore does not strand an account. The structural drill remains the safe
+scheduled default; live certification is deliberately explicit and is not a
+production-WHM button. Its stdout is a JSON evidence record containing start
+and finish times, the archive and disposable account, completed checks, and a
+failure reason when it did not pass.
+
 An untested backup is not a backup.
 
 ---

@@ -82,7 +82,8 @@ func newUI(t *testing.T) (*http.Client, string, *node.Engine) {
 	socket := filepath.Join(root, "ui.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go func() { _ = server.Listen(ctx, socket) }()
+	listenErrors := make(chan error, 1)
+	go func() { listenErrors <- server.Listen(ctx, socket) }()
 
 	client := &http.Client{
 		Timeout: 20 * time.Second,
@@ -95,14 +96,19 @@ func newUI(t *testing.T) (*http.Client, string, *node.Engine) {
 			return http.ErrUseLastResponse
 		},
 	}
-	waitForSocket(t, socket)
+	waitForSocket(t, socket, listenErrors)
 	return client, socket, engine
 }
 
-func waitForSocket(t *testing.T, socket string) {
+func waitForSocket(t *testing.T, socket string, listenErrors <-chan error) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
+		select {
+		case err := <-listenErrors:
+			t.Fatalf("the interface stopped before listening: %v", err)
+		default:
+		}
 		if conn, err := net.Dial("unix", socket); err == nil {
 			_ = conn.Close()
 			return
@@ -1605,6 +1611,34 @@ func TestALongRunIsCalledOut(t *testing.T) {
 	}
 }
 
+func TestLifecycleProtectionSettingsPersistImmediately(t *testing.T) {
+	client, _, engine := newUI(t)
+	_, page := get(t, client, "/settings")
+	response, err := client.PostForm("http://ui/settings/save", url.Values{
+		"csrf":                    {csrfToken(t, page)},
+		"hostname":                {"cp01.example.com"},
+		"max_concurrent":          {"1"},
+		"restic":                  {"restic"},
+		"keep_output_days":        {"7"},
+		"protect_account_removal": {"1"},
+		"backup_on_suspension":    {"1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	settings, err := engine.Store().Settings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.ProtectAccountRemoval {
+		t.Fatal("account-removal protection was not saved")
+	}
+	if !settings.BackupOnSuspension {
+		t.Fatal("suspension preservation was not saved")
+	}
+}
+
 // The destination holds ciphertext and the key lives here, so the disaster
 // these backups exist for is also the one that destroys the only copy of
 // the key. The interface says so until it has been written down elsewhere.
@@ -1973,21 +2007,38 @@ func TestTheRestorePageExplainsHowToPickFiles(t *testing.T) {
 	}
 }
 
-// The name is cP:Restic, and the cP is cPanel's orange. A stylesheet rule
-// that greys every span inside the brand once made it the wrong colour,
+// The name is cP:Restic, and the cP mark uses cPanel's orange. A stylesheet
+// rule that greys every span inside the brand once made it the wrong colour,
 // which is invisible in markup and only shows on the page.
 func TestTheBrandIsOnThePageInItsOwnColour(t *testing.T) {
 	client, _, _ := newUI(t)
 
 	_, page := get(t, client, "/")
-	if !strings.Contains(page, `<span class="cpr-brand-cp">cP</span>:Restic`) {
+	if !strings.Contains(page, `<span class="cpr-brand-mark">cP</span><span class="cpr-brand-name">cP:Restic</span>`) {
 		t.Error("the interface does not carry the name")
 	}
-	if !strings.Contains(page, ".cprest .cpr-brand-cp { color:#CF470C; }") {
-		t.Error("the cP is not in its own colour")
+	if !strings.Contains(page, "background:#E35E30; color:#FFFFFF;") {
+		t.Error("the cP mark is not in its own colour")
 	}
 	if strings.Contains(page, ".cprest .cpr-brand span { color:var(--muted)") {
 		t.Error("a rule is still greying out everything inside the brand")
+	}
+}
+
+func TestWHMPagesUseTheOperationalRail(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	_, page := get(t, client, "/restore")
+	for _, want := range []string{
+		`class="cpr-shell"`,
+		`class="cpr-rail"`,
+		`class="cpr-workspace"`,
+		`href="?p=restore" aria-label="Restore" aria-current="page"`,
+		`id="cprest-main" tabindex="-1"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("operational rail page is missing %q", want)
+		}
 	}
 }
 

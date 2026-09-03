@@ -1,6 +1,6 @@
 [
   {
-    "icon": "cprest.svg",
+    "icon": "cprest.png",
     "group_id": "files",
     "order": 1,
     "name": "cP:Restic",

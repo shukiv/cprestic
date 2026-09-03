@@ -26,8 +26,11 @@ plugin:
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(PLUGIN_ARCH) go build -trimpath -ldflags="-s -w" \
 		-o $(BIN)/cprest-plugin/cprest-agent ./cmd/agent
 	cp packaging/whm/cprest.cgi packaging/whm/install.sh packaging/whm/uninstall.sh $(BIN)/cprest-plugin/
-	mkdir -p $(BIN)/cprest-plugin/cpanel $(BIN)/cprest-plugin/branding
+	mkdir -p $(BIN)/cprest-plugin/cpanel/uapi \
+		$(BIN)/cprest-plugin/cpanel/admin/Cprest $(BIN)/cprest-plugin/branding
 	cp packaging/cpanel/*.php packaging/cpanel/install.json $(BIN)/cprest-plugin/cpanel/
+	cp packaging/cpanel/uapi/Cprest.pm $(BIN)/cprest-plugin/cpanel/uapi/
+	cp packaging/cpanel/admin/Cprest/Session.pm $(BIN)/cprest-plugin/cpanel/admin/Cprest/
 	cp packaging/branding/cprestic-icon.svg packaging/branding/cprestic-icon.png \
 		packaging/branding/cprestic-logo.svg $(BIN)/cprest-plugin/branding/
 	chmod +x $(BIN)/cprest-plugin/install.sh $(BIN)/cprest-plugin/uninstall.sh $(BIN)/cprest-plugin/cprest.cgi

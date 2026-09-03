@@ -177,6 +177,10 @@ func (f *Fake) Apply(_ context.Context, archivePath string, options ApplyOptions
 	return nil
 }
 
+func (f *Fake) Certify(ctx context.Context, archivePath, disposableUser string) error {
+	return f.Apply(ctx, archivePath, ApplyOptions{NewUser: disposableUser, SkipDNS: true})
+}
+
 // cpmoveRoot is the top-level directory name inside a cPanel account
 // archive. Reassembly discovers this name rather than assuming it; the
 // fake picks cPanel's conventional one so the discovery is exercised.

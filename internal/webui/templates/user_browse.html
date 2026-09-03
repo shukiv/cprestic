@@ -1,91 +1,149 @@
 {{define "content"}}
 {{$data := .Data}}
-<div>
-  <div class="cpr-crumb"><a class="cpr-link" href="index.live.php">Your backups</a> <span>›</span>
-    <span>{{if $data.SnapshotAt}}{{stamp $data.SnapshotAt}}{{else}}choose a backup{{end}}</span></div>
-  <h1>Restore something</h1>
-  <p class="cpr-sub">Pick a backup, then take back whatever you need from it.</p>
-</div>
+<section class="cpr-user-heading">
+  <div>
+    <div class="cpr-crumb"><a class="cpr-link" href="index.live.php">Overview</a><span aria-hidden="true">›</span><span>Restore &amp; download</span></div>
+    <h1>Restore &amp; download</h1>
+    <p class="cpr-sub">Choose a restore point, then choose the account data you need.</p>
+  </div>
+</section>
 
 {{with $data.Err}}
-<div class="cpr-banner cpr-bad"><div class="cpr-body">{{.}}</div></div>
+<div class="cpr-banner cpr-bad" role="alert"><div class="cpr-body">{{.}}</div></div>
 {{end}}
 
 {{if $data.Snapshots}}
-<div class="cpr-card">
+<section class="cpr-card cpr-restore-point">
   <div class="cpr-pad">
-    <form method="get" class="cpr-row">
+    <form method="get" class="cpr-restore-point-form">
       <input type="hidden" name="repository" value="{{$data.Repository}}">
-      <label for="snapshot" style="margin:0">Backup taken</label>
-      <select id="snapshot" name="snapshot" onchange="this.form.submit()" style="width:auto">
-        {{range $data.Snapshots}}
-        <option value="{{.ID}}" {{if eq .ID $data.Snapshot}}selected{{end}}>{{stamp .Time}}</option>
-        {{end}}
-      </select>
+      {{if $data.Kind}}<input type="hidden" name="item" value="{{$data.Kind}}">{{end}}
+      <div>
+        <label for="snapshot">Restore point</label>
+        <select id="snapshot" name="snapshot" onchange="this.form.submit()">
+          {{range $data.Snapshots}}
+          <option value="{{.ID}}" {{if eq .ID $data.Snapshot}}selected{{end}}>{{stamp .Time}} · {{agoTime .Time}}</option>
+          {{end}}
+        </select>
+      </div>
+      <div class="cpr-restore-point-fact">
+        <span>Selected backup</span>
+        <strong>{{stamp $data.SnapshotAt}}</strong>
+      </div>
+      <noscript><button class="cpr-btn" type="submit">Show restore point</button></noscript>
     </form>
   </div>
-</div>
+</section>
 
-<div class="cpr-card">
-  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
-    <h2 style="margin:0">Whole things</h2>
+<section aria-labelledby="recovery-kind-title">
+  <div class="cpr-user-section-head">
+    <h2 id="recovery-kind-title">What do you want to recover?</h2>
+    <p class="cpr-hint">Only data belonging to <b>{{$data.Account}}</b> is available here.</p>
   </div>
-  <div class="cpr-pad">
-    <p class="cpr-hint" style="margin-top:0">Each of these comes back as a download, exactly as it
-    was in that backup.</p>
-    <div class="cpr-row">
-      {{range $data.Kinds}}
-      {{if ne (printf "%s" .) "files"}}
-      <form method="post" action="restore.live.php" class="cpr-inline">
-        <input type="hidden" name="csrf" value="{{$.CSRF}}">
-        <input type="hidden" name="repository" value="{{$data.Repository}}">
-        <input type="hidden" name="snapshot" value="{{$data.Snapshot}}">
-        <input type="hidden" name="item" value="{{.}}">
-        <button class="cpr-btn">{{$data.KindTitle .}}</button>
-      </form>
-      {{end}}
-      {{end}}
-    </div>
-    <p class="cpr-note">A mailbox or a database needs to be named, so those come from the list of
-    what is in this backup — ask your host if you cannot see one you expect.</p>
+  <div class="cpr-kind-grid">
+    {{range $data.Kinds}}
+    <a class="cpr-kind-card {{if $data.Selected .}}cpr-kind-selected{{end}}"
+       href="browse.live.php?repository={{$data.Repository}}&amp;snapshot={{$data.Snapshot}}&amp;item={{.}}"
+       {{if $data.Selected .}}aria-current="step"{{end}}>
+      <span class="cpr-kind-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          {{if eq (printf "%s" .) "account"}}<path d="M4 7h16v12H4zM7 4h10v3M8 11h8M8 15h5"/>
+          {{else if eq (printf "%s" .) "files"}}<path d="M3 7h7l2 2h9v10H3z"/>
+          {{else if eq (printf "%s" .) "cron"}}<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+          {{else if eq (printf "%s" .) "database"}}<ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v7c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 12v7c0 1.7 3.1 3 7 3s7-1.3 7-3v-7"/>
+          {{else if eq (printf "%s" .) "dbusers"}}<circle cx="9" cy="8" r="3"/><path d="M3 19c.5-4 2.5-6 6-6 2.3 0 4 1 5 3M17 10v8M14 15l3 3 3-3"/>
+          {{else if eq (printf "%s" .) "domains"}}<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/>
+          {{else if eq (printf "%s" .) "dns"}}<path d="M4 7h16v10H4zM8 11h.01M12 11h4M8 14h.01M12 14h4"/>
+          {{else if eq (printf "%s" .) "ssl"}}<rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3M12 14v3"/>
+          {{else if eq (printf "%s" .) "mailbox"}}<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M4 7l8 6 8-6"/>
+          {{else}}<path d="M6 3h10l3 3v15H6zM9 10h6M9 14h6"/>{{end}}
+        </svg>
+      </span>
+      <span class="cpr-kind-copy"><strong>{{$data.KindTitle .}}</strong><small>{{$data.KindDescription .}}</small></span>
+      <svg class="cpr-kind-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+    </a>
+    {{end}}
   </div>
-</div>
+</section>
 
-{{if $data.Entries}}
-<div class="cpr-card">
-  <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
-    <h2 style="margin:0">Your files</h2>
-    <span class="cpr-mono" style="font-size:13px">{{$data.Path}}</span>
+{{if $data.Kind}}
+<section class="cpr-card cpr-recovery-panel">
+  <div class="cpr-pad cpr-user-section-head">
+    <p class="cpr-eyebrow">Selected recovery</p>
+    <h2>{{$data.KindTitle $data.Kind}}</h2>
+    <p class="cpr-hint">{{$data.KindDescription $data.Kind}}</p>
   </div>
+
+  {{if $data.NeedsNames}}
   <form method="post" action="restore.live.php">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
     <input type="hidden" name="repository" value="{{$data.Repository}}">
     <input type="hidden" name="snapshot" value="{{$data.Snapshot}}">
-    <input type="hidden" name="item" value="files">
-    <div class="cpr-tablewrap"><table>
-      <thead><tr><th style="width:32px">&nbsp;</th><th>Name</th><th>Size</th></tr></thead>
+    <input type="hidden" name="item" value="{{$data.Kind}}">
+
+    {{if $data.Path}}
+    <div class="cpr-picker-toolbar">
+      <div>
+        <span class="cpr-picker-label">Browsing</span>
+        <span class="cpr-mono">{{$data.Path}}</span>
+      </div>
+      {{if $data.Up}}<a class="cpr-btn" href="browse.live.php?repository={{$data.Repository}}&amp;snapshot={{$data.Snapshot}}&amp;item={{$data.Kind}}&amp;path={{$data.Up}}">Up one level</a>{{end}}
+    </div>
+    {{end}}
+
+    {{if eq (printf "%s" $data.Kind) "files"}}
+    <label class="cpr-select-folder">
+      <input type="checkbox" name="name" value="{{$data.Path}}">
+      <span><b>Select this whole folder</b><small>Includes everything below <span class="cpr-mono">{{$data.Path}}</span>.</small></span>
+    </label>
+    {{end}}
+
+    {{if $data.Entries}}
+    <div class="cpr-tablewrap"><table class="cpr-picker-table">
+      <thead><tr><th class="cpr-check-col"><span class="cpr-visually-hidden">Select</span></th><th>Name</th><th>Type</th><th class="cpr-right">Size</th></tr></thead>
       <tbody>
-        {{$q := printf "browse.live.php?repository=%s&amp;snapshot=%s" $data.Repository $data.Snapshot}}
-        {{if $data.Up}}
-        <tr><td></td><td colspan="2"><a class="cpr-link" href="{{$q}}&amp;path={{$data.Up}}">↑ up one level</a></td></tr>
-        {{end}}
         {{range $data.Entries}}
         <tr>
-          <td><input type="checkbox" name="name" value="{{.Path}}" aria-label="Restore {{.Name}}"></td>
+          <td class="cpr-check-col">{{if .Item}}<input type="checkbox" name="name" value="{{.Item}}" aria-label="Select {{.Name}}">{{end}}</td>
           <td class="cpr-acct">
-            {{if .Dir}}<a class="cpr-link" href="{{$q}}&amp;path={{.Path}}">{{.Name}}/</a>
-            {{else}}{{.Name}}{{end}}</td>
-          <td class="cpr-mono cpr-num">{{if .Size}}{{bytes .Size}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
+            {{if .Dir}}<a class="cpr-link" href="browse.live.php?repository={{$data.Repository}}&amp;snapshot={{$data.Snapshot}}&amp;item={{$data.Kind}}&amp;path={{.Path}}">{{.Name}}/</a>{{else}}{{.Name}}{{end}}
+          </td>
+          <td>{{if .Dir}}Folder{{else}}Item{{end}}</td>
+          <td class="cpr-right cpr-mono cpr-num">{{if .Size}}{{bytes .Size}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
         </tr>
         {{end}}
       </tbody>
     </table></div>
-    <div class="cpr-pad cpr-row" style="border-top:1px solid var(--line)">
-      <button class="cpr-btn cpr-primary" type="submit">Restore what is ticked</button>
-      <span class="cpr-hint" style="margin:0">Folders come back whole. Ticks are lost if you walk
-      into another folder, so restore from one folder at a time.</span>
+    {{else}}
+    <div class="cpr-empty"><p><b>No selectable items were found here.</b><br>Try a different restore point or ask your host to inspect this backup.</p></div>
+    {{end}}
+
+    <div class="cpr-pad cpr-recovery-actions">
+      <div><b>Create a private recovery package</b><p class="cpr-hint">The live account will not be changed.</p></div>
+      <button class="cpr-btn cpr-primary" type="submit">Prepare selected items</button>
     </div>
   </form>
+  {{else}}
+  <form method="post" action="restore.live.php">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="repository" value="{{$data.Repository}}">
+    <input type="hidden" name="snapshot" value="{{$data.Snapshot}}">
+    <input type="hidden" name="item" value="{{$data.Kind}}">
+    <div class="cpr-pad cpr-recovery-summary">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.6-2.9 8-7 10-4.1-2-7-5.4-7-10V6zM9 12l2 2 4-4"/></svg>
+      <div><b>Ready to prepare from {{stamp $data.SnapshotAt}}</b><p class="cpr-hint">A downloadable package will appear on the Overview page when it is ready. Nothing live is overwritten.</p></div>
+    </div>
+    <div class="cpr-pad cpr-recovery-actions">
+      <a class="cpr-btn" href="browse.live.php?repository={{$data.Repository}}&amp;snapshot={{$data.Snapshot}}">Cancel</a>
+      <button class="cpr-btn cpr-primary" type="submit">Prepare {{$data.KindTitle $data.Kind}}</button>
+    </div>
+  </form>
+  {{end}}
+</section>
+{{else}}
+<div class="cpr-user-safe cpr-user-safe-standalone">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.6-2.9 8-7 10-4.1-2-7-5.4-7-10V6zM9 12l2 2 4-4"/></svg>
+  <p><b>Select a category to continue.</b> Recovery packages are account-scoped, private, and never applied to the live account automatically.</p>
 </div>
 {{end}}
 {{end}}

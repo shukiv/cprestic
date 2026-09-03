@@ -256,3 +256,28 @@ func TestJobsAndRestoresSurviveAReopen(t *testing.T) {
 		t.Errorf("job = %+v", found)
 	}
 }
+
+func TestLifecycleHistoryIsNewestFirstAndBounded(t *testing.T) {
+	store := newStore(t)
+	start := time.Now().Add(-time.Hour).UTC()
+	for i := 0; i < 105; i++ {
+		if _, err := store.PutLifecycleEvent(nodestore.LifecycleEvent{
+			Event: "create", Account: "customer1", OK: true,
+			At: start.Add(time.Duration(i) * time.Second),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, err := store.LifecycleEvents(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 100 {
+		t.Fatalf("retained %d lifecycle events, want 100", len(events))
+	}
+	if !events[0].At.Equal(start.Add(104*time.Second)) ||
+		!events[len(events)-1].At.Equal(start.Add(5*time.Second)) {
+		t.Fatalf("lifecycle ordering/retention is wrong: first=%v last=%v",
+			events[0].At, events[len(events)-1].At)
+	}
+}

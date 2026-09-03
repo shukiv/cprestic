@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>cP:Restic UI directions — prototype</title>
+  <link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+  <a class="skip-link" href="#prototype-main">Skip to main content</a>
+  <div id="app"></div>
+
+  <div class="prototype-note" aria-label="Prototype status">
+    <span>Prototype</span>
+    <strong>Read only</strong>
+  </div>
+
+  <div class="prototype-switcher" role="group" aria-label="Choose a design direction">
+    <button type="button" data-cycle="-1" aria-label="Previous design direction">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
+    </button>
+    <output id="variant-label" aria-live="polite"></output>
+    <button type="button" data-cycle="1" aria-label="Next design direction">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+    </button>
+  </div>
+
+  <div class="prototype-toast" id="prototype-toast" role="status" aria-live="polite"></div>
+  <script src="prototype.js"></script>
+</body>
+</html>

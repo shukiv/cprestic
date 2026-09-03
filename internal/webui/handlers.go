@@ -42,6 +42,12 @@ type dashboardView struct {
 	Protected      int
 	Stale          int
 	Unprotected    int
+	Unscheduled    int
+	Failed         int
+	Partial        int
+	OutOfDate      int
+	CopyGaps       int
+	Verified       int
 	ProtectedPct   int
 	StalePct       int
 	UnprotectedPct int
@@ -58,6 +64,7 @@ type dashboardView struct {
 	SpaceTight  bool
 
 	LastDrill *nodestore.Restore
+	Lifecycle []nodestore.LifecycleEvent
 }
 
 // attentionLimit keeps the overview short: it is a prompt to act, not a
@@ -88,16 +95,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		Policies:     policies,
 	}
 
-	for _, account := range accounts {
-		switch {
-		case account.Current():
-			view.Protected++
-		case account.LastBackup == nil:
-			view.Unprotected++
-		default:
-			view.Stale++
-		}
-	}
+	addCoverage(&view, accounts)
 	if total := len(accounts); total > 0 {
 		view.ProtectedPct = view.Protected * 100 / total
 		view.StalePct = view.Stale * 100 / total
@@ -137,8 +135,40 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if events, err := s.engine.Store().LifecycleEvents(5); err == nil {
+		view.Lifecycle = events
+	}
 
 	s.render(w, r, "dashboard.html", "Overview", "dashboard", view)
+}
+
+func addCoverage(view *dashboardView, accounts []accountView) {
+	for _, account := range accounts {
+		if account.Verified != nil && account.VerifiedOK {
+			view.Verified++
+		}
+		if account.ExpectedEvery == 0 {
+			view.Unscheduled++
+		}
+		switch account.State() {
+		case StateFailed:
+			view.Failed++
+		case StatePartial:
+			view.Partial++
+		case StateOutOfDate:
+			view.OutOfDate++
+		case StateCopyGap:
+			view.CopyGaps++
+		}
+		switch {
+		case account.Current():
+			view.Protected++
+		case account.LastBackup == nil:
+			view.Unprotected++
+		default:
+			view.Stale++
+		}
+	}
 }
 
 func attentionRank(a accountView) int {
@@ -1212,6 +1242,16 @@ type accountView struct {
 	// rebuilds, with VerifiedOK saying whether it passed.
 	Verified   *time.Time
 	VerifiedOK bool
+	// FreshCopies and MissingCopies compare successful target writes with
+	// what every enabled policy promises for this account. A healthy copy
+	// in one destination must not hide a missing second copy.
+	FreshCopies      []string
+	MissingCopies    []string
+	RepairPolicyID   string
+	RepairPolicyName string
+	// RemovalSafety is present only when the cPanel pre-termination gate is
+	// enabled. It is computed by the same node evaluator the hook invokes.
+	RemovalSafety *node.RemovalSafety
 	// Stored is what the last backup actually cost across its
 	// destinations, after restic deduplicated it, and Took is how long the
 	// whole run lasted — staging the account included, which is most of it
@@ -1247,6 +1287,13 @@ func (a accountView) Record() string {
 // its own number rather than as part of a ratio.
 func (a accountView) Failures() int { return a.Runs - a.Succeeded }
 
+// NeedsRemovalPreparation reports whether WHM can offer the remediation
+// action. A missing full-account policy needs configuration, not a button.
+func (a accountView) NeedsRemovalPreparation() bool {
+	return a.RemovalSafety != nil && !a.RemovalSafety.Allowed &&
+		len(a.RemovalSafety.MissingRepositoryIDs) > 0
+}
+
 // Stripe is the severity colour on the row's leading edge, so state reads
 // without depending on colour alone.
 func (a accountView) Stripe() string {
@@ -1255,7 +1302,7 @@ func (a accountView) Stripe() string {
 		return "cpr-s-warn"
 	case a.LastBackup == nil, a.LastStatus == job.StatusFailed:
 		return "cpr-s-bad"
-	case a.LastStatus == job.StatusPartialSuccess:
+	case a.LastStatus == job.StatusPartialSuccess, len(a.MissingCopies) > 0:
 		return "cpr-s-warn"
 	default:
 		return "cpr-s-ok"
@@ -1287,6 +1334,7 @@ const (
 	StateProtected   State = "protected"
 	StateOutOfDate   State = "out-of-date"
 	StateUnscheduled State = "unscheduled"
+	StateCopyGap     State = "copy-gap"
 	StatePartial     State = "partial"
 	StateFailed      State = "failed"
 	StateNever       State = "never"
@@ -1302,6 +1350,8 @@ func (a accountView) State() State {
 		return StateFailed
 	case a.LastStatus == job.StatusPartialSuccess:
 		return StatePartial
+	case len(a.MissingCopies) > 0:
+		return StateCopyGap
 	case a.ExpectedEvery == 0:
 		// It has a good copy and nothing will ever take another.
 		return StateUnscheduled
@@ -1338,6 +1388,8 @@ func (a accountView) Why() string {
 		return "no schedule covers it, so it will not be taken again"
 	case StatePartial:
 		return "some files could not be read"
+	case StateCopyGap:
+		return "a scheduled destination has no recent successful copy"
 	case StateFailed:
 		if a.LastError != "" {
 			return a.LastError
@@ -1475,6 +1527,54 @@ func (s *Server) expectedIntervals(accounts []cpanel.AccountInfo) (map[string]ti
 	return intervals, alerts, nil
 }
 
+// expectedTargetIntervals says how fresh each promised destination copy
+// must be for each account. It is per target rather than per account because
+// a daily local copy and a weekly off-site copy have different due dates.
+func (s *Server) expectedTargetIntervals(accounts []cpanel.AccountInfo) (map[string]map[string]time.Duration, error) {
+	policies, err := s.engine.Store().Policies()
+	if err != nil {
+		return nil, err
+	}
+	expected := map[string]map[string]time.Duration{}
+	now := time.Now()
+	for _, policy := range policies {
+		if !policy.Enabled || len(policy.RepositoryIDs) == 0 {
+			continue
+		}
+		schedule, err := cron.ParseStandard(policy.ScheduleCron)
+		if err != nil {
+			continue
+		}
+		first := schedule.Next(now)
+		interval := schedule.Next(first).Sub(first)
+		if interval <= 0 {
+			continue
+		}
+		due := 2 * interval
+		if policy.AlertNoBackupDays > 0 {
+			due = time.Duration(policy.AlertNoBackupDays) * 24 * time.Hour
+		}
+		covered := policy.Accounts
+		if policy.AllAccounts() {
+			covered = make([]string, 0, len(accounts))
+			for _, account := range accounts {
+				covered = append(covered, account.User)
+			}
+		}
+		for _, account := range covered {
+			if expected[account] == nil {
+				expected[account] = map[string]time.Duration{}
+			}
+			for _, repositoryID := range policy.RepositoryIDs {
+				if current, exists := expected[account][repositoryID]; !exists || due < current {
+					expected[account][repositoryID] = due
+				}
+			}
+		}
+	}
+	return expected, nil
+}
+
 func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) {
 	accounts, err := s.engine.Accounts(r.Context())
 	if err != nil {
@@ -1496,6 +1596,22 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 	// that actually cover it. An account no schedule covers has no
 	// expectation to fall behind, which is its own kind of exposure.
 	expected, alertAfter, err := s.expectedIntervals(accounts)
+	if err != nil {
+		return nil, nil, err
+	}
+	expectedTargets, err := s.expectedTargetIntervals(accounts)
+	if err != nil {
+		return nil, nil, err
+	}
+	policies, err := s.engine.Store().Policies()
+	if err != nil {
+		return nil, nil, err
+	}
+	accountNames := make([]string, 0, len(accounts))
+	for _, account := range accounts {
+		accountNames = append(accountNames, account.User)
+	}
+	removalSafeties, err := s.engine.AccountRemovalSafeties(accountNames, time.Now())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1541,6 +1657,7 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 		names[dest.Repository.ID] = dest.Name
 	}
 	copies := map[string]map[string]int{}
+	lastTargetSuccess := map[string]map[string]time.Time{}
 	for _, stored := range jobs {
 		if !stored.Status.Terminal() {
 			continue
@@ -1557,6 +1674,16 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 				copies[stored.Account] = map[string]int{}
 			}
 			copies[stored.Account][name]++
+			at := stored.QueuedAt
+			if stored.FinishedAt != nil {
+				at = *stored.FinishedAt
+			}
+			if lastTargetSuccess[stored.Account] == nil {
+				lastTargetSuccess[stored.Account] = map[string]time.Time{}
+			}
+			if at.After(lastTargetSuccess[stored.Account][target.RepositoryID]) {
+				lastTargetSuccess[stored.Account][target.RepositoryID] = at
+			}
 		}
 	}
 
@@ -1606,6 +1733,21 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 		for name, written := range copies[account.User] {
 			view.Copies = append(view.Copies, copyCount{Destination: name, Written: written})
 		}
+		view.FreshCopies, view.MissingCopies = targetCoverage(
+			expectedTargets[account.User], lastTargetSuccess[account.User], names, time.Now())
+		missingIDs := map[string]bool{}
+		now := time.Now()
+		for repositoryID, due := range expectedTargets[account.User] {
+			last, exists := lastTargetSuccess[account.User][repositoryID]
+			if !exists || now.Sub(last) > due {
+				missingIDs[repositoryID] = true
+			}
+		}
+		view.RepairPolicyID, view.RepairPolicyName = repairPolicy(policies, account.User, missingIDs)
+		if decision := removalSafeties[account.User]; decision.Enforced {
+			copy := decision
+			view.RemovalSafety = &copy
+		}
 		sort.Slice(view.Copies, func(i, j int) bool {
 			return view.Copies[i].Destination < view.Copies[j].Destination
 		})
@@ -1630,6 +1772,86 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 	return views, warnings, nil
 }
 
+func targetCoverage(expected map[string]time.Duration, successful map[string]time.Time,
+	names map[string]string, now time.Time) (fresh, missing []string) {
+	for repositoryID, due := range expected {
+		name := names[repositoryID]
+		if name == "" {
+			name = shortID(repositoryID)
+		}
+		last, exists := successful[repositoryID]
+		if !exists || now.Sub(last) > due {
+			missing = append(missing, name)
+		} else {
+			fresh = append(fresh, name)
+		}
+	}
+	sort.Strings(fresh)
+	sort.Strings(missing)
+	return fresh, missing
+}
+
+func repairPolicy(policies []nodestore.Policy, account string, missing map[string]bool) (id, name string) {
+	best := 0
+	for _, policy := range policies {
+		if !policy.Enabled || len(policy.RepositoryIDs) == 0 {
+			continue
+		}
+		covered := policy.AllAccounts()
+		for _, selected := range policy.Accounts {
+			if selected == account {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			continue
+		}
+		score := 0
+		for _, repositoryID := range policy.RepositoryIDs {
+			if missing[repositoryID] {
+				score++
+			}
+		}
+		if score > best {
+			best, id, name = score, policy.ID, policy.Name
+		}
+	}
+	return id, name
+}
+
+// preferredBackupPolicy chooses what the generic "Back up" button means.
+// The old behavior picked the first policy alphabetically, even when it was
+// disabled, had no destination, or covered somebody else. Prefer a complete
+// payload, then the policy that writes the most copies.
+func preferredBackupPolicy(policies []nodestore.Policy, account string, allOnly bool) (nodestore.Policy, bool) {
+	var selected nodestore.Policy
+	selectedFull := false
+	for _, policy := range policies {
+		if !policy.Enabled || len(policy.RepositoryIDs) == 0 {
+			continue
+		}
+		covered := policy.AllAccounts()
+		if !allOnly && !covered {
+			for _, name := range policy.Accounts {
+				if name == account {
+					covered = true
+					break
+				}
+			}
+		}
+		if !covered {
+			continue
+		}
+		full := !policy.SkipHomedir && !policy.SkipDatabases && !policy.SkipEmail
+		if selected.ID == "" || full && !selectedFull ||
+			full == selectedFull && len(policy.RepositoryIDs) > len(selected.RepositoryIDs) {
+			selected, selectedFull = policy, full
+		}
+	}
+	return selected, selected.ID != ""
+}
+
 // handleAccounts lists what this server has, using local state only.
 //
 // Nothing here talks to a backup destination: listing snapshots means a
@@ -1650,11 +1872,14 @@ func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 
 	view := struct {
 		Accounts    []accountView
-		Policies    []nodestore.Policy
+		RunAll      *nodestore.Policy
 		Warnings    []string
 		Protected   int
 		Unprotected int
-	}{Accounts: accounts, Policies: policies, Warnings: warnings}
+	}{Accounts: accounts, Warnings: warnings}
+	if policy, ok := preferredBackupPolicy(policies, "", true); ok {
+		view.RunAll = &policy
+	}
 	for _, account := range accounts {
 		switch {
 		case account.Current():
@@ -1857,18 +2082,54 @@ func (s *Server) handleBackupNow(w http.ResponseWriter, r *http.Request) {
 	policyID := r.PostFormValue("policy")
 	if policyID == "" {
 		policies, err := s.engine.Store().Policies()
-		if err != nil || len(policies) == 0 {
-			s.redirect(w, r, "/accounts", "error",
-				"Create a schedule first: it decides where the backup goes and what is kept.")
+		if err != nil {
+			s.redirect(w, r, "/accounts", "error", err.Error())
 			return
 		}
-		policyID = policies[0].ID
+		policy, ok := preferredBackupPolicy(policies, account, false)
+		if !ok {
+			s.redirect(w, r, "/accounts", "error",
+				"Create or enable a schedule that covers this account and has a destination.")
+			return
+		}
+		policyID = policy.ID
 	}
-	if _, err := s.engine.QueueBackup(policyID, account); err != nil {
+	if _, err := s.engine.QueueCoverageRepair(policyID, account); err != nil {
 		s.redirect(w, r, "/accounts", "error", err.Error())
 		return
 	}
 	s.redirect(w, r, "/accounts", "ok", "Backup of "+account+" queued.")
+}
+
+func (s *Server) handleRepairCoverage(w http.ResponseWriter, r *http.Request) {
+	account := r.PostFormValue("account")
+	if _, err := s.engine.QueueCoverageRepair(r.PostFormValue("policy"), account); err != nil {
+		s.redirect(w, r, "/accounts", "error", err.Error())
+		return
+	}
+	s.redirect(w, r, "/accounts", "ok", "Coverage repair for "+account+" queued.")
+}
+
+func (s *Server) handlePrepareRemoval(w http.ResponseWriter, r *http.Request) {
+	account := r.PostFormValue("account")
+	policies, err := s.engine.QueueRemovalPreparation(account, time.Now())
+	target := "/accounts"
+	if r.PostFormValue("detail") == "1" {
+		target = "/account?user=" + url.QueryEscape(account)
+	}
+	if err != nil {
+		s.redirect(w, r, target, "error", err.Error())
+		return
+	}
+	names := make([]string, 0, len(policies))
+	for _, policy := range policies {
+		names = append(names, policy.Name)
+	}
+	message := "Queued " + strings.Join(names, ", ") + " to prepare " + account + " for safe termination."
+	if len(policies) > 1 {
+		message += " The backups will run sequentially."
+	}
+	s.redirect(w, r, target, "ok", message)
 }
 
 // --- restore ---
@@ -2406,7 +2667,13 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 // would show an operator a page saying this server had no staging space
 // and no restored files, on the strength of a typo in a mail server name.
 func (s *Server) settingsPage() (settingsView, error) {
-	settings := s.engine.Settings()
+	// Read this from storage rather than the engine's startup snapshot.
+	// Termination protection is consumed by a synchronous cPanel hook and
+	// takes effect immediately without a service restart.
+	settings, err := s.engine.Store().Settings()
+	if err != nil {
+		return settingsView{}, err
+	}
 	free := uint64(0)
 	if info, err := os.Stat(settings.StagingRoot); err == nil && info.IsDir() {
 		free, _ = stagingFree(settings.StagingRoot)
@@ -2710,7 +2977,11 @@ func (s *Server) handleClearOutput(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
-	settings := s.engine.Settings()
+	settings, err := s.engine.Store().Settings()
+	if err != nil {
+		s.redirect(w, r, "/settings", "error", err.Error())
+		return
+	}
 	settings.MaxConcurrent = atoiOr(r.PostFormValue("max_concurrent"), 1)
 	settings.ResticBinary = strings.TrimSpace(r.PostFormValue("restic"))
 	settings.ResticCACert = strings.TrimSpace(r.PostFormValue("restic_cacert"))
@@ -2719,6 +2990,8 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	// what this server did before it swept anything at all.
 	settings.KeepOutputDays = atoiOr(r.PostFormValue("keep_output_days"),
 		nodestore.DefaultKeepOutputDays)
+	settings.ProtectAccountRemoval = r.PostFormValue("protect_account_removal") == "1"
+	settings.BackupOnSuspension = r.PostFormValue("backup_on_suspension") == "1"
 	if hostname := strings.TrimSpace(r.PostFormValue("hostname")); hostname != "" {
 		settings.Hostname = hostname
 	}
@@ -2730,7 +3003,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		s.redirect(w, r, "/settings", "error", err.Error())
 		return
 	}
-	s.redirect(w, r, "/settings", "ok", "Saved. Restart the service for it to take effect.")
+	s.redirect(w, r, "/settings", "ok", "Saved. Account-removal protection takes effect immediately; restart the service for the other runtime changes.")
 }
 
 func atoiOr(raw string, fallback int) int {

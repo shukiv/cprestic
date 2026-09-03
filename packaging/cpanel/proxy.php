@@ -37,42 +37,53 @@ function cprest_feature_enabled(): bool {
     return $enabled;
 }
 
-/**
- * A team user is not the account owner, and the service cannot tell.
- *
- * cPanel team users are entries in the account's own team file, not unix
- * accounts: they share the owner's uid, so SO_PEERCRED -- the whole basis
- * of who the service thinks is asking -- sees the owner. cPanel sets
- * TEAM_USER in the session, and this page is the only place that can see
- * it.
- *
- * Backups are not divisible along team roles: restoring an account
- * touches its files, its databases and its mail, so a team user with only
- * the Web role restoring "their" part would be restoring everything. Until
- * that is worked out properly, this refuses them rather than quietly
- * giving every team member the run of the account.
- */
-function cprest_team_user(): string {
-    foreach (['TEAM_USER', 'REMOTE_TEAM_USER'] as $name) {
-        $value = $_SERVER[$name] ?? getenv($name);
-        if (is_string($value) && $value !== '') {
-            return $value;
+function cprest_write_all($socket, string $request): bool {
+    $written = 0;
+    $length = strlen($request);
+    while ($written < $length) {
+        $count = fwrite($socket, substr($request, $written));
+        if ($count === false || $count === 0) {
+            return false;
         }
+        $written += $count;
     }
-    return '';
+    return true;
+}
+
+/**
+ * Ask cPanel's authenticated LiveAPI engine to exchange its root-owned
+ * session record for a one-use token bound to this exact request. cPanel
+ * deliberately withholds browser cookies from LivePHP, so the exchange goes
+ * through the installed UAPI/AdminBin bridge rather than reading $_COOKIE.
+ */
+function cprest_capability(string $method, string $target): array {
+    if (strlen($target) === 0 || strlen($target) > 4096 ||
+        preg_match('/[\x00-\x1F\x7F]/', $target) ||
+        !in_array($method, ['GET', 'POST'], true)) {
+        return ['status' => 403, 'token' => ''];
+    }
+
+    try {
+        $response = cprest_cpanel()->uapi('Cprest', 'issue_capability', [
+            'method' => $method,
+            'target' => $target,
+        ]);
+    } catch (Throwable $error) {
+        return ['status' => 503, 'token' => ''];
+    }
+
+    $result = $response['cpanelresult']['result'] ?? null;
+    $data = is_array($result) ? ($result['data'] ?? null) : null;
+    $status = is_array($data) ? (int) ($data['status'] ?? 503) : 503;
+    $token = is_array($data) && is_string($data['token'] ?? null) ? trim($data['token']) : '';
+    if ($status !== 200 || strlen($token) > 4096 ||
+        !preg_match('/^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/D', $token)) {
+        return ['status' => $status, 'token' => ''];
+    }
+    return ['status' => 200, 'token' => $token];
 }
 
 function cprest_page(string $path): void {
-    $teamUser = cprest_team_user();
-    if ($teamUser !== '') {
-        http_response_code(403);
-        header('Cache-Control: no-store, max-age=0');
-        echo '<p>cP:Restic can only be used by the account owner, not by a team user. '
-           . 'Restoring a backup replaces files, databases and mail together, so it is not '
-           . 'something a team role can be given a part of. Ask the account owner to do it.</p>';
-        return;
-    }
-
     // Feature Manager must be an authorization boundary, not just a hidden
     // tile. Without this check an account denied the feature can type the
     // .live.php URL directly and still ask the root service for restores.
@@ -86,6 +97,19 @@ function cprest_page(string $path): void {
     $query = $_SERVER['QUERY_STRING'] ?? '';
     $target = $path . ($query === '' ? '' : '?' . $query);
     $method = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' ? 'POST' : 'GET';
+
+    $capability = cprest_capability($method, $target);
+    if ($capability['status'] !== 200) {
+        $status = $capability['status'] === 503 ? 503 : 403;
+        http_response_code($status);
+        header('Cache-Control: no-store, max-age=0');
+        if ($status === 503) {
+            echo '<p>cP:Restic could not verify your cPanel session. Ask your host to check the service.</p>';
+        } else {
+            echo '<p>Open cP:Restic from a current cPanel session as the account owner or an Administrator team user.</p>';
+        }
+        return;
+    }
 
     $body = '';
     if ($method === 'POST') {
@@ -116,24 +140,19 @@ function cprest_page(string $path): void {
 
     $request = $method . ' ' . $target . " HTTP/1.1\r\n"
         . "Host: cprest\r\n"
-        . "Connection: close\r\n";
+        . "Connection: close\r\n"
+        . "X-Cprest-Capability: " . $capability['token'] . "\r\n";
     if ($method === 'POST') {
         $request .= "Content-Type: application/x-www-form-urlencoded\r\n"
             . 'Content-Length: ' . strlen($body) . "\r\n";
     }
     $request .= "\r\n" . $body;
 
-    $written = 0;
-    $requestLength = strlen($request);
-    while ($written < $requestLength) {
-        $count = fwrite($socket, substr($request, $written));
-        if ($count === false || $count === 0) {
-            fclose($socket);
-            http_response_code(502);
-            echo '<p>cP:Restic could not receive this request.</p>';
-            return;
-        }
-        $written += $count;
+    if (!cprest_write_all($socket, $request)) {
+        fclose($socket);
+        http_response_code(502);
+        echo '<p>cP:Restic could not receive this request.</p>';
+        return;
     }
 
     // Headers a line at a time, then the body in chunks. A restore

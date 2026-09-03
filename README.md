@@ -44,7 +44,14 @@ cprest-plugin/install.sh
 
 The installer checks for restic (and tells you how to get it), installs the
 service and the plugin, registers it with WHM, and confirms WHM kept the
-registration. Then open WHM and look for **cprest Backups** in the left
+registration. It also registers cPanel Standardized Hooks for account
+create, modify, suspend, unsuspend and remove events. New accounts receive an
+immediate baseline that prefers a complete all-account schedule and then the
+widest coverage; renames keep their named-policy membership, and terminated
+names cannot turn a one-account policy into an all-account policy. The latest
+100 hook outcomes appear on the WHM overview; raw cPanel hook payloads are not
+retained. Then open WHM and look for
+**cprest Backups** in the left
 sidebar's **Plugins** group.
 
 Not on the **Manage Plugins** page — that lists cPanel's own RPM addons.
@@ -60,12 +67,51 @@ Its pages are addressed as `cprest.cgi?p=destinations` and so on: cpsrvd
 will not route a path after the script name, so routes travel in a query
 parameter ([ADR 8](docs/adr/0008-query-string-routing-under-whm.md)).
 
-Two things the plugin does that are worth knowing:
+Some plugin behavior worth knowing:
 
+- The overview treats policy promises as coverage, not merely the existence
+  of an old backup. It reports overdue, partial, failed and unscheduled
+  accounts, and flags each destination whose required copy is missing or
+  stale according to that destination's own schedule. **Repair copies** runs
+  the covering policy that fixes the most gaps, after the service validates
+  that the policy still covers the account.
+- Settings can opt in to blocking cPanel account termination when the account
+  lacks recent complete copies at every destination promised by a full-account
+  schedule. Enabling it requires a new successful backup: older job records do
+  not prove which payload exclusions were in force. cprest performs only a
+  local history check inside cPanel's synchronous hook; it never tries to run a
+  long backup while WHM is waiting. The Accounts list and account detail page
+  preview the same decision before an administrator opens cPanel's termination
+  flow. **Prepare for termination** queues the smallest combination of
+  full-account schedules that refreshes every missing promised destination;
+  multiple jobs run sequentially and the action never deletes the account. If
+  the service itself is unavailable, the hook logs the failure and allows
+  removal so cPanel administration cannot be wedged. See
+  [ADR 14](docs/adr/0014-account-termination-safety.md).
+- Settings can also opt in to preserving an account as soon as cPanel suspends
+  it. The post-suspension hook atomically queues the smallest set of enabled
+  full-account schedules needed to reach every destination those schedules
+  promise, then returns without waiting for `pkgacct` or remote storage.
+  Repeated suspension events do not add work while that account already has a
+  backup or restore queued or running. Unsuspension is recorded for diagnosis
+  but does not queue a backup. See
+  [ADR 15](docs/adr/0015-suspension-preservation.md).
 - The interface listens on a unix socket, not a port. cPanel servers are
   multi-tenant and this interface can read every stored credential, so it
   is not reachable over the network at all; the WHM plugin proxies to it and
   refuses any WHM user that is not root.
+- The account-facing cPanel tile accepts the account owner and Administrator
+  Team users. The root service verifies the live cpsrvd session itself and
+  gives the proxy a 20-second, one-use token for the exact request; sharing
+  the account's Unix uid is not sufficient to use the public socket. A WHM
+  root administrator using cPanel's **Log in to cPanel** flow is accepted only
+  when the root-owned session record carries cPanel's temporary-user and
+  cPHulk markers.
+- The account recovery centre follows restore point → category → item. It can
+  prepare a full cPanel account archive, the home directory, cron jobs,
+  databases and users, domains and DNS, SSL material, mail, or FTP settings.
+  These self-service requests always produce a private download; they cannot
+  set the operator-only `Apply` flag or overwrite the live account.
 - Destination credentials are encrypted with a key in `/etc/cprest/master.key`.
   Back that file up somewhere other than this server. Without it the stored
   credentials cannot be read.
@@ -118,7 +164,7 @@ PostgreSQL, real restic and a real append-only rest-server.
 | Restore: whole account, single file, opt-in apply to the live account | working |
 | Administration CLI (`cprest-controller <command>`) | working |
 | Real cPanel provider (`pkgacct`, `mysqldump`) | working; verified on cPanel 136 |
-| `restorepkg` (applying a restore) | written, **unvalidated** — never run against a live account |
+| `restorepkg` (applying a restore) | implemented; live certification command provided for an isolated cPanel host |
 | Downloading a rebuilt account archive | working |
 | Standalone mode + WHM plugin GUI | working |
 | Controller web UI | not built; the API and CLI are the fleet-mode interface |
@@ -268,6 +314,22 @@ cprest-controller restore -server cp01.example.com -user customer1 -snapshot 40d
 
 cprest-controller restore-status -job <restore-id>
 ```
+
+To prove that cPanel itself accepts a rebuilt archive, copy it to a dedicated
+certification cPanel host and run:
+
+```bash
+cprest-agent -certify-live-archive /root/cpmove-customer1.tar \
+    -certify-user cprv1234 -certify-isolated-host
+```
+
+This performs a restricted `restorepkg --newuser`, disables DNS-zone
+updates, confirms cPanel registered the disposable account, then runs
+`removeacct --force`. Do not run it on the production source server: domain
+ownership can conflict, and the command intentionally creates and deletes a
+cPanel account. The explicit isolation flag is required. The command writes a
+JSON audit record to stdout with timestamps, the disposable username, every
+completed check, and any failure.
 
 The rebuilt archive stays on the cPanel server under the staging root until
 the next restore of that account, or until the agent restarts — its startup
