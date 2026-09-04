@@ -64,18 +64,23 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
   </div>
   {{if $data.Destinations}}
   <div class="cpr-tablewrap"><table>
-    <thead><tr><th>Name</th><th>Address</th><th>Repository</th><th>Space</th><th>State</th><th class="cpr-right">&nbsp;</th></tr></thead>
+    <thead><tr><th>Name</th><th>Repository</th><th>Space</th><th class="cpr-right">&nbsp;</th></tr></thead>
     <tbody>
     {{range $data.Destinations}}
     <tr class="cpr-state {{.Stripe}}">
       <td class="cpr-acct">{{.Name}}
         <div class="cpr-sublabel">{{.TypeName}}{{if .AppendOnly}} · append-only{{end}}</div></td>
-      <td class="cpr-mono">{{.Endpoint}}</td>
-      <td class="cpr-mono">{{.Repository.Path}}
+      {{/* Where the backups are, in one column: the repository, the machine
+           it is on, and whether that machine answered. Three narrow columns
+           made every one of them wrap. */}}
+      <td>
+        <div class="cpr-mono">{{.Repository.Path}}</div>
+        <div class="cpr-sublabel cpr-mono">{{.Endpoint}}</div>
+        <div class="cpr-deststate">{{template "deststate" .}}</div>
         {{if .Repository.InitialisedAt}}<div class="cpr-sublabel">created {{stampPtr .Repository.InitialisedAt}}</div>
-        {{else}}<div class="cpr-sublabel">not created yet</div>{{end}}</td>
+        {{else}}<div class="cpr-sublabel">not created yet</div>{{end}}
+      </td>
       <td>{{template "destspace" .Space}}</td>
-      <td>{{template "deststate" .}}</td>
       <td class="cpr-right"><div class="cpr-actions">
         <form method="post" action="?p=destinations/test" class="cpr-inline">
           <input type="hidden" name="csrf" value="{{$.CSRF}}">

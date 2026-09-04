@@ -2150,6 +2150,41 @@ func TestTablesCarrySortKeysOnCellsThatNeedThem(t *testing.T) {
 // and the page that lists destinations was the one place that did not say
 // so. What it must not do is show a zero for a kind of storage that has no
 // size: "0 free" and "cannot say" are different sentences.
+// Six columns on one row squeezed every one of them: "5.7 TiB free" broke
+// across four lines. Where the backups are is one question — the
+// repository, the machine it sits on, and whether that machine answered —
+// so it is one column.
+func TestDestinationsKeepWhereTheBackupsAreInOneColumn(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	checked := time.Now().Add(-10 * time.Minute)
+	if _, err := engine.Store().PutDestination(nodestore.Destination{
+		Name: "test", Type: "sftp", LastCheckedAt: &checked,
+		Config: map[string]string{
+			"host": "182.54.236.26", "user": "test", "root": "/home/test",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/destinations")
+	head := `<thead><tr><th>Name</th><th>Repository</th><th>Space</th>`
+	if !strings.Contains(page, head) {
+		t.Error("the destinations table still spreads one question over several columns")
+	}
+	for _, gone := range []string{"<th>Address</th>", "<th>State</th>"} {
+		if strings.Contains(page, gone) {
+			t.Errorf("%s is still its own column", gone)
+		}
+	}
+	// The content itself has to survive the move.
+	for _, want := range []string{"182.54.236.26", "Reachable", "checked"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("merging the columns lost %q", want)
+		}
+	}
+}
+
 func TestDestinationsShowTheRoomTheyHaveLeft(t *testing.T) {
 	client, _, engine := newUI(t)
 

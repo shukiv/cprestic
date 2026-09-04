@@ -129,6 +129,11 @@
 .cprest .cpr-meter { display:flex; height:10px; border-radius:99px; overflow:hidden; background:var(--line); margin:var(--s3) 0 var(--s2); }
 .cprest .cpr-meter i { display:block; }
 .cprest .cpr-meter-slim { height:6px; margin:3px 0; max-width:180px; }
+/* The destinations row: three narrow columns became one, so the pieces
+ * inside it need the spacing the columns used to give them. */
+.cprest .cpr-deststate { margin:5px 0 2px; }
+.cprest .cpr-deststate .cpr-sublabel { margin-top:2px; }
+.cprest .cpr-space { white-space:nowrap; }
 .cprest .cpr-meter .cpr-ok { background:var(--good); }
 .cprest .cpr-meter .cpr-stale { background:var(--warn); }
 .cprest .cpr-meter .cpr-none { background:var(--bad); }
