@@ -1060,7 +1060,7 @@ func userBasketRestore(account string, basket nodestore.Basket, apply bool) (nod
 		Kind:         protocol.RestoreItems,
 		Apply:        apply,
 	}
-	for _, item := range basket.Items {
+	for _, item := range orderedSelections(basket, userKinds) {
 		kind := granular.Kind(item.Kind)
 		if !isUserKind(kind) || kind == userKindAccount {
 			return nodestore.Restore{}, fmt.Errorf(

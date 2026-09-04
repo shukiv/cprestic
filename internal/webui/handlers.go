@@ -3951,6 +3951,32 @@ func basketBlocker(basket nodestore.Basket, order []granular.Kind,
 	return granular.JoinAnd(blocked)
 }
 
+// orderedSelections is what a basket restores, in the order the parts are
+// offered rather than the order they were chosen. What a restore is called
+// on the history page is built from this, and a name that reads differently
+// for two restores of the same parts reads as two different things.
+func orderedSelections(basket nodestore.Basket, order []granular.Kind) []nodestore.RestoreSelection {
+	items := make([]nodestore.RestoreSelection, 0, len(basket.Items))
+	placed := make(map[int]bool, len(basket.Items))
+	for _, kind := range order {
+		for i, item := range basket.Items {
+			if granular.Kind(item.Kind) == kind {
+				items = append(items, item)
+				placed[i] = true
+			}
+		}
+	}
+	// Anything the order does not name is kept, at the end. Ordering is
+	// about how a restore reads; dropping a part here would hand the
+	// checks below a basket that is not the one somebody filled.
+	for i, item := range basket.Items {
+		if !placed[i] {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
 func inBasket(basket nodestore.Basket, kind granular.Kind) bool {
 	for _, item := range basket.Items {
 		if granular.Kind(item.Kind) == kind {
@@ -4042,18 +4068,19 @@ func (s *Server) startBasket(w http.ResponseWriter, r *http.Request, back string
 		s.redirect(w, r, back, "error", "There is nothing in the basket.")
 		return
 	}
+	chosen := orderedSelections(basket, granular.Kinds)
 	restore := nodestore.Restore{
 		Account: account, RepositoryID: repository, SnapshotID: snapshot,
 		Kind: protocol.RestoreItems, Apply: apply,
-		Items: basket.Items,
+		Items: chosen,
 	}
 	// A basket of one reads on the history page the way a single restore
 	// always has, rather than as a new shape nothing else knows.
-	if len(basket.Items) == 1 {
-		restore.ItemKind = basket.Items[0].Kind
-		restore.ItemNames = basket.Items[0].Names
+	if len(chosen) == 1 {
+		restore.ItemKind = chosen[0].Kind
+		restore.ItemNames = chosen[0].Names
 	}
-	for _, item := range basket.Items {
+	for _, item := range chosen {
 		if err := usableItemNames(granular.Kind(item.Kind), item.Names); err != nil {
 			s.redirect(w, r, back, "error", err.Error())
 			return

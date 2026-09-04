@@ -444,12 +444,9 @@ func checkDatabaseDumps(account string, names []string, present map[string]bool,
 		}
 	}
 	if len(missing) > 0 {
-		return nil, fmt.Sprintf(
-				"The database %s is not on the account any more. Create it again first, "+
-					"then restore into it: a backup can fill a database but cannot make one.",
-				granular.JoinAnd(missing)), fmt.Errorf(
-				"agent: %s no longer has the database(s) %s",
-				account, strings.Join(missing, ", "))
+		return nil, missingDatabaseHint(missing), fmt.Errorf(
+			"agent: %s no longer has the database(s) %s",
+			account, strings.Join(missing, ", "))
 	}
 	for _, name := range names {
 		dump := filepath.Join(databases, name+".sql")
@@ -462,6 +459,23 @@ func checkDatabaseDumps(account string, names []string, present map[string]bool,
 		dumps = append(dumps, dump)
 	}
 	return dumps, "", nil
+}
+
+// missingDatabaseHint says which databases have to exist before a dump can
+// go into them. One or several: a basket can name several databases, and
+// "The database a and b is not on the account" reads as one name somebody
+// has to go and look for.
+func missingDatabaseHint(missing []string) string {
+	if len(missing) == 1 {
+		return fmt.Sprintf(
+			"The database %s is not on the account any more. Create it again "+
+				"first, then restore into it: a backup can fill a database but "+
+				"cannot make one.", missing[0])
+	}
+	return fmt.Sprintf(
+		"The databases %s are not on the account any more. Create them again "+
+			"first, then restore into them: a backup can fill a database but "+
+			"cannot make one.", granular.JoinAnd(missing))
 }
 
 // checkDatabaseUsers reads the account's database users out of the backup
@@ -506,12 +520,15 @@ func checkDatabaseUsers(account string, wanted []string, present map[string]bool
 		}
 		if len(absent) > 0 {
 			sort.Strings(absent)
-			return nil, fmt.Sprintf(
-					"This backup holds no database user called %s. Choose one of the "+
-						"users it does hold, or try another restore point.",
-					granular.JoinAnd(absent)), fmt.Errorf(
-					"agent: this backup holds no database user(s) %s",
-					strings.Join(absent, ", "))
+			called := "This backup holds no database user called %s. Choose one " +
+				"of the users it does hold, or try another restore point."
+			if len(absent) > 1 {
+				called = "This backup holds no database users called %s. Choose " +
+					"from the users it does hold, or try another restore point."
+			}
+			return nil, fmt.Sprintf(called, granular.JoinAnd(absent)), fmt.Errorf(
+				"agent: this backup holds no database user(s) %s",
+				strings.Join(absent, ", "))
 		}
 		users = chosen
 	}
@@ -529,13 +546,17 @@ func checkDatabaseUsers(account string, wanted []string, present map[string]bool
 	}
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		return nil, fmt.Sprintf(
-				"These users had access to %s, which the account does not have any "+
-					"more. Restore or create those databases first, then restore the "+
-					"users: a grant cannot be given on a database that is not there.",
-				granular.JoinAnd(missing)), fmt.Errorf(
-				"agent: %s no longer has the database(s) %s",
-				account, strings.Join(missing, ", "))
+		had := "These users had access to %s, which the account does not have " +
+			"any more. Restore or create that database first, then restore the " +
+			"users: a grant cannot be given on a database that is not there."
+		if len(missing) > 1 {
+			had = "These users had access to %s, which the account does not have " +
+				"any more. Restore or create those databases first, then restore " +
+				"the users: a grant cannot be given on a database that is not there."
+		}
+		return nil, fmt.Sprintf(had, granular.JoinAnd(missing)), fmt.Errorf(
+			"agent: %s no longer has the database(s) %s",
+			account, strings.Join(missing, ", "))
 	}
 	return users, "", nil
 }

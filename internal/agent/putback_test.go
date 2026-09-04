@@ -125,6 +125,31 @@ func TestARestoreIntoADroppedDatabaseSaysWhatToDoAboutIt(t *testing.T) {
 	}
 }
 
+// A basket can name several databases, and a sentence built for one of
+// them tells the customer to go and find a database called "a and b".
+func TestSeveralDroppedDatabasesAreNamedAsSeveral(t *testing.T) {
+	out := restoredTree(t)
+	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {}}}
+	agent := quietAgent(fake)
+
+	_, hint, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			ItemKind:   string(granular.KindDatabase),
+			ItemNames:  []string{"c1_shop", "c1_wp"},
+		}, out)
+	if err == nil {
+		t.Fatal("databases that are not on the account were loaded")
+	}
+	for _, want := range []string{
+		"The databases c1_shop and c1_wp are not", "Create them again", "into them",
+	} {
+		if !strings.Contains(hint, want) {
+			t.Errorf("hint = %q, wanted %q in it", hint, want)
+		}
+	}
+}
+
 func TestApplyingFilesWritesTheHomeDirectory(t *testing.T) {
 	out := restoredTree(t)
 	fake := &cpanel.Fake{}
