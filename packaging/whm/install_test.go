@@ -77,6 +77,9 @@ func TestCPanelTileUsesTheRasterIcon(t *testing.T) {
 	for _, required := range []string{
 		`install -m 0644 "$SOURCE_DIR/branding/cpr-badge-48.png" "$PLUGIN_META/cprest.png"`,
 		`rm -f "$FRONTEND/assets/application_icons/cprest.svg"`,
+		// The tile comes off a sprite sheet; the PNG alone is not what
+		// an account sees.
+		`--application=cpanel --theme=jupiter`,
 	} {
 		if !strings.Contains(script, required) {
 			t.Errorf("installer is missing %q", required)

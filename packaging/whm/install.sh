@@ -228,6 +228,15 @@ if [ -d "$FRONTEND" ]; then
        [ -f "$SOURCE_DIR/branding/cpr-badge-48.png" ]; then
         install -m 644 "$SOURCE_DIR/branding/cpr-badge-48.png" \
             "$FRONTEND/assets/application_icons/cprest.png"
+        # Jupiter draws the tile from a sprite sheet, not from that file:
+        # the page asks for .icon-cprest, a background-position into
+        # icon_spritemap.png. Replacing the icon without rebuilding the
+        # sheet changes nothing an account can see, and the sheet's URL
+        # carries a content hash, so a stale one is cached hard.
+        if [ -x /usr/local/cpanel/bin/sprite_generator ]; then
+            /usr/local/cpanel/bin/sprite_generator \
+                --application=cpanel --theme=jupiter >/dev/null 2>&1 || true
+        fi
     fi
 
     # Register through cPanel's supported plugin installer. Besides keeping
