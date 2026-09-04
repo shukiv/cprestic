@@ -16,6 +16,27 @@
     <p class="cpr-hint" style="margin:0">Removed from this server, with backups still here. Restoring
     one hands the archive to cPanel's own restore, which creates the account again.</p>
   </div>
+  {{if $data.Forgetting}}
+  <div class="cpr-pad" style="border-top:1px solid var(--line)">
+    <div class="cpr-banner cpr-bad"><div class="cpr-body">
+      <strong>Forget {{$data.Forgetting}}?</strong>
+      <p style="margin:var(--s2) 0 0">This deletes every backup of {{$data.Forgetting}} from every
+      destination, and this server's record that the account ever existed — its backup and restore
+      history with it. Nothing here can bring any of it back. The space a backup used comes back at
+      the next prune, not now.</p>
+      <form method="post" action="?p=restore/forget" style="margin-top:var(--s3)">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <input type="hidden" name="account" value="{{$data.Forgetting}}">
+        <label class="cpr-check"><input type="checkbox" name="confirm" value="1">
+          Yes, delete {{$data.Forgetting}}'s backups</label>
+        <div class="cpr-actions" style="margin-top:var(--s3)">
+          <button class="cpr-btn cpr-danger">Forget {{$data.Forgetting}}</button>
+          <a class="cpr-btn cpr-quiet" href="?p=restore&amp;tab=deleted">Cancel</a>
+        </div>
+      </form>
+    </div></div>
+  </div>
+  {{end}}
   <form method="post" action="?p=recover/accounts" data-bulk>
   <input type="hidden" name="csrf" value="{{.CSRF}}">
   <input type="hidden" name="from" value="deleted">
@@ -32,7 +53,10 @@
       <td class="cpr-acct">{{.Account}}</td>
       <td data-sort="{{unix .RetiredAt}}">{{ago .RetiredAt}}</td>
       <td data-sort="{{unix .LastBackup}}">{{ago .LastBackup}}</td>
-      <td class="cpr-right"><a class="cpr-btn cpr-quiet" href="?p=restore&amp;account={{.Account}}">Open…</a></td>
+      <td class="cpr-right"><div class="cpr-actions">
+        <a class="cpr-btn cpr-quiet" href="?p=restore&amp;account={{.Account}}">Open…</a>
+        <a class="cpr-btn cpr-quiet" href="?p=restore&amp;tab=deleted&amp;forget={{.Account}}">Forget…</a>
+      </div></td>
     </tr>
     {{end}}
     </tbody>

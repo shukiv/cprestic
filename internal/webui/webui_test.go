@@ -2494,6 +2494,61 @@ func TestRestoreOffersAccountsCPanelHasDeleted(t *testing.T) {
 	// is checked against a real repository instead.
 }
 
+// Deleting a customer's backups is the one thing here that cannot be
+// undone, so the page carries the confirmation rather than the browser: a
+// window.confirm nobody saw is no confirmation at all with scripting off.
+func TestForgettingADeletedAccountAsksFirst(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	finished := time.Now().Add(-2 * time.Hour)
+	retired := time.Now().Add(-time.Hour)
+	if _, err := engine.Store().PutJob(nodestore.Job{
+		Account: "departed", Status: job.StatusSuccess, FinishedAt: &finished,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Store().PutIdentity(nodestore.AccountIdentity{
+		Account: "departed", UID: 1234, SinceAt: finished,
+		LastSeen: finished, CreatedAt: finished, RetiredAt: &retired,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/restore?tab=deleted")
+	if !strings.Contains(page, "forget=departed") {
+		t.Error("a deleted account cannot be forgotten from its row")
+	}
+	if strings.Contains(page, "Forget departed</button>") {
+		t.Error("the page offers to forget an account nobody asked about")
+	}
+
+	_, asked := get(t, client, "/restore?tab=deleted&forget=departed")
+	for _, want := range []string{
+		"Forget departed?", "deletes every backup", `name="confirm"`,
+	} {
+		if !strings.Contains(asked, want) {
+			t.Errorf("the confirmation does not say %q", want)
+		}
+	}
+	// A name nobody has retired is not something to offer at all.
+	_, other := get(t, client, "/restore?tab=deleted&forget=someoneelse")
+	if strings.Contains(other, "Forget someoneelse?") {
+		t.Error("the page offers to forget an account it does not list")
+	}
+
+	// Without the box ticked, nothing happens.
+	resp, err := client.PostForm("http://ui/restore/forget", map[string][]string{
+		"csrf": {csrfToken(t, asked)}, "account": {"departed"},
+	})
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	resp.Body.Close()
+	if _, err := engine.Store().Identity("departed"); err != nil {
+		t.Errorf("the account was forgotten without a confirmation: %v", err)
+	}
+}
+
 func TestThePageOpensInLightUnlessToldOtherwise(t *testing.T) {
 	client, _, _ := newUI(t)
 

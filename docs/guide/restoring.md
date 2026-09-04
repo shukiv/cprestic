@@ -38,6 +38,13 @@ Choose an account and a destination. The page then shows:
   ticked one at a time; cron jobs and FTP logins are listed to be read, since
   each is lines inside a single file.
 
+- **Forgetting a deleted account** — a customer has gone and asked for their
+  backups to go with them. **Forget…** on a row of *Deleted accounts* removes
+  every backup of that name from every destination, and this server's record
+  that the account existed, its history with it. It asks first, on the page, and
+  only for a name cPanel no longer has. Nothing here brings any of it back; the
+  space comes back at the next prune.
+
 - **A dropped database** comes back whole: the database is made again before
   the dump goes into it, created as the account so cPanel applies the plan's
   database limit and the account's name prefix and records it as theirs. An

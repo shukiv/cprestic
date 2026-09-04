@@ -110,6 +110,40 @@ func ParseForgetPlan(stdout []byte) (ForgetPlan, error) {
 
 // ForgetPlanned runs forget and reports what it did, or in a dry run what
 // it would do.
+// ForgetSnapshots removes named snapshots, whatever any keep policy says.
+//
+// Retention decides what to keep out of what a schedule produced. This is
+// the other thing: a customer has gone, and their backups are to go with
+// them. Naming the snapshots is what makes that safe -- a forget by tag
+// with no policy would take whatever happened to carry the tag at the
+// moment it ran, and the caller has already shown the operator a count.
+//
+// Pruning is separate and is not done here: it walks the whole repository
+// and takes the lock for as long as that takes. The space comes back with
+// the next prune.
+func (r *Runner) ForgetSnapshots(ctx context.Context, repo Repository, ids []string) error {
+	if len(ids) == 0 {
+		return fmt.Errorf("resticrun: no snapshot was named to forget")
+	}
+	args := []string{"forget"}
+	for _, id := range ids {
+		if err := validateSnapshotID(id); err != nil {
+			return err
+		}
+		if id == "latest" {
+			// "latest" is a lookup, not a name. Forgetting it would
+			// delete whichever snapshot happened to be newest.
+			return fmt.Errorf("resticrun: %q is not a snapshot to forget", id)
+		}
+		args = append(args, id)
+	}
+	result, err := r.run(ctx, repo, args, secondary{}, nil)
+	if err != nil {
+		return err
+	}
+	return classifyExit(result.ExitCode, result.Stderr, false)
+}
+
 func (r *Runner) ForgetPlanned(ctx context.Context, repo Repository, spec ForgetSpec) (ForgetPlan, error) {
 	args, err := ForgetArgs(spec)
 	if err != nil {

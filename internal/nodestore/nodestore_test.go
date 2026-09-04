@@ -546,3 +546,76 @@ func TestAddingOneThingAtATimeKeepsTheRest(t *testing.T) {
 		}
 	}
 }
+
+// A customer has gone and asked for their backups to go with them. What is
+// left behind after that has to be nothing: a name in a picker, a job in
+// the history and a half-made basket are all records of somebody who is
+// entitled to have none.
+func TestForgettingAnAccountLeavesNothingOfIt(t *testing.T) {
+	store, err := nodestore.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	for _, account := range []string{"c1", "c2"} {
+		gone := time.Now().UTC()
+		if _, err := store.PutIdentity(nodestore.AccountIdentity{
+			Account: account, RetiredAt: &gone,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.PutJob(nodestore.Job{
+			Account: account, Status: job.StatusSuccess, QueuedAt: time.Now(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.PutRestore(nodestore.Restore{
+			Account: account, RepositoryID: "repo1", SnapshotID: "snap1",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.PutInBasket(nodestore.BasketOfOperator, account, "repo1", "snap1",
+			nodestore.RestoreSelection{Kind: "dns"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := store.ForgetAccount("c1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.Identity("c1"); !errors.Is(err, nodestore.ErrNotFound) {
+		t.Errorf("the account is still known: %v", err)
+	}
+	jobs, err := store.Jobs(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restores, err := store.Restores(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, run := range jobs {
+		if run.Account == "c1" {
+			t.Errorf("a backup of c1 is still recorded")
+		}
+	}
+	for _, run := range restores {
+		if run.Account == "c1" {
+			t.Errorf("a restore of c1 is still recorded")
+		}
+	}
+	if basket, err := store.Basket(nodestore.BasketOfOperator, "c1", "repo1", "snap1"); err != nil ||
+		!basket.Empty() {
+		t.Errorf("c1's basket survived: %+v, %v", basket, err)
+	}
+
+	// Nobody else's records go with it.
+	if _, err := store.Identity("c2"); err != nil {
+		t.Errorf("another account was forgotten too: %v", err)
+	}
+	if len(jobs) != 1 || len(restores) != 1 {
+		t.Errorf("kept %d jobs and %d restores", len(jobs), len(restores))
+	}
+}

@@ -252,23 +252,28 @@ func sweepBaskets(bucket *bolt.Bucket, except []byte) {
 // has changed hands must not hand the new owner a basket the last one
 // left behind.
 func (s *Store) ForgetBaskets(account string) error {
-	prefix := account + "\x00"
 	return s.db.Update(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket(bucketBaskets)
-		var gone [][]byte
-		if err := bucket.ForEach(func(key, _ []byte) error {
-			if strings.HasPrefix(string(key), prefix) {
-				gone = append(gone, append([]byte(nil), key...))
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
-		for _, key := range gone {
-			if err := bucket.Delete(key); err != nil {
-				return err
-			}
+		return deleteBasketsOf(tx.Bucket(bucketBaskets), account)
+	})
+}
+
+// deleteBasketsOf removes one account's baskets, whichever page they were
+// made on: the account leads the key, so both owners are one prefix.
+func deleteBasketsOf(bucket *bolt.Bucket, account string) error {
+	prefix := account + "\x00"
+	var gone [][]byte
+	if err := bucket.ForEach(func(key, _ []byte) error {
+		if strings.HasPrefix(string(key), prefix) {
+			gone = append(gone, append([]byte(nil), key...))
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	for _, key := range gone {
+		if err := bucket.Delete(key); err != nil {
+			return err
+		}
+	}
+	return nil
 }

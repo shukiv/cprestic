@@ -2161,6 +2161,37 @@ func (r restoreRow) Parts() string {
 	return strings.Join(kinds, ", ")
 }
 
+// handleForgetAccount removes a deleted account's backups and everything
+// this server remembers about it.
+//
+// Irreversible, and the only thing in the program that deletes backups
+// outright, so it takes a confirmation the page carries rather than one the
+// browser asks for: the interface works with scripting switched off, and a
+// window.confirm nobody saw is no confirmation at all.
+func (s *Server) handleForgetAccount(w http.ResponseWriter, r *http.Request) {
+	back := "?p=restore&tab=deleted"
+	account := r.PostFormValue("account")
+	if account == "" {
+		s.redirect(w, r, back, "error", "No account was named.")
+		return
+	}
+	if r.PostFormValue("confirm") != "1" {
+		s.redirect(w, r, back, "error",
+			"Tick the box to confirm: this deletes the backups themselves.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Minute)
+	defer cancel()
+	removed, err := s.engine.ForgetAccountBackups(ctx, account)
+	if err != nil {
+		s.log.Error("forget a deleted account", "account", account, "error", err)
+		s.redirect(w, r, back, "error", err.Error())
+		return
+	}
+	s.redirect(w, r, back, "ok", fmt.Sprintf(
+		"%s is forgotten: %d backup(s) removed.", account, removed))
+}
+
 // usableItemNames checks the names chosen for a granular restore.
 //
 // They reach a command line, a file name and the list of members taken out
@@ -2217,6 +2248,11 @@ type restoreView struct {
 	// AccountDeleted says the chosen account is one of those, which
 	// changes what a restore of it means: cPanel creates the account.
 	AccountDeleted bool
+	// Forgetting is a deleted account the operator has asked to forget,
+	// and the page is showing what that would do before doing it. The
+	// confirmation is here rather than in the browser because this
+	// deletes backups and the page has to work with scripting off.
+	Forgetting string
 	// Contents is every account the chosen destination holds, which is
 	// not the same list as the accounts on this server: it includes ones
 	// deleted here and ones that were never here at all.
@@ -2428,6 +2464,12 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	for _, gone := range deleted {
 		if gone.Account == view.Account {
 			view.AccountDeleted = true
+		}
+		// Only a name in this list. Asking to forget something else --
+		// a live account, a name off the end of a query string -- is
+		// not something to render a confirmation for.
+		if gone.Account == r.URL.Query().Get("forget") {
+			view.Forgetting = gone.Account
 		}
 	}
 	// Default to the first provisioned repository so the common case is
