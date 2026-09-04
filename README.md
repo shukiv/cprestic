@@ -11,6 +11,9 @@ Backup data flows straight from each cPanel server to its destinations. The
 controller schedules work and records state; it never carries backup bytes,
 so adding servers does not turn it into a bandwidth bottleneck.
 
+Running it: **[docs/](docs/README.md)** — install, destinations, schedules,
+restores, and what to do when the server is gone.
+
 Full design, including the reasoning behind each component:
 **[docs/DESIGN.md](docs/DESIGN.md)**.
 

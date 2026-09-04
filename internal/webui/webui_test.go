@@ -2009,6 +2009,27 @@ func TestTheRestorePageExplainsHowToPickFiles(t *testing.T) {
 	}
 }
 
+// A plugin nobody can read the source or the manual of is a plugin an
+// operator has to guess at. Both live one click away, in the rail's foot.
+func TestTheRailPointsAtTheSourceAndTheManual(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	_, page := get(t, client, "/")
+	for _, want := range []string{
+		`href="https://github.com/shukiv/cprest"`,
+		`href="https://github.com/shukiv/cprest/blob/master/docs/README.md"`,
+		`aria-label="cP:Restic on GitHub"`,
+		`aria-label="Documentation"`,
+		// Opening a new tab from someone else's page hands them
+		// window.opener unless this is here.
+		`rel="noopener noreferrer"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the rail's foot is missing %s", want)
+		}
+	}
+}
+
 // The name is cP:Restic, and the cP mark uses cPanel's orange. A stylesheet
 // rule that greys every span inside the brand once made it the wrong colour,
 // which is invisible in markup and only shows on the page.

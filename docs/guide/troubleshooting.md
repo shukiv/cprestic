@@ -1,0 +1,76 @@
+# Troubleshooting
+
+## First three commands
+
+```bash
+systemctl status cprest
+journalctl -u cprest -n 100 --no-pager
+ls -l /var/run/cprest/admin/ui.sock
+```
+
+## The plugin page is blank, or WHM 500s
+
+The CGI proxies to the unix socket. If the service is down, there is nothing to
+proxy to. Check `systemctl status cprest` first, then that the socket exists.
+
+If the plugin is missing from the WHM sidebar entirely, look under
+**Development → Apps Managed by AppConfig** — not **Manage Plugins**, which
+lists cPanel's own RPM addons.
+
+## A backup fails at staging
+
+Almost always room. Staging rebuilds one account in full before upload, so the
+staging volume needs room for your largest account, not your average one.
+Settings → Staging shows what is left; the Overview shows the same number.
+
+Second most common: an account whose home directory is being written to
+heavily. The run reports partial and names the account.
+
+## A destination stops answering
+
+The destination row says when it was last reachable. Test it from the row menu
+— that runs the real connection, not a cached verdict.
+
+For SFTP, the usual causes are a rotated host key or a key that was removed on
+the far side. For S3, an expired access key. For a local path, a mount that is
+no longer mounted — a destination pointing at an unmounted mountpoint will
+happily write to the underlying directory instead, which is why free space is
+shown per destination.
+
+## Restore says the account has no backups here
+
+Check the destination select. An account is often in one destination and not
+another, and *Restore account(s)* lists what the chosen destination actually
+holds — read from the backups, not from cPanel.
+
+If the account was deleted and recycled, the current holder of the name does
+not inherit the previous one's backups. That is deliberate.
+
+## cPanel will not let me delete an account
+
+[Termination safety](accounts.md#termination-safety) is on and the account is
+missing a promised copy. Either **Prepare for termination**, which queues the
+smallest set of backups that fixes it, or turn the setting off.
+
+## Everything is fine but the pages are slow
+
+The Restore page reads the destination when it loads — that is a real `restic
+snapshots` against remote storage. A cold read against SFTP takes seconds; a
+warm one about a second. Other pages read local state and are instant.
+
+## Restic output for a specific run
+
+Logs → the run → its detail. Raw output is kept for the number of days set in
+Settings.
+
+## Rebuilding this server from nothing
+
+You need three things: `/etc/cprest/master.key` (or the destination credentials
+typed again by hand), the **recovery key** for the destination, and the folder
+name the old server used inside it. Then
+[disaster recovery](restoring.md#disaster-recovery): system settings first,
+accounts after.
+
+If the master key is gone, the stored credentials are unreadable and must be
+re-entered. If the recovery key is gone, the backups themselves are unreadable
+by anyone, including you. Keep both somewhere that is not this server.

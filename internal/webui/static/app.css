@@ -651,6 +651,21 @@
 }
 .cprest .cpr-rail-state { display:flex; align-items:center; gap:7px; color:#C8D7E7; font-weight:600; }
 .cprest .cpr-rail-state i { width:7px; height:7px; border-radius:50%; background:#64C894; }
+.cprest .cpr-rail-foot-row { display:flex; align-items:center; gap:10px; }
+.cprest .cpr-rail-links { display:flex; margin-left:auto; gap:2px; }
+.cprest .cpr-rail-links a {
+  display:flex; align-items:center; justify-content:center;
+  width:26px; height:26px; border-radius:var(--r); color:#A9BBCF;
+}
+.cprest .cpr-rail-links a:hover { background:#22354B; color:#FFF; }
+.cprest .cpr-rail-links a:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.cprest .cpr-rail-links svg {
+  width:16px; height:16px; fill:none; stroke:currentColor;
+  stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round;
+}
+/* The GitHub mark is a filled glyph, not a line drawing: stroking it draws
+   an outline round every tooth of the octocat. */
+.cprest .cpr-rail-links svg.cpr-icon-solid { fill:currentColor; stroke:none; }
 .cprest .cpr-workspace {
   min-width:0; border:1px solid var(--line); border-left:0;
   border-radius:0; background:var(--ground);
@@ -683,8 +698,12 @@
   .cprest .cpr-server,
   .cprest .cpr-nav-text,
   .cprest .cpr-nav-label,
-  .cprest .cpr-rail-foot { display:none; }
+  .cprest .cpr-rail-state,
+  .cprest .cpr-rail-meta { display:none; }
   .cprest .cpr-nav a { justify-content:center; padding-inline:8px; }
+  /* The narrow rail drops the footer's words. The two links are icons
+     already, so they stay, centred. */
+  .cprest .cpr-rail-links { margin:0 auto; }
 }
 
 @media (max-width:760px) {
