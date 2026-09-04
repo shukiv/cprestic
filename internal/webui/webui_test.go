@@ -2143,6 +2143,86 @@ func TestTablesCarrySortKeysOnCellsThatNeedThem(t *testing.T) {
 	}
 }
 
+// A server that lost a disk lost every account on it. Clicking through
+// nineteen restores one at a time, in a hurry, keeping your own tally of
+// which ones are done, is how one gets missed.
+func TestSeveralAccountsCanBeRestoredAtOnce(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	finished := time.Now().Add(-time.Hour)
+	retired := time.Now().Add(-time.Minute)
+	for _, account := range []string{"gone1", "gone2"} {
+		if _, err := engine.Store().PutJob(nodestore.Job{
+			Account: account, Status: job.StatusSuccess, FinishedAt: &finished,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := engine.Store().PutIdentity(nodestore.AccountIdentity{
+			Account: account, UID: 4000, SinceAt: finished,
+			LastSeen: finished, CreatedAt: finished, RetiredAt: &retired,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	_, page := get(t, client, "/restore?tab=deleted")
+	for _, want := range []string{
+		`<input type="checkbox" name="account" value="gone1"`,
+		`<input type="checkbox" name="account" value="gone2"`,
+		`data-check-all`,
+		`action="?p=recover/accounts"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the deleted accounts cannot be chosen in bulk: %s is missing", want)
+		}
+	}
+
+	// Nothing chosen must not read as "done": it is refused, and says so.
+	empty, err := client.PostForm("http://ui/recover/accounts", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "from": {"deleted"}, "repository": {"repo"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty.Body.Close()
+	refusal, err := url.QueryUnescape(empty.Header.Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(refusal, "Choose at least one account") {
+		t.Errorf("a bulk restore of nothing was not refused: %s", refusal)
+	}
+	if !strings.Contains(refusal, "kind=error") {
+		t.Errorf("refusing to restore nothing was not reported as a problem: %s", refusal)
+	}
+
+	// Both accounts are attempted even though this suite has no restic to
+	// resolve a snapshot with: what matters is that one account failing
+	// does not stop the other being tried, and that both are named rather
+	// than counted.
+	both, err := client.PostForm("http://ui/recover/accounts", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "from": {"deleted"}, "repository": {"repo"},
+		"account": {"gone1", "gone2"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	both.Body.Close()
+	outcome, err := url.QueryUnescape(both.Header.Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, account := range []string{"gone1", "gone2"} {
+		if !strings.Contains(outcome, account) {
+			t.Errorf("the outcome does not say what happened to %s: %s", account, outcome)
+		}
+	}
+	// And it lands back where the operator was.
+	if !strings.Contains(outcome, "tab=deleted") {
+		t.Errorf("the outcome does not return to the deleted accounts: %s", outcome)
+	}
+}
+
 func TestRestoreCarriesItsThreeViewsAsTabs(t *testing.T) {
 	client, _, _ := newUI(t)
 

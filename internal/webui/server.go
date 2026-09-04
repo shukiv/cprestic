@@ -227,6 +227,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /recover", s.handleRecover)
 	mux.HandleFunc("POST /recover/attach", s.guard(s.handleAttach))
 	mux.HandleFunc("POST /recover/account", s.guard(s.handleRecoverAccount))
+	mux.HandleFunc("POST /recover/accounts", s.guard(s.handleRecoverAccounts))
 
 	mux.HandleFunc("GET /settings", s.handleSettings)
 	mux.HandleFunc("POST /settings/save", s.guard(s.handleSaveSettings))

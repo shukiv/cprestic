@@ -16,19 +16,43 @@
     <p class="cpr-hint" style="margin:0">Removed from this server, with backups still here. Restoring
     one hands the archive to cPanel's own restore, which creates the account again.</p>
   </div>
+  <form method="post" action="?p=recover/accounts" data-bulk>
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <input type="hidden" name="from" value="deleted">
   <div class="cpr-tablewrap"><table data-sortable>
-    <thead><tr><th>Account</th><th>Deleted</th><th>Last backup</th><th class="cpr-right" data-nosort>&nbsp;</th></tr></thead>
+    <thead><tr>
+      <th style="width:32px" data-nosort><input type="checkbox" data-check-all
+        aria-label="Choose every deleted account"></th>
+      <th>Account</th><th>Deleted</th><th>Last backup</th><th class="cpr-right" data-nosort>&nbsp;</th></tr></thead>
     <tbody>
     {{range $data.Deleted}}
     <tr>
+      <td><input type="checkbox" name="account" value="{{.Account}}"
+        aria-label="Choose {{.Account}}"></td>
       <td class="cpr-acct">{{.Account}}</td>
       <td data-sort="{{unix .RetiredAt}}">{{ago .RetiredAt}}</td>
       <td data-sort="{{unix .LastBackup}}">{{ago .LastBackup}}</td>
-      <td class="cpr-right"><a class="cpr-btn" href="?p=restore&amp;account={{.Account}}">Restore it…</a></td>
+      <td class="cpr-right"><a class="cpr-btn cpr-quiet" href="?p=restore&amp;account={{.Account}}">Open…</a></td>
     </tr>
     {{end}}
     </tbody>
   </table></div>
+  <div class="cpr-pad cpr-bulkbar" style="border-top:1px solid var(--line)">
+    <span class="cpr-hint" style="margin:0" data-bulk-count>Nothing chosen</span>
+    <label class="cpr-pager-size" style="margin:0">From
+      <select name="repository" aria-label="Restore from">
+        {{range $data.Repositories}}{{if .Repository.InitialisedAt}}
+        <option value="{{.Repository.ID}}" {{if eq .Repository.ID $data.RepositoryID}}selected{{end}}>{{.Name}}</option>
+        {{end}}{{end}}
+      </select>
+    </label>
+    <span style="flex:1"></span>
+    <button class="cpr-btn" type="submit" data-bulk-submit disabled>Rebuild chosen</button>
+    <button class="cpr-btn cpr-danger" type="submit" name="apply" value="1"
+            data-bulk-submit disabled
+            data-confirm="Hand every chosen account to cPanel's own restore? Each one is created again with the files, databases, mail and settings its backup holds.">Restore chosen onto this server</button>
+  </div>
+  </form>
   {{else}}
   <div class="cpr-pad">
     <p class="cpr-hint" style="margin:0">No account has been removed from this server since cP:Restic

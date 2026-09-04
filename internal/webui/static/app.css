@@ -556,6 +556,10 @@
 .cprest th.cpr-right .cpr-sortbtn { justify-content:flex-end; text-align:right; }
 /* The pager under a long table. Built by app.js, so it never appears when
  * scripting is off — where the whole table is rendered anyway. */
+/* The bar under a table that takes a selection: what is chosen on the
+ * left, what can be done with it on the right. */
+.cprest .cpr-bulkbar { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.cprest .cpr-bulkbar .cpr-btn[disabled] { opacity:.5; cursor:default; }
 .cprest .cpr-pager {
   display:flex; flex-wrap:wrap; align-items:center; gap:12px;
   padding:10px 16px; border-top:1px solid var(--line);

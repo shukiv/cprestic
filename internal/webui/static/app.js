@@ -199,12 +199,52 @@
   });
 
   // Ask before anything that overwrites a live account.
+  // A form asks before it submits; a button asks before it submits the
+  // form it is in. The difference matters where one form has two buttons
+  // and only one of them is destructive — rebuilding an archive needs no
+  // confirmation, handing it to cPanel's restore does.
   Array.prototype.forEach.call(document.querySelectorAll("[data-confirm]"), function (element) {
-    element.addEventListener("submit", function (event) {
+    var when = element.tagName === "FORM" ? "submit" : "click";
+    element.addEventListener(when, function (event) {
       if (!window.confirm(element.getAttribute("data-confirm"))) {
         event.preventDefault();
       }
     });
+  });
+
+  // Choosing several accounts at once. The count is shown rather than
+  // implied, and both buttons stay disabled until something is ticked:
+  // a bulk restore that silently did nothing would be read as one that
+  // silently did something.
+  Array.prototype.forEach.call(document.querySelectorAll("form[data-bulk]"), function (form) {
+    var boxes = Array.prototype.slice.call(form.querySelectorAll('input[name="account"]'));
+    var all = form.querySelector("[data-check-all]");
+    var count = form.querySelector("[data-bulk-count]");
+    var submits = Array.prototype.slice.call(form.querySelectorAll("[data-bulk-submit]"));
+    if (boxes.length === 0) { return; }
+
+    function refresh() {
+      var chosen = boxes.filter(function (box) { return box.checked; }).length;
+      if (count) {
+        count.textContent = chosen === 0
+          ? "Nothing chosen"
+          : chosen + " of " + boxes.length + " chosen";
+      }
+      submits.forEach(function (button) { button.disabled = chosen === 0; });
+      if (all) {
+        all.checked = chosen === boxes.length;
+        all.indeterminate = chosen > 0 && chosen < boxes.length;
+      }
+    }
+
+    boxes.forEach(function (box) { box.addEventListener("change", refresh); });
+    if (all) {
+      all.addEventListener("change", function () {
+        boxes.forEach(function (box) { box.checked = all.checked; });
+        refresh();
+      });
+    }
+    refresh();
   });
 
 })();

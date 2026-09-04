@@ -3391,6 +3391,76 @@ func (s *Server) handleRecoverAccount(w http.ResponseWriter, r *http.Request) {
 			"created until you ask for that.", account))
 }
 
+// handleRecoverAccounts queues the same restore for several accounts at
+// once. A server that lost a disk lost every account on it, and asking an
+// operator to click through nineteen of them one at a time — in a hurry,
+// under pressure, keeping their own tally of which ones they have done — is
+// how one gets missed.
+//
+// The engine still runs them one at a time: staging rebuilds an account in
+// full, and a machine with room for one is not a machine with room for
+// nineteen at once. What this changes is the asking, not the doing.
+func (s *Server) handleRecoverAccounts(w http.ResponseWriter, r *http.Request) {
+	back := "/restore?tab=server"
+	if r.PostFormValue("from") == "deleted" {
+		back = "/restore?tab=deleted"
+	}
+	repository := r.PostFormValue("repository")
+	accounts := r.PostForm["account"]
+	apply := r.PostFormValue("apply") != ""
+	unrestricted := r.PostFormValue("unrestricted") != ""
+
+	if len(accounts) == 0 {
+		s.redirect(w, r, back, "error", "Choose at least one account first.")
+		return
+	}
+	if repository == "" {
+		s.redirect(w, r, back, "error", "Choose which destination to restore from.")
+		return
+	}
+
+	// One account failing is not a reason to abandon the rest: a name that
+	// already has work in flight, or has no backup in this destination, is
+	// reported by name and the others still go.
+	var queued []string
+	var refused []string
+	for _, account := range accounts {
+		snapshot, err := s.engine.LatestSnapshot(r.Context(), repository, account)
+		if err != nil {
+			refused = append(refused, account+" ("+err.Error()+")")
+			continue
+		}
+		if _, err := s.engine.QueueRestore(nodestore.Restore{
+			Account:      account,
+			RepositoryID: repository,
+			SnapshotID:   snapshot,
+			Kind:         protocol.RestoreAccount,
+			Apply:        apply,
+			Unrestricted: unrestricted,
+		}); err != nil {
+			refused = append(refused, account+" ("+err.Error()+")")
+			continue
+		}
+		queued = append(queued, account)
+	}
+
+	verb := "Rebuilding"
+	if apply {
+		verb = "Restoring onto this server"
+	}
+	switch {
+	case len(queued) == 0:
+		s.redirect(w, r, back, "error", "Nothing was queued: "+strings.Join(refused, "; "))
+	case len(refused) == 0:
+		s.redirect(w, r, back, "ok", fmt.Sprintf("%s %d account(s), one after another: %s.",
+			verb, len(queued), strings.Join(queued, ", ")))
+	default:
+		s.redirect(w, r, back, "warn", fmt.Sprintf(
+			"%s %d account(s): %s. Not queued: %s.",
+			verb, len(queued), strings.Join(queued, ", "), strings.Join(refused, "; ")))
+	}
+}
+
 // --- browsing what is stored ---
 
 // browseView is one level of what a destination holds: the destinations
