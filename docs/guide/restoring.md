@@ -29,6 +29,25 @@ Choose an account and a destination. The page then shows:
   item or FTP setting, taken out of a backup without rebuilding the account.
   What comes back is left on this server to collect.
 
+  Every part says what the backup actually holds in it. The home directory,
+  the mailboxes and the databases are listed straight out of the snapshot; the
+  rest of an account is inside the cpmove archive, or inside one SQL file
+  beside the dumps, so the container is streamed out of the repository and
+  read. Nothing is restored to answer the question, and one reading serves the
+  whole visit. DNS zones, certificates, domains and database users can be
+  ticked one at a time; cron jobs and FTP logins are listed to be read, since
+  each is lines inside a single file.
+
+- **The basket** — *Add to basket* on any part collects what was ticked, and
+  the basket at the top runs all of it as one restore. The parts of an account
+  depend on each other: a database restored without the users that open it is
+  a site that still cannot start, and one account may only have one job
+  running at a time, so two restores meant a gap in between. Everything is
+  checked before any of it is written. A basket carrying a part that cannot be
+  written back is a copy to collect, whole — the page names the part
+  responsible. It belongs to one account and one backup, and is forgotten
+  after a day.
+
 Restores run as restricted restores by default, because the archive holds the
 account's own home directory and cPanel's restore runs as root. The
 **unrestricted** tick exists for the case where a restricted restore refuses

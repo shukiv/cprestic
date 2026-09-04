@@ -90,6 +90,21 @@ func (s *Store) PutInBasket(account, repository, snapshot string,
 	})
 }
 
+// AddToBasket adds names to what was already chosen for a part, rather
+// than replacing it.
+//
+// This is what a button on one row of a picker does: it chooses one thing
+// at a time, and the row it was clicked on says nothing about the rows
+// above it. A form of tick boxes replaces instead, because that form shows
+// what is chosen now.
+func (s *Store) AddToBasket(account, repository, snapshot string,
+	selection RestoreSelection) (Basket, error) {
+
+	return s.changeBasket(account, repository, snapshot, func(basket *Basket) {
+		basket.Items = withMoreNames(basket.Items, selection)
+	})
+}
+
 // TakeFromBasket removes one part of an account from the basket.
 func (s *Store) TakeFromBasket(account, repository, snapshot, kind string) (Basket, error) {
 	return s.changeBasket(account, repository, snapshot, func(basket *Basket) {
@@ -110,6 +125,39 @@ func withSelection(items []RestoreSelection, selection RestoreSelection) []Resto
 	kept := withoutKind(items, selection.Kind)
 	sort.Strings(selection.Names)
 	return append(kept, selection)
+}
+
+func withMoreNames(items []RestoreSelection, selection RestoreSelection) []RestoreSelection {
+	for i, item := range items {
+		if item.Kind != selection.Kind {
+			continue
+		}
+		// Either side asking for the whole part makes it the whole part:
+		// a list of names beside "all of them" would say less than "all
+		// of them" does.
+		if len(item.Names) == 0 || len(selection.Names) == 0 {
+			items[i].Names = nil
+			return items
+		}
+		for _, name := range selection.Names {
+			if !hasName(item.Names, name) {
+				items[i].Names = append(items[i].Names, name)
+			}
+		}
+		sort.Strings(items[i].Names)
+		return items
+	}
+	sort.Strings(selection.Names)
+	return append(items, selection)
+}
+
+func hasName(names []string, want string) bool {
+	for _, name := range names {
+		if name == want {
+			return true
+		}
+	}
+	return false
 }
 
 func withoutKind(items []RestoreSelection, kind string) []RestoreSelection {

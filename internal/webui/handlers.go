@@ -2252,7 +2252,30 @@ type restoreView struct {
 	// Items is what this part of the account holds, for the parts that
 	// are not files and so cannot be listed by browsing the snapshot.
 	Items []inventory.Item
+
+	// Basket is what has been chosen out of this backup so far, across
+	// all of its parts.
+	Basket nodestore.Basket
 }
+
+// BasketRows is the basket in the order the parts are offered.
+func (v restoreView) BasketRows() []basketRow {
+	return basketRows(v.Basket, granular.Kinds, v.KindTitle)
+}
+
+// BasketCount is how many things are in the basket.
+func (v restoreView) BasketCount() int { return v.Basket.Count() }
+
+// BasketCanApply reports whether all of it can go back into the account.
+func (v restoreView) BasketCanApply() bool { return basketCanApply(v.Basket) }
+
+// BasketBlocker names the parts that keep it from being put back.
+func (v restoreView) BasketBlocker() string {
+	return basketBlocker(v.Basket, granular.Kinds, v.KindTitle)
+}
+
+// InBasket reports whether a part has already been chosen.
+func (v restoreView) InBasket(kind granular.Kind) bool { return inBasket(v.Basket, kind) }
 
 // PicksItems reports whether the listed items can be chosen between,
 // rather than only read.
@@ -2459,6 +2482,14 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	if view.Kind != "" && view.SnapshotID != "" {
 		s.fillPicker(r, &view)
+	}
+	if view.Account != "" && view.RepositoryID != "" && view.SnapshotID != "" {
+		basket, err := s.engine.Store().Basket(view.Account, view.RepositoryID, view.SnapshotID)
+		if err != nil {
+			s.log.Error("read the recovery basket", "account", view.Account, "error", err)
+		} else {
+			view.Basket = basket
+		}
 	}
 	s.render(w, r, "restore.html", "Restore", "restore", view)
 }
@@ -2695,7 +2726,20 @@ func (s *Server) handleRestoreItems(w http.ResponseWriter, r *http.Request) {
 	account := r.PostFormValue("account")
 	back := "/restore?account=" + url.QueryEscape(account) +
 		"&repository=" + url.QueryEscape(r.PostFormValue("repository")) +
+		"&snapshot=" + url.QueryEscape(r.PostFormValue("snapshot")) +
 		"&item=" + url.QueryEscape(r.PostFormValue("item"))
+
+	// Choosing across parts of an account is a basket, not a restore: it
+	// is put together over several views of this page and started once.
+	switch action := r.PostFormValue("action"); action {
+	case "add", "append", "remove", "empty":
+		s.changeBasket(w, r, action, back)
+		return
+	}
+	if r.PostFormValue("basket") != "" {
+		s.startBasket(w, r, back)
+		return
+	}
 
 	restore := nodestore.Restore{
 		Account:      account,
@@ -3843,4 +3887,191 @@ func (s *Server) handleRunRetention(w http.ResponseWriter, r *http.Request) {
 	}
 	s.redirect(w, r, "/destinations", "ok", fmt.Sprintf(
 		"Removed %d backups and reclaimed the space they were holding.", removed))
+}
+
+// basketRow is one category in a recovery basket, as a page shows it.
+type basketRow struct {
+	Kind  granular.Kind
+	Title string
+	// Names is what was ticked. Empty means the whole category.
+	Names []string
+	// Applies reports whether this part can be written back into the
+	// account, which decides whether the basket as a whole can be.
+	Applies bool
+}
+
+// basketRows is a basket in the order its page offers the categories, so
+// it reads the same way as the page around it.
+func basketRows(basket nodestore.Basket, order []granular.Kind,
+	title func(granular.Kind) string) []basketRow {
+
+	rows := make([]basketRow, 0, len(basket.Items))
+	for _, kind := range order {
+		for _, item := range basket.Items {
+			if granular.Kind(item.Kind) != kind {
+				continue
+			}
+			rows = append(rows, basketRow{
+				Kind: kind, Title: title(kind),
+				Names: item.Names, Applies: kind.CanApply(),
+			})
+		}
+	}
+	return rows
+}
+
+// basketCanApply reports whether everything in a basket can go back into
+// the account.
+//
+// One part that cannot makes the whole basket a download: putting back the
+// rest and leaving that one out is not what was asked for, and would only
+// be discovered afterwards.
+func basketCanApply(basket nodestore.Basket) bool {
+	if basket.Empty() {
+		return false
+	}
+	for _, item := range basket.Items {
+		if !granular.Kind(item.Kind).CanApply() {
+			return false
+		}
+	}
+	return true
+}
+
+// basketBlocker names the parts that keep a basket from being put back.
+func basketBlocker(basket nodestore.Basket, order []granular.Kind,
+	title func(granular.Kind) string) string {
+
+	var blocked []string
+	for _, row := range basketRows(basket, order, title) {
+		if !row.Applies {
+			blocked = append(blocked, row.Title)
+		}
+	}
+	return granular.JoinAnd(blocked)
+}
+
+func inBasket(basket nodestore.Basket, kind granular.Kind) bool {
+	for _, item := range basket.Items {
+		if granular.Kind(item.Kind) == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// changeBasket adds one part of an account to the basket, takes one out,
+// or empties it, and returns to the page it was chosen on.
+func (s *Server) changeBasket(w http.ResponseWriter, r *http.Request, action, back string) {
+	var (
+		account    = r.PostFormValue("account")
+		repository = r.PostFormValue("repository")
+		snapshot   = r.PostFormValue("snapshot")
+		kind       = granular.Kind(r.PostFormValue("item"))
+	)
+	if action == "empty" {
+		if err := s.engine.Store().EmptyBasket(account, repository, snapshot); err != nil {
+			s.redirect(w, r, back, "error", err.Error())
+			return
+		}
+		s.redirect(w, r, back, "ok", "The basket is empty again.")
+		return
+	}
+	if action == "remove" {
+		if _, err := s.engine.Store().TakeFromBasket(account, repository, snapshot,
+			string(kind)); err != nil {
+			s.redirect(w, r, back, "error", err.Error())
+			return
+		}
+		s.redirect(w, r, back, "ok", "Taken out of the basket.")
+		return
+	}
+
+	var names []string
+	for _, name := range r.PostForm["name"] {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			names = append(names, trimmed)
+		}
+	}
+	if !kind.PicksItems() {
+		names = nil
+	}
+	if kind.NeedsNames() && len(names) == 0 {
+		s.redirect(w, r, back, "error", "Choose at least one item first.")
+		return
+	}
+	if err := usableItemNames(kind, names); err != nil {
+		s.redirect(w, r, back, "error", err.Error())
+		return
+	}
+	// A button on one row chooses one thing and says nothing about the
+	// rows above it, so it adds; a form of tick boxes shows what is
+	// chosen now, so it replaces.
+	put := s.engine.Store().PutInBasket
+	if action == "append" {
+		put = s.engine.Store().AddToBasket
+	}
+	basket, err := put(account, repository, snapshot,
+		nodestore.RestoreSelection{Kind: string(kind), Names: names})
+	if err != nil {
+		s.redirect(w, r, back, "error", err.Error())
+		return
+	}
+	s.redirect(w, r, back, "ok", fmt.Sprintf("Added. The basket holds %d.", basket.Count()))
+}
+
+// startBasket queues everything in the basket as one restore.
+//
+// One restore rather than several because the parts of an account depend on
+// each other -- a database its user cannot open is what two restores
+// produce when the second fails -- and because one account may only have
+// one job in flight, so several would run one after another with gaps.
+func (s *Server) startBasket(w http.ResponseWriter, r *http.Request, back string) {
+	var (
+		account    = r.PostFormValue("account")
+		repository = r.PostFormValue("repository")
+		snapshot   = r.PostFormValue("snapshot")
+		apply      = r.PostFormValue("apply") != ""
+	)
+	basket, err := s.engine.Store().Basket(account, repository, snapshot)
+	if err != nil {
+		s.redirect(w, r, back, "error", err.Error())
+		return
+	}
+	if basket.Empty() {
+		s.redirect(w, r, back, "error", "There is nothing in the basket.")
+		return
+	}
+	restore := nodestore.Restore{
+		Account: account, RepositoryID: repository, SnapshotID: snapshot,
+		Kind: protocol.RestoreItems, Apply: apply,
+		Items: basket.Items,
+	}
+	// A basket of one reads on the history page the way a single restore
+	// always has, rather than as a new shape nothing else knows.
+	if len(basket.Items) == 1 {
+		restore.ItemKind = basket.Items[0].Kind
+		restore.ItemNames = basket.Items[0].Names
+	}
+	for _, item := range basket.Items {
+		if err := usableItemNames(granular.Kind(item.Kind), item.Names); err != nil {
+			s.redirect(w, r, back, "error", err.Error())
+			return
+		}
+	}
+	if _, err := s.engine.QueueRestore(restore); err != nil {
+		s.redirect(w, r, back, "error", err.Error())
+		return
+	}
+	if err := s.engine.Store().EmptyBasket(account, repository, snapshot); err != nil {
+		s.log.Error("empty the recovery basket", "account", account, "error", err)
+	}
+	if apply {
+		s.redirect(w, r, back, "ok",
+			"Queued. It WILL replace these parts of the live account when it runs.")
+		return
+	}
+	s.redirect(w, r, back, "ok",
+		"Queued. What it recovers is left on this server to collect — "+
+			"nothing on the live account is touched.")
 }

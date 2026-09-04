@@ -303,6 +303,57 @@
     server to collect, unless you ask for it to go back into the account: files, the website,
     mail and databases can be written back, and the rest are a copy to put back by hand.</p>
 
+    {{if not $data.Basket.Empty}}
+    <div class="cpr-card" style="margin:0 0 var(--s4)">
+      <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
+        <b>Basket — {{$data.BasketCount}} from this backup</b>
+        <p class="cpr-hint" style="margin:var(--s1) 0 0">These come out in one restore, so a
+        database and the users that open it arrive together.</p>
+      </div>
+      <div class="cpr-tablewrap"><table>
+        <thead><tr><th>Part</th><th>What was chosen</th><th class="cpr-right">&nbsp;</th></tr></thead>
+        <tbody>
+          {{range $data.BasketRows}}
+          <tr>
+            <td class="cpr-acct">{{.Title}}{{if not .Applies}} <span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>copy only</span>{{end}}</td>
+            <td>{{if .Names}}{{range $i, $name := .Names}}{{if $i}}, {{end}}{{$name}}{{end}}{{else}}<span class="cpr-muted">all of them</span>{{end}}</td>
+            <td class="cpr-right">
+              <form method="post" action="?p=restore/items" class="cpr-inline">
+                <input type="hidden" name="csrf" value="{{$.CSRF}}">
+                <input type="hidden" name="account" value="{{$data.Account}}">
+                <input type="hidden" name="repository" value="{{$data.RepositoryID}}">
+                <input type="hidden" name="snapshot" value="{{$data.SnapshotID}}">
+                <input type="hidden" name="item" value="{{.Kind}}">
+                <button class="cpr-btn" name="action" value="remove">Remove</button>
+              </form>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table></div>
+      <div class="cpr-pad">
+        <form method="post" action="?p=restore/items" class="cpr-row">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="account" value="{{$data.Account}}">
+          <input type="hidden" name="repository" value="{{$data.RepositoryID}}">
+          <input type="hidden" name="snapshot" value="{{$data.SnapshotID}}">
+          <input type="hidden" name="basket" value="1">
+          <button class="cpr-btn cpr-primary">Copy out the basket</button>
+          {{if $data.BasketCanApply}}<button class="cpr-btn cpr-danger" name="apply" value="1">Put the basket back into the account</button>
+          {{else}}<span class="cpr-hint" style="margin:0">{{$data.BasketBlocker}} cannot be written
+          back, and a basket goes back whole or not at all.</span>{{end}}
+        </form>
+        <form method="post" action="?p=restore/items" class="cpr-inline" style="margin-top:var(--s2)">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <input type="hidden" name="account" value="{{$data.Account}}">
+          <input type="hidden" name="repository" value="{{$data.RepositoryID}}">
+          <input type="hidden" name="snapshot" value="{{$data.SnapshotID}}">
+          <button class="cpr-btn" name="action" value="empty">Empty the basket</button>
+        </form>
+      </div>
+    </div>
+    {{end}}
+
     <div class="cpr-chips">
       {{range $data.Kinds}}
       <a class="cpr-chip" aria-pressed="{{if $data.Selected .}}true{{else}}false{{end}}"
@@ -353,6 +404,7 @@
               <input type="hidden" name="snapshot" value="{{$data.SnapshotID}}">
               <input type="hidden" name="item" value="{{$data.Kind}}">
               <input type="hidden" name="name" value="{{.Item}}">
+              <button class="cpr-btn" name="action" value="append" title="Choose it now, restore it with the rest">Add to basket</button>
               <button class="cpr-btn">Copy it out</button>
               {{if $data.Kind.CanApply}}<button class="cpr-btn cpr-danger" name="apply" value="1"
                 title="Replaces this in the live account">Put it back</button>{{end}}
@@ -392,6 +444,7 @@
       <p class="cpr-hint">Nothing here in this backup.</p>
       {{end}}
       <div class="cpr-row">
+        <button class="cpr-btn" name="action" value="add">{{if $data.InBasket $data.Kind}}Update the basket{{else}}Add to basket{{end}}</button>
         <button class="cpr-btn cpr-primary">Copy out {{$data.KindTitle $data.Kind}}</button>
         {{if $data.Kind.CanApply}}<button class="cpr-btn cpr-danger" name="apply" value="1">Put it back into the account</button>{{end}}
         <span class="cpr-hint" style="margin:0">Taken out of the account archive in that backup.</span>

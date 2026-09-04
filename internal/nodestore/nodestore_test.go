@@ -439,3 +439,70 @@ func TestABasketDoesNotOutliveTheAccountThatMadeIt(t *testing.T) {
 		t.Errorf("another account's basket went with it: %+v, %v", basket, err)
 	}
 }
+
+// A button on one row of a picker chooses one thing and says nothing about
+// the rows above it, so it adds to what is there. A form of tick boxes
+// shows what is chosen now, so it replaces.
+func TestAddingOneThingAtATimeKeepsTheRest(t *testing.T) {
+	store, err := nodestore.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	for _, name := range []string{"studio.co.il/sales", "studio.co.il/info"} {
+		if _, err := store.AddToBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+			Kind: "mailbox", Names: []string{name},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	basket, err := store.Basket("c1", "repo1", "snap1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(basket.Items) != 1 || len(basket.Items[0].Names) != 2 {
+		t.Fatalf("basket = %+v", basket)
+	}
+	// The same one twice is still one.
+	if _, err := store.AddToBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+		Kind: "mailbox", Names: []string{"studio.co.il/sales"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if basket, _ = store.Basket("c1", "repo1", "snap1"); len(basket.Items[0].Names) != 2 {
+		t.Errorf("basket = %+v", basket)
+	}
+
+	// A part chosen whole stays whole: a list of names beside "all of
+	// them" says less than "all of them" does.
+	if _, err := store.AddToBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+		Kind: "dns",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.AddToBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+		Kind: "dns", Names: []string{"studio.co.il"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	basket, _ = store.Basket("c1", "repo1", "snap1")
+	for _, item := range basket.Items {
+		if item.Kind == "dns" && len(item.Names) != 0 {
+			t.Errorf("dns = %+v", item)
+		}
+	}
+
+	// Ticking a form replaces, because the form shows what is ticked.
+	if _, err := store.PutInBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+		Kind: "mailbox", Names: []string{"studio.co.il/info"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	basket, _ = store.Basket("c1", "repo1", "snap1")
+	for _, item := range basket.Items {
+		if item.Kind == "mailbox" && len(item.Names) != 1 {
+			t.Errorf("mailbox = %+v", item)
+		}
+	}
+}

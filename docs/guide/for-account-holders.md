@@ -5,7 +5,8 @@ else.
 
 ## What they can do
 
-Restore point → category → item. The categories are:
+Restore point → category → item, with a basket to gather items from several
+categories into one restore. The categories are:
 
 - a full cPanel account archive
 - the home directory
@@ -36,6 +37,49 @@ own process writes into their home directory. What lands there is owned by
 them, and a link planted beforehand leads nowhere they could not already
 write. A database is loaded only after the server, not the backup, confirms
 the account owns it.
+
+## What is in a restore point
+
+Every category says what the backup actually holds in it, so somebody who
+deleted a zone this morning can see whether it is there before restoring
+anything. The home directory, the mailboxes and the databases are listed
+straight out of the snapshot. The rest of an account is inside the cpmove
+archive, or inside one SQL file beside the dumps, so the container is
+streamed out of the repository and read — nothing is restored to answer the
+question, and one reading serves the whole visit.
+
+DNS zones, certificates, domains and database users can be ticked one at a
+time; leaving every box empty means all of them. Cron jobs and FTP logins are
+listed to be read rather than ticked: each is lines inside a single file, and
+handing back part of one would hand back a file that is not the one in the
+backup. The FTP list shows the login name and its directory and never the
+password hash beside them.
+
+## The recovery basket
+
+The parts of an account depend on each other. A database restored without the
+users that open it is a site that still cannot start, and an account may only
+have one job running at a time, so asking for them separately meant one
+restore waiting on another with a gap in between where the database was back
+and nothing could open it.
+
+**Add to my basket** on any category collects what was ticked. The basket is
+shown above the categories with a Remove on every row, and one pair of buttons
+starts the whole thing: download it as a single package, or put all of it back.
+Everything in it is checked before any of it is written, so a basket whose
+users would be refused does not leave the database replaced and the users
+missing.
+
+A basket goes back whole or not at all. One download-only part in it — a DNS
+zone, a certificate — makes the whole basket a download, and the page names
+the part responsible rather than leaving it to be guessed at.
+
+The basket lives on the server, not in the browser, because the recovery
+centre works with scripting switched off and choosing runs across several
+plain page loads. It belongs to one account, one destination and one restore
+point: a basket assembled out of Tuesday's backup is not a basket out of
+Monday's. It is forgotten after a day, and immediately if the account is
+removed.
 
 ## Database users
 

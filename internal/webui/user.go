@@ -298,35 +298,10 @@ type userView struct {
 	Basket nodestore.Basket
 }
 
-// basketRow is one category in the basket, as the page shows it.
-type basketRow struct {
-	Kind  granular.Kind
-	Title string
-	// Names is what was ticked. Empty means the whole category.
-	Names []string
-	// Applies reports whether this part can be written back into the
-	// account, which decides whether the basket as a whole can be.
-	Applies bool
-}
-
 // BasketRows is the basket in the order the categories are offered, so it
 // reads the same way as the page above it.
 func (v userView) BasketRows() []basketRow {
-	rows := make([]basketRow, 0, len(v.Basket.Items))
-	for _, kind := range userKinds {
-		for _, item := range v.Basket.Items {
-			if granular.Kind(item.Kind) != kind {
-				continue
-			}
-			rows = append(rows, basketRow{
-				Kind:    kind,
-				Title:   v.KindTitle(kind),
-				Names:   item.Names,
-				Applies: kind.CanApply(),
-			})
-		}
-	}
-	return rows
+	return basketRows(v.Basket, userKinds, v.KindTitle)
 }
 
 // BasketCount is how many things are in the basket.
@@ -341,45 +316,18 @@ func (v userView) BasketLabel() string {
 }
 
 // BasketCanApply reports whether everything in the basket can go back into
-// the account. One part that cannot makes the whole basket a download:
-// putting back the rest and leaving that one out is not what was asked
-// for, and would be discovered afterwards.
-func (v userView) BasketCanApply() bool {
-	if v.Basket.Empty() {
-		return false
-	}
-	for _, item := range v.Basket.Items {
-		if !granular.Kind(item.Kind).CanApply() {
-			return false
-		}
-	}
-	return true
-}
+// the account.
+func (v userView) BasketCanApply() bool { return basketCanApply(v.Basket) }
 
 // BasketBlocker names the part that keeps the basket from being put back,
 // so the reason is on the page rather than left to be guessed at.
 func (v userView) BasketBlocker() string {
-	var blocked []string
-	for _, kind := range userKinds {
-		for _, item := range v.Basket.Items {
-			if granular.Kind(item.Kind) == kind && !kind.CanApply() {
-				blocked = append(blocked, v.KindTitle(kind))
-			}
-		}
-	}
-	return granular.JoinAnd(blocked)
+	return basketBlocker(v.Basket, userKinds, v.KindTitle)
 }
 
 // InBasket reports whether a category has already been chosen, so the
 // button on it can say so.
-func (v userView) InBasket(kind granular.Kind) bool {
-	for _, item := range v.Basket.Items {
-		if granular.Kind(item.Kind) == kind {
-			return true
-		}
-	}
-	return false
-}
+func (v userView) InBasket(kind granular.Kind) bool { return inBasket(v.Basket, kind) }
 
 // userRepository is one destination as an account sees it: how many
 // backups of theirs are in it, and when the last one was taken.
