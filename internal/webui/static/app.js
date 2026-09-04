@@ -212,22 +212,65 @@
     });
   });
 
-  // Row menus. The details element does the opening on its own; what it
-  // does not do is close when the operator's attention moves elsewhere,
-  // which leaves two panels open over the same table.
-  document.addEventListener("click", function (event) {
-    var inside = event.target.closest(".cpr-menu");
+  // Row menus.
+  //
+  // The panel is in normal flow to begin with, so it works with no
+  // JavaScript. That costs something when the script is there: an open
+  // panel widened the table, which pushed a horizontal scrollbar under
+  // the page and shoved the row out from under the cursor. Script lifts
+  // it out of the flow instead — fixed, positioned against the button —
+  // which no scroll container can clip and no layout has to make room
+  // for. It goes back into the flow when the menu closes.
+  function placeMenu(menu) {
+    var panel = menu.querySelector(".cpr-menu-body");
+    var button = menu.querySelector("summary");
+    if (!panel || !button) { return; }
+    var rect = button.getBoundingClientRect();
+    panel.style.position = "fixed";
+    panel.style.top = Math.round(rect.bottom + 4) + "px";
+    panel.style.left = "auto";
+    panel.style.right = Math.round(window.innerWidth - rect.right) + "px";
+    panel.style.margin = "0";
+    panel.style.zIndex = "60";
+  }
+
+  function unplaceMenu(menu) {
+    var panel = menu.querySelector(".cpr-menu-body");
+    if (panel) { panel.removeAttribute("style"); }
+  }
+
+  function closeMenus(except) {
     Array.prototype.forEach.call(document.querySelectorAll(".cpr-menu[open]"), function (menu) {
-      if (menu !== inside) { menu.open = false; }
+      if (menu === except) { return; }
+      menu.open = false;
+      unplaceMenu(menu);
     });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll(".cpr-menu"), function (menu) {
+    menu.addEventListener("toggle", function () {
+      if (menu.open) {
+        closeMenus(menu);
+        placeMenu(menu);
+      } else {
+        unplaceMenu(menu);
+      }
+    });
+  });
+
+  // A panel pinned to the viewport does not follow the button it belongs
+  // to. Rather than track it, close it: the button is still there.
+  window.addEventListener("scroll", function () { closeMenus(null); }, true);
+  window.addEventListener("resize", function () { closeMenus(null); });
+
+  document.addEventListener("click", function (event) {
+    closeMenus(event.target.closest(".cpr-menu"));
   });
   document.addEventListener("keydown", function (event) {
     if (event.key !== "Escape") { return; }
-    Array.prototype.forEach.call(document.querySelectorAll(".cpr-menu[open]"), function (menu) {
-      menu.open = false;
-      var summary = menu.querySelector("summary");
-      if (summary) { summary.focus(); }
-    });
+    var open = document.querySelector(".cpr-menu[open] summary");
+    closeMenus(null);
+    if (open) { open.focus(); }
   });
 
   // Choosing several accounts at once. The count is shown rather than

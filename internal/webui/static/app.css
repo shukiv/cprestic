@@ -136,10 +136,10 @@
 .cprest .cpr-space { white-space:nowrap; }
 
 /* A row's less-used actions. A details element, not a scripted popover:
- * it opens with the keyboard, survives JavaScript being off, and closes
- * itself when another one opens. The panel is in normal flow rather than
- * absolutely positioned, because the table it sits in scrolls sideways
- * and an absolute panel would be clipped by that scroll container. */
+ * it opens with the keyboard and survives JavaScript being off, where the
+ * panel simply appears in the row. With script it is pinned to the
+ * viewport instead (see app.js): in the flow it widened the table, which
+ * put a horizontal scrollbar under the page every time a menu opened. */
 .cprest .cpr-menu { position:relative; display:inline-block; }
 .cprest .cpr-menu > summary { display:inline-grid; width:36px; padding:0; place-items:center; list-style:none; cursor:pointer; }
 .cprest .cpr-menu > summary::-webkit-details-marker { display:none; }
@@ -149,7 +149,7 @@
 }
 .cprest .cpr-menu[open] > summary { background:var(--surface-2); border-color:var(--line-strong); }
 .cprest .cpr-menu-body {
-  display:flex; flex-direction:column; align-items:stretch; gap:2px;
+  display:flex; min-width:170px; flex-direction:column; align-items:stretch; gap:2px;
   margin-top:6px; padding:4px; border:1px solid var(--line);
   border-radius:var(--r); background:var(--surface); box-shadow:var(--shadow);
   text-align:left;
