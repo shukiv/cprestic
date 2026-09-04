@@ -46,7 +46,7 @@
   --warn:#8A5A00; --warn-soft:#FBF1DC;
   --bad:#A32017;  --bad-soft:#FBEAE8;
   --shadow:0 1px 2px rgba(20,26,34,.06), 0 1px 8px rgba(20,26,34,.04);
-  --r:6px;
+  --r:3px;
   --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
 }
 @media (prefers-color-scheme: dark) {
@@ -105,7 +105,7 @@
 .cprest nav button:hover { color:var(--ink); }
 .cprest nav button[aria-current="page"] { color:var(--ink); font-weight:600; border-bottom-color:var(--accent); }
 .cprest nav button:focus-visible, .cprest .cpr-btn:focus-visible, .cprest .cpr-link:focus-visible, .cprest input:focus-visible, .cprest select:focus-visible {
-  outline:2px solid var(--accent); outline-offset:2px; border-radius:2px;
+  outline:2px solid var(--accent); outline-offset:2px; border-radius:3px;
 }
 
 .cprest main { max-width:1180px; margin:0 auto; padding:var(--s5) var(--s5) 96px; }
@@ -133,7 +133,7 @@
 .cprest .cpr-meter .cpr-none { background:var(--bad); }
 .cprest .cpr-legend { display:flex; gap:var(--s4); font-size:13px; color:var(--muted); flex-wrap:wrap; }
 .cprest .cpr-legend b { color:var(--ink); font-weight:600; }
-.cprest .cpr-key { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:6px; vertical-align:baseline; }
+.cprest .cpr-key { display:inline-block; width:8px; height:8px; border-radius:3px; margin-right:6px; vertical-align:baseline; }
 
 .cprest .cpr-stat { font-size:24px; font-weight:600; letter-spacing:-.01em; }
 .cprest .cpr-stat.cpr-warnish { color:var(--warn); }
@@ -288,7 +288,7 @@
 .cprest nav a[aria-current="page"] { color:var(--ink); font-weight:600; border-bottom-color:var(--accent); }
 .cprest nav a:focus-visible, .cprest a:focus-visible, .cprest textarea:focus-visible,
 .cprest summary:focus-visible {
-  outline:2px solid var(--accent); outline-offset:2px; border-radius:2px;
+  outline:2px solid var(--accent); outline-offset:2px; border-radius:3px;
 }
 
 /* Theme control. WHM does not tell a plugin which theme it is wearing, so
@@ -496,7 +496,7 @@
 .cprest .cpr-rail {
   position:sticky; top:16px; align-self:start;
   display:flex; flex-direction:column; height:calc(100vh - 32px); min-height:620px;
-  padding:20px 14px 14px; border-radius:10px 0 0 10px;
+  padding:20px 14px 14px; border-radius:0;
   background:#142236; color:#DCE8F7;
 }
 .cprest .cpr-brand,
@@ -507,7 +507,7 @@
 }
 .cprest .cpr-brand-mark {
   display:grid; width:34px; height:34px; flex:none; place-items:center;
-  border-radius:9px; background:#E35E30; color:#FFFFFF;
+  border-radius:3px; background:#E35E30; color:#FFFFFF;
   font-size:12px; font-weight:700; letter-spacing:-.03em;
 }
 .cprest .cpr-brand-name { white-space:nowrap; }
@@ -523,7 +523,7 @@
 .cprest .cpr-tabs a:visited {
   display:flex; min-height:44px; align-items:center; white-space:nowrap;
   padding:0 14px; border:0; border-bottom:2px solid transparent;
-  border-radius:6px 6px 0 0; background:transparent;
+  border-radius:3px 3px 0 0; background:transparent;
   color:var(--muted); font-weight:600;
   transition:color .16s ease, border-color .16s ease, background-color .16s ease;
 }
@@ -580,7 +580,7 @@
 .cprest .cpr-nav a:link,
 .cprest .cpr-nav a:visited {
   display:flex; min-height:44px; align-items:center; gap:11px;
-  padding:9px 11px; border:0; border-radius:7px;
+  padding:9px 11px; border:0; border-radius:3px;
   background:transparent; color:#B9C8DA; font-weight:400;
   transition:background-color .16s ease, color .16s ease;
 }
@@ -601,7 +601,7 @@
 .cprest .cpr-rail-state i { width:7px; height:7px; border-radius:50%; background:#64C894; }
 .cprest .cpr-workspace {
   min-width:0; border:1px solid var(--line); border-left:0;
-  border-radius:0 10px 10px 0; background:var(--ground);
+  border-radius:0; background:var(--ground);
 }
 .cprest .cpr-topbar {
   display:flex; min-height:62px; align-items:center; justify-content:space-between;
@@ -641,12 +641,12 @@
   .cprest .cpr-rail {
     position:static; display:flex; width:100%; height:auto; min-height:0;
     flex-direction:row; align-items:center; gap:10px; padding:10px 12px;
-    border-radius:8px 8px 0 0;
+    border-radius:0;
   }
   .cprest .cpr-brand { justify-content:flex-start; }
   .cprest .cpr-nav { display:flex; min-width:0; flex:1; gap:4px; overflow-x:auto; }
   .cprest .cpr-nav a { min-width:44px; flex:0 0 44px; }
-  .cprest .cpr-workspace { border-left:1px solid var(--line); border-radius:0 0 8px 8px; }
+  .cprest .cpr-workspace { border-left:1px solid var(--line); border-radius:0; }
   .cprest .cpr-topbar { min-height:52px; padding:8px 16px; }
   .cprest main { padding:22px 16px 80px; }
   .cprest .cpr-btn,
@@ -676,7 +676,7 @@
 .cprest.cpr-user .cpr-userbar {
   display:flex; min-height:66px; align-items:center; gap:24px;
   margin-bottom:26px; padding:0 18px; border:1px solid var(--line);
-  border-radius:10px; background:var(--surface); box-shadow:var(--shadow);
+  border-radius:3px; background:var(--surface); box-shadow:var(--shadow);
 }
 .cprest.cpr-user .cpr-userbrand,
 .cprest.cpr-user .cpr-userbrand:link,
@@ -687,7 +687,7 @@
 .cprest.cpr-user .cpr-userbrand:focus-visible,
 .cprest.cpr-user .cpr-usernav a:focus-visible,
 .cprest.cpr-user .cpr-kind-card:focus-visible {
-  outline:3px solid var(--accent); outline-offset:3px; border-radius:7px;
+  outline:3px solid var(--accent); outline-offset:3px; border-radius:3px;
 }
 .cprest.cpr-user .cpr-usernav { display:flex; align-self:stretch; gap:22px; overflow-x:auto; }
 .cprest.cpr-user .cpr-usernav a,
@@ -777,7 +777,7 @@
 .cprest.cpr-user .cpr-kind-card:visited {
   display:grid; grid-template-columns:42px minmax(0, 1fr) 18px;
   min-height:96px; align-items:center; gap:12px; padding:14px;
-  border:1px solid var(--line); border-radius:8px; background:var(--surface);
+  border:1px solid var(--line); border-radius:var(--r); background:var(--surface);
   color:var(--ink); box-shadow:var(--shadow); cursor:pointer;
   transition:border-color .18s ease, background-color .18s ease, transform .18s ease;
 }
@@ -789,7 +789,7 @@
   box-shadow:inset 3px 0 0 var(--accent);
 }
 .cprest.cpr-user .cpr-kind-icon {
-  display:grid; width:42px; height:42px; place-items:center; border-radius:8px;
+  display:grid; width:42px; height:42px; place-items:center; border-radius:var(--r);
   background:var(--surface-2); color:var(--accent);
 }
 .cprest.cpr-user .cpr-kind-selected .cpr-kind-icon { background:var(--surface); }
