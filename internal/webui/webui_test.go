@@ -2016,8 +2016,16 @@ func TestTheBrandIsOnThePageInItsOwnColour(t *testing.T) {
 	client, _, _ := newUI(t)
 
 	_, page := get(t, client, "/")
-	if !strings.Contains(page, `<span class="cpr-brand-mark">cP:R</span><span class="cpr-brand-name">cP:Restic</span>`) {
-		t.Error("the interface does not carry the name")
+	for _, want := range []string{
+		`<span class="cpr-brand-mark">cP:R</span>`,
+		`<span class="cpr-brand-name">cP:Restic</span>`,
+		// The strapline sits inside the lockup, beside the mark rather
+		// than under the whole block on a margin kept in step by hand.
+		`<span class="cpr-server">WHM backup operations</span>`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the interface does not carry the name: %s is missing", want)
+		}
 	}
 	if !strings.Contains(page, "background:#E35E30; color:#FFFFFF;") {
 		t.Error("the cP mark is not in its own colour")
