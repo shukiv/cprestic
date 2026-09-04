@@ -2029,6 +2029,57 @@ func TestTheBrandIsOnThePageInItsOwnColour(t *testing.T) {
 // paints — a page that decides its theme only once app.js has run shows the
 // wrong one first. A machine set to dark is a fact about the machine, not a
 // choice made here, so only an explicit "system" hands the decision over.
+// An account cPanel has removed disappears from the live account list, and
+// with it from every picker built from that list — which is exactly when its
+// backups matter most. They are offered in their own group instead.
+func TestRestoreOffersAccountsCPanelHasDeleted(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	finished := time.Now().Add(-2 * time.Hour)
+	retired := time.Now().Add(-time.Hour)
+	if _, err := engine.Store().PutJob(nodestore.Job{
+		Account: "departed", Status: job.StatusSuccess, FinishedAt: &finished,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Store().PutIdentity(nodestore.AccountIdentity{
+		Account: "departed", UID: 1234, SinceAt: finished,
+		LastSeen: finished, CreatedAt: finished, RetiredAt: &retired,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Retired, but nothing was ever backed up under the name: offering it
+	// would be a dead end.
+	if _, err := engine.Store().PutIdentity(nodestore.AccountIdentity{
+		Account: "nevercopied", UID: 1235, SinceAt: finished,
+		LastSeen: finished, CreatedAt: finished, RetiredAt: &retired,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/restore")
+	if !strings.Contains(page, `<optgroup label="Deleted accounts">`) {
+		t.Error("the picker does not offer deleted accounts")
+	}
+	if !strings.Contains(page, `<option value="departed"`) {
+		t.Error("a deleted account with backups is not in the picker")
+	}
+	if strings.Contains(page, `<option value="nevercopied"`) {
+		t.Error("a deleted account with no backup is offered anyway")
+	}
+
+	_, chosen := get(t, client, "/restore?account=departed")
+	if !strings.Contains(chosen, "is not on this server any more") {
+		t.Error("choosing a deleted account does not say the account is gone")
+	}
+	if !strings.Contains(chosen, "creates the account again") {
+		t.Error("the page does not say what restoring a deleted account does")
+	}
+	// The whole-account form itself needs snapshots, which needs a restic
+	// this suite has none of; the wording it carries for a deleted account
+	// is checked against a real repository instead.
+}
+
 func TestThePageOpensInLightUnlessToldOtherwise(t *testing.T) {
 	client, _, _ := newUI(t)
 

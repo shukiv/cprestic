@@ -2165,13 +2165,20 @@ func onDisk(path string) bool {
 }
 
 type restoreView struct {
-	Accounts     []accountView
-	Repositories []destinationView
-	Account      string
-	RepositoryID string
-	Snapshots    []resticrun.Snapshot
-	Restores     []restoreRow
-	LookupError  string
+	Accounts []accountView
+	// Deleted are accounts cPanel has removed whose backups are still
+	// here, offered in their own group so a deleted account is something
+	// an operator can find rather than something the picker forgets.
+	Deleted []deletedAccount
+	// AccountDeleted says the chosen account is one of those, which
+	// changes what a restore of it means: cPanel creates the account.
+	AccountDeleted bool
+	Repositories   []destinationView
+	Account        string
+	RepositoryID   string
+	Snapshots      []resticrun.Snapshot
+	Restores       []restoreRow
+	LookupError    string
 
 	// The file picker for a whole-account restore: what the chosen
 	// snapshot holds at the path being looked at, so files are picked
@@ -2213,6 +2220,81 @@ func (v restoreView) KindTitle(k granular.Kind) string { return k.Title() }
 // Selected reports whether a kind is the one being picked.
 func (v restoreView) Selected(k granular.Kind) bool { return v.Kind == k }
 
+// deletedAccount is an account cPanel no longer has, whose backups this
+// server still holds. JetBackup calls these orphans; this page calls them
+// deleted accounts, because that is what happened — the account went, the
+// backups stayed, and restoring one asks cPanel to create it again.
+type deletedAccount struct {
+	Account   string
+	RetiredAt time.Time
+	// LastBackup is the newest backup this server recorded for the name,
+	// and the reason the account is offered at all: a name with nothing
+	// behind it would be a dead end in the picker.
+	LastBackup time.Time
+}
+
+// deletedAccounts lists the names this server retired and still has backups
+// for. It reads what the lifecycle hooks recorded rather than the repository
+// itself: reading the destination is authoritative, and slow enough that
+// every visit to this page would wait on restic. The Server recovery page
+// remains the place that reads a destination directly, which is also where
+// an account this server never knew — one from a different host — shows up.
+func (s *Server) deletedAccounts(live []accountView) ([]deletedAccount, error) {
+	identities, err := s.engine.Store().Identities()
+	if err != nil {
+		return nil, err
+	}
+	jobs, err := s.engine.Store().Jobs(0)
+	if err != nil {
+		return nil, err
+	}
+	present := make(map[string]bool, len(live))
+	for _, account := range live {
+		present[account.User] = true
+	}
+	// The newest backup that finished with something in it, per name.
+	backed := map[string]time.Time{}
+	for _, run := range jobs {
+		if run.FinishedAt == nil {
+			continue
+		}
+		if run.Status != job.StatusSuccess && run.Status != job.StatusPartialSuccess {
+			continue
+		}
+		if at, ok := backed[run.Account]; !ok || run.FinishedAt.After(at) {
+			backed[run.Account] = *run.FinishedAt
+		}
+	}
+
+	var deleted []deletedAccount
+	for _, identity := range identities {
+		if identity.RetiredAt == nil {
+			continue
+		}
+		// The name is on the server again. Whoever holds it now owns the
+		// live row in the other group, and the previous holder's backups
+		// are not theirs to be offered under the same name here.
+		if present[identity.Account] {
+			continue
+		}
+		last, ok := backed[identity.Account]
+		if !ok {
+			continue
+		}
+		deleted = append(deleted, deletedAccount{
+			Account:    identity.Account,
+			RetiredAt:  *identity.RetiredAt,
+			LastBackup: last,
+		})
+	}
+	// Most recently deleted first: the account someone is looking for is
+	// usually the one that just went.
+	sort.Slice(deleted, func(i, j int) bool {
+		return deleted[i].RetiredAt.After(deleted[j].RetiredAt)
+	})
+	return deleted, nil
+}
+
 func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	accounts, _, err := s.accountViews(r)
 	if err != nil {
@@ -2230,11 +2312,22 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	deleted, err := s.deletedAccounts(accounts)
+	if err != nil {
+		s.fail(w, r, http.StatusInternalServerError, err)
+		return
+	}
+
 	view := restoreView{
-		Accounts: accounts, Repositories: destinations,
+		Accounts: accounts, Deleted: deleted, Repositories: destinations,
 		Restores:     collectableRows(restores),
 		Account:      r.URL.Query().Get("account"),
 		RepositoryID: r.URL.Query().Get("repository"),
+	}
+	for _, gone := range deleted {
+		if gone.Account == view.Account {
+			view.AccountDeleted = true
+		}
 	}
 	// Default to the first provisioned repository so the common case is
 	// one click rather than two.

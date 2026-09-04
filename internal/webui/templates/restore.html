@@ -14,11 +14,24 @@
         <label for="account">Account</label>
         <select id="account" name="account" onchange="this.form.submit()">
           <option value="">Choose an account…</option>
-          {{range $data.Accounts}}
-          <option value="{{.User}}" {{if eq .User $data.Account}}selected{{end}}>{{.User}}</option>
+          <optgroup label="On this server">
+            {{range $data.Accounts}}
+            <option value="{{.User}}" {{if eq .User $data.Account}}selected{{end}}>{{.User}}</option>
+            {{end}}
+            <option value="@system" {{if eq "@system" $data.Account}}selected{{end}}>The server's own settings</option>
+          </optgroup>
+          {{if $data.Deleted}}
+          <optgroup label="Deleted accounts">
+            {{range $data.Deleted}}
+            <option value="{{.Account}}" {{if eq .Account $data.Account}}selected{{end}}>{{.Account}} — deleted {{ago .RetiredAt}}</option>
+            {{end}}
+          </optgroup>
           {{end}}
-          <option value="@system" {{if eq "@system" $data.Account}}selected{{end}}>The server's own settings</option>
         </select>
+        {{if $data.Deleted}}
+        <p class="cpr-sublabel">Deleted accounts are gone from cPanel but still have backups here. An account
+        this server never held is on <a class="cpr-link" href="?p=recover">Server recovery</a>.</p>
+        {{end}}
       </div>
       <div>
         <label for="repository">Restore from</label>
@@ -35,6 +48,17 @@
   </form>
   </div>
 </div>
+
+{{if $data.AccountDeleted}}
+<div class="cpr-banner cpr-warn">
+  <div class="cpr-body">
+    <strong>{{$data.Account}} is not on this server any more.</strong>
+    Its backups are still here. Restoring the whole account hands the archive to cPanel's own
+    restore, which creates the account again — with its files, databases, mail and settings as
+    they were in the backup you pick. Single files can be taken out without recreating anything.
+  </div>
+</div>
+{{end}}
 
 {{if $data.LookupError}}
 <div class="cpr-flash cpr-error">Could not read that destination: {{$data.LookupError}}</div>
@@ -129,10 +153,18 @@
     <h2 style="margin-top:var(--s5)">Whole-account restore</h2>
     <p class="cpr-hint">By default the account archive is rebuilt and left on this server for you
     to inspect. Nothing is overwritten.</p>
+    {{if $data.AccountDeleted}}
+    <label class="cpr-check"><input type="checkbox" name="apply" value="1">
+      <span><strong>Create {{$data.Account}} again from this backup</strong>
+      <small class="cpr-help">Hands the rebuilt archive to cPanel's restorepkg, which creates the
+      account with the files, databases, mail and settings the backup holds. Nothing on this
+      server is overwritten: the account is not here to overwrite.</small></span></label>
+    {{else}}
     <label class="cpr-check"><input type="checkbox" name="apply" value="1">
       <span><strong>Overwrite the live account</strong>
       <small class="cpr-help">Hands the rebuilt archive to cPanel's restorepkg. The account's
       current files, databases and settings are replaced. There is no undo.</small></span></label>
+    {{end}}
     <label class="cpr-check"><input type="checkbox" name="unrestricted" value="1">
       <span><strong>Restore without cPanel's restricted-restore checks</strong>
       <small class="cpr-help">cprest asks cPanel for a restricted restore, because the archive
