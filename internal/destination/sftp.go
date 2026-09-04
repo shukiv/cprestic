@@ -142,6 +142,24 @@ func (s *SFTP) validate() error {
 	case s.IdentityFile == "":
 		return fmt.Errorf("sftp: identity file is required")
 	}
+	// A host is a name, not an option. ssh reads anything beginning with
+	// a dash as one, and the space probe passes the host on ssh's command
+	// line; "--" in front of it is the guard, and this is the second one.
+	// Whitespace and control characters have no place in a hostname
+	// either, and both reach an argument list from here.
+	if strings.HasPrefix(s.Host, "-") {
+		return fmt.Errorf("sftp: host %q must not begin with a dash", s.Host)
+	}
+	if strings.ContainsAny(s.Host, " \t\r\n") || hasControl(s.Host) {
+		return fmt.Errorf("sftp: host %q must not contain whitespace or control characters", s.Host)
+	}
+	// The root is quoted before it reaches the far end's shell, but a
+	// newline in it would be a second line of that command whatever the
+	// quoting, and restic's sftp URI cannot carry one either.
+	if hasControl(s.Root) {
+		return fmt.Errorf("sftp: root %q must not contain control characters", s.Root)
+	}
+
 	// restic splits sftp.args with shell-like quoting rules, so a path
 	// containing whitespace or quotes would be silently torn into several
 	// arguments.
@@ -165,4 +183,16 @@ func mustStatMode(path string) os.FileMode {
 		return 0
 	}
 	return info.Mode().Perm()
+}
+
+// hasControl reports whether a value carries a character that has no
+// business in a hostname or a path: they end up on argument lists, in URIs
+// and in a remote shell's input.
+func hasControl(value string) bool {
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
 }

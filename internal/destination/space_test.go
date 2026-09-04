@@ -3,6 +3,7 @@ package destination_test
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -100,6 +101,78 @@ func TestRemoteDFIsReadFromTheEndOfTheRow(t *testing.T) {
 
 	if _, err := destination.ParseDFForTest("df: /srv: No such file or directory\n"); err == nil {
 		t.Error("df failing was read as a size")
+	}
+}
+
+// ssh parses options until it meets one it does not know, so a host of
+// "-oProxyCommand=..." is an option — and ProxyCommand runs here, as this
+// process, which is root. The "--" has to come before the host, and the
+// host has to be refused as well.
+func TestTheRemoteProbeCannotBeTalkedIntoRunningSomethingElse(t *testing.T) {
+	sftp := &destination.SFTP{
+		Host: "backup.example", User: "cprest", Root: "/srv/restic",
+		IdentityFile: "/etc/cprest/id_ed25519", KnownHostsFile: "/etc/cprest/known_hosts",
+	}
+	args := destination.DFArgsForTest(sftp)
+
+	end := -1
+	host := -1
+	for i, arg := range args {
+		if arg == "--" && end == -1 {
+			end = i
+		}
+		if arg == "backup.example" {
+			host = i
+		}
+	}
+	if end == -1 || host == -1 || end > host {
+		t.Fatalf("the host is not behind an end-of-options marker: %v", args)
+	}
+
+	// The far end runs the command through a shell, so the path is one
+	// word there whatever is in it.
+	hostile := &destination.SFTP{
+		Host: "backup.example", User: "cprest", Root: "/srv/restic'; rm -rf /tmp/x; '",
+		IdentityFile: "/etc/cprest/id_ed25519", KnownHostsFile: "/etc/cprest/known_hosts",
+	}
+	last := destination.DFArgsForTest(hostile)
+	quoted := last[len(last)-1]
+
+	// Asserting on the quoting by eye proves nothing; a shell is the thing
+	// that reads it, so a shell is asked. It must come back as one word,
+	// byte for byte the path, with nothing run.
+	echoed, err := exec.Command("/bin/sh", "-c", "printf %s "+quoted).Output()
+	if err != nil {
+		t.Fatalf("shell could not read the quoted path %q: %v", quoted, err)
+	}
+	if string(echoed) != hostile.Root {
+		t.Errorf("the shell read %q, want %q (from %s)", echoed, hostile.Root, quoted)
+	}
+}
+
+// The same values reach restic's argument list and a remote shell, so they
+// are refused before they are stored, not only when they are used.
+func TestASFTPDestinationRefusesAHostThatIsAnOption(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		sftp destination.SFTP
+	}{
+		{"host is an ssh option", destination.SFTP{
+			Host: "-oProxyCommand=/bin/sh", User: "cprest", Root: "/srv",
+			IdentityFile: "/k", KnownHostsFile: "/kh"}},
+		{"host carries whitespace", destination.SFTP{
+			Host: "backup.example -oProxyCommand=x", User: "cprest", Root: "/srv",
+			IdentityFile: "/k", KnownHostsFile: "/kh"}},
+		{"root carries a newline", destination.SFTP{
+			Host: "backup.example", User: "cprest", Root: "/srv\nrm -rf /",
+			IdentityFile: "/k", KnownHostsFile: "/kh"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dest := tc.sftp
+			if _, err := dest.URI("host"); err == nil {
+				t.Error("it was accepted")
+			}
+		})
 	}
 }
 

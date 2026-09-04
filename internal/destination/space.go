@@ -76,19 +76,7 @@ func (s *SFTP) Space(ctx context.Context) (Space, error) {
 	ctx, cancel := context.WithTimeout(ctx, spaceTimeout)
 	defer cancel()
 
-	args := []string{
-		"-i", s.IdentityFile,
-		"-o", "UserKnownHostsFile=" + s.KnownHostsFile,
-		"-o", "StrictHostKeyChecking=yes",
-		"-o", "BatchMode=yes",
-		"-o", "IdentitiesOnly=yes",
-	}
-	if s.Port != 0 && s.Port != 22 {
-		args = append(args, "-p", strconv.Itoa(s.Port))
-	}
-	args = append(args, "-l", s.User, s.Host, "--", "df", "-Pk", "--", s.Root)
-
-	output, err := exec.CommandContext(ctx, "ssh", args...).Output()
+	output, err := exec.CommandContext(ctx, "ssh", s.dfArgs()...).Output()
 	if err != nil {
 		return Space{}, fmt.Errorf("sftp: df on %s: %w", s.Host, err)
 	}
@@ -123,7 +111,47 @@ func parseDF(output string) (Space, error) {
 	return Space{}, fmt.Errorf("sftp: could not read df output")
 }
 
+// dfArgs builds the ssh invocation. Two things here are load-bearing.
+//
+// The "--" comes before the host, not after it. ssh parses options until
+// it sees one, so a host of "-oProxyCommand=..." is an option rather than
+// a name — and ProxyCommand runs on this machine, as this process, which
+// is root. With the "--" in front, ssh reads it as a hostname and refuses
+// it. That is the difference between a bad configuration and local code
+// execution.
+//
+// The remote path is single-quoted because ssh does not run the command
+// it is given: it joins the remaining arguments with spaces and hands the
+// string to a shell on the far end. A root of "/srv; rm -rf /" is two
+// commands there, and "df -Pk -- /srv" does not protect against that —
+// the "--" is read by df, long after the shell has finished splitting.
+func (s *SFTP) dfArgs() []string {
+	args := []string{
+		"-i", s.IdentityFile,
+		"-o", "UserKnownHostsFile=" + s.KnownHostsFile,
+		"-o", "StrictHostKeyChecking=yes",
+		"-o", "BatchMode=yes",
+		"-o", "IdentitiesOnly=yes",
+		"-l", s.User,
+	}
+	if s.Port != 0 && s.Port != 22 {
+		args = append(args, "-p", strconv.Itoa(s.Port))
+	}
+	return append(args, "--", s.Host, "df", "-Pk", "--", shellQuote(s.Root))
+}
+
+// shellQuote wraps a value so a remote shell reads it as one word. The
+// only character that matters inside single quotes is the single quote
+// itself, which is closed, escaped and reopened.
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
+}
+
 // ParseDFForTest exposes the df reader to the package's tests. The parsing
 // is the part that can be wrong against a machine we do not control, and
 // running a real ssh from a unit test is not a way to find that out.
 func ParseDFForTest(output string) (Space, error) { return parseDF(output) }
+
+// DFArgsForTest exposes the ssh invocation, so the argument order that
+// keeps a hostname from becoming an option is checked rather than assumed.
+func DFArgsForTest(s *SFTP) []string { return s.dfArgs() }
