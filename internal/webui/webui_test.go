@@ -1263,14 +1263,15 @@ func TestADownloadIsOnlyOfferedWhileTheArchiveExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, page := get(t, client, "/jobs"); !strings.Contains(page, "?p=download&amp;id="+stored.ID) {
+	restoreLog := "/logs?tab=restores"
+	if _, page := get(t, client, restoreLog); !strings.Contains(page, "?p=download&amp;id="+stored.ID) {
 		t.Error("a collectable archive is not offered for download")
 	}
 
 	if err := os.Remove(archive); err != nil {
 		t.Fatal(err)
 	}
-	_, page := get(t, client, "/jobs")
+	_, page := get(t, client, restoreLog)
 	if strings.Contains(page, "?p=download&amp;id="+stored.ID) {
 		t.Error("a download is still offered for an archive that has been swept")
 	}
@@ -2041,6 +2042,62 @@ func TestTheBrandIsOnThePageInItsOwnColour(t *testing.T) {
 // stored the most, which failed, who has not been backed up. The rows are
 // already on the page, so the sort happens there; what the server has to
 // get right is a sort key on the cells whose text does not sort.
+// History was one page of backups called "everything cprest has done",
+// which it was not: a backup of the server's own settings sat among
+// nineteen account backups, and the cPanel hook events were only on the
+// dashboard's five-row summary.
+func TestLogsSeparateTheKindsOfWork(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	finished := time.Now().Add(-time.Hour)
+	for _, account := range []string{"customer1", cpanel.SystemAccount} {
+		if _, err := engine.Store().PutJob(nodestore.Job{
+			Account: account, Status: job.StatusSuccess, FinishedAt: &finished,
+			Targets: []nodestore.JobTarget{{
+				RepositoryID: "repo", Status: job.TargetSuccess, SnapshotID: "40dc1520",
+			}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := engine.Store().PutLifecycleEvent(nodestore.LifecycleEvent{
+		Event: "removeacct", Account: "departed", OK: true,
+		Detail: "identity retired", At: finished,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, backups := get(t, client, "/logs")
+	if !strings.Contains(backups, "<h1>Logs</h1>") {
+		t.Error("the page is not called Logs")
+	}
+	if !strings.Contains(backups, ">customer1<") {
+		t.Error("an account backup is missing from the backups log")
+	}
+	if strings.Contains(backups, ">"+cpanel.SystemAccount+"<") {
+		t.Error("a backup of the server's settings is mixed in with the accounts")
+	}
+
+	_, system := get(t, client, "/logs?tab=system")
+	if !strings.Contains(system, ">"+cpanel.SystemAccount+"<") {
+		t.Error("the system backups log does not show the server's own backup")
+	}
+	if strings.Contains(system, ">customer1<") {
+		t.Error("an account backup is in the system backups log")
+	}
+
+	_, events := get(t, client, "/logs?tab=lifecycle")
+	if !strings.Contains(events, "departed") {
+		t.Error("the cPanel events log does not show a lifecycle event")
+	}
+
+	// The page was History at /jobs, and somebody's bookmark still says so.
+	status, old := get(t, client, "/jobs")
+	if status != http.StatusOK || !strings.Contains(old, "<h1>Logs</h1>") {
+		t.Errorf("the old address does not still work: %d", status)
+	}
+}
+
 func TestTablesCarrySortKeysOnCellsThatNeedThem(t *testing.T) {
 	client, _, engine := newUI(t)
 

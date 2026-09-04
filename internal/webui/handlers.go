@@ -1203,7 +1203,7 @@ func (s *Server) handleRunSchedule(w http.ResponseWriter, r *http.Request) {
 			queued, strings.Join(skipped, ", ")))
 	default:
 		s.redirect(w, r, "/schedule", "ok", fmt.Sprintf(
-			"Queued %d account(s). Watch progress under History.", queued))
+			"Queued %d account(s). Watch progress under Logs.", queued))
 	}
 }
 
@@ -2718,13 +2718,59 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 // --- jobs ---
 
-func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
-	jobs, err := s.engine.Store().Jobs(100)
+// logsView is what the Logs page shows, split by the question being asked.
+// A backup of an account and a backup of the server's own settings are
+// different work with different failure modes, and lumping them together
+// made the second kind invisible among nineteen of the first.
+type logsView struct {
+	Tab         string
+	Jobs        []nodestore.Job
+	System      []nodestore.Job
+	Restores    []restoreRow
+	Lifecycle   []nodestore.LifecycleEvent
+	Destination map[string]string
+	// Counts label the tabs, so an operator can see there is something
+	// under one without opening it.
+	Counts map[string]int
+}
+
+// logTable is one tab's worth of backup rows. Backups of accounts and
+// backups of the server's own settings render the same way and differ only
+// in what is in them, so they share a template and this says which is which.
+type logTable struct {
+	Rows        []nodestore.Job
+	Destination map[string]string
+	Live        string
+	Empty       string
+}
+
+func (v logsView) BackupTable() logTable {
+	return logTable{
+		Rows: v.Jobs, Destination: v.Destination, Live: "backups",
+		Empty: "No backups have run yet. They will appear here as schedules fire.",
+	}
+}
+
+func (v logsView) SystemTable() logTable {
+	return logTable{
+		Rows: v.System, Destination: v.Destination, Live: "systembackups",
+		Empty: "Nothing has backed up the server's own settings yet. " +
+			"A schedule that covers the server as well as its accounts puts them here.",
+	}
+}
+
+func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
+	jobs, err := s.engine.Store().Jobs(200)
 	if err != nil {
 		s.fail(w, r, http.StatusInternalServerError, err)
 		return
 	}
-	restores, err := s.engine.Store().Restores(50)
+	restores, err := s.engine.Store().Restores(100)
+	if err != nil {
+		s.fail(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	lifecycle, err := s.engine.Store().LifecycleEvents(100)
 	if err != nil {
 		s.fail(w, r, http.StatusInternalServerError, err)
 		return
@@ -2738,11 +2784,36 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	for _, dest := range destinations {
 		names[dest.Repository.ID] = dest.Name
 	}
-	s.render(w, r, "jobs.html", "History", "jobs", struct {
-		Jobs        []nodestore.Job
-		Restores    []restoreRow
-		Destination map[string]string
-	}{jobs, collectableRows(restores), names})
+
+	view := logsView{
+		Tab:         logTab(r.URL.Query().Get("tab")),
+		Restores:    collectableRows(restores),
+		Lifecycle:   lifecycle,
+		Destination: names,
+	}
+	for _, run := range jobs {
+		if run.Account == cpanel.SystemAccount {
+			view.System = append(view.System, run)
+			continue
+		}
+		view.Jobs = append(view.Jobs, run)
+	}
+	view.Counts = map[string]int{
+		"backups":   len(view.Jobs),
+		"system":    len(view.System),
+		"restores":  len(view.Restores),
+		"lifecycle": len(view.Lifecycle),
+	}
+	s.render(w, r, "logs.html", "Logs", "logs", view)
+}
+
+func logTab(asked string) string {
+	switch asked {
+	case "system", "restores", "lifecycle":
+		return asked
+	default:
+		return "backups"
+	}
 }
 
 // --- settings ---
