@@ -336,3 +336,85 @@ func TestAccountRedirectUsesTheCPanelLivePHPEntryPoint(t *testing.T) {
 		}
 	}
 }
+
+// A basket is one restore, so a database and the users that open it arrive
+// together rather than as two jobs with a gap between them.
+func TestABasketBecomesOneRestore(t *testing.T) {
+	basket := nodestore.Basket{
+		Account: "studio", RepositoryID: "repo", SnapshotID: "snapshot",
+		Items: []nodestore.RestoreSelection{
+			{Kind: "database", Names: []string{"studio_shop"}},
+			{Kind: "dbusers", Names: []string{"studio_shop"}},
+		},
+	}
+	restore, err := userBasketRestore("studio", basket, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restore.Kind != protocol.RestoreItems || len(restore.Items) != 2 || !restore.Apply {
+		t.Fatalf("restore = %+v", restore)
+	}
+	if len(restore.Selections()) != 2 {
+		t.Errorf("selections = %+v", restore.Selections())
+	}
+}
+
+// One part that cannot be written back makes the whole basket a download.
+// Putting back the rest and leaving that one out is not what was asked
+// for, and would only be discovered afterwards.
+func TestABasketCarryingADownloadOnlyPartCannotBePutBack(t *testing.T) {
+	basket := nodestore.Basket{
+		Account: "studio", RepositoryID: "repo", SnapshotID: "snapshot",
+		Items: []nodestore.RestoreSelection{
+			{Kind: "database", Names: []string{"studio_shop"}},
+			{Kind: "dns"},
+		},
+	}
+	if _, err := userBasketRestore("studio", basket, true); err == nil {
+		t.Error("a basket carrying DNS was accepted for putting back")
+	}
+	// It is still a download, which is the whole point of offering it.
+	restore, err := userBasketRestore("studio", basket, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restore.Items) != 2 || restore.Apply {
+		t.Errorf("restore = %+v", restore)
+	}
+}
+
+// The parts of an account a customer may ask for are the ones the page
+// offers. The whole account is not one of them here: it is everything, and
+// it goes to cPanel's restorepkg as root over a home directory the customer
+// controls.
+func TestABasketRefusesWhatTheRecoveryCentreDoesNotOffer(t *testing.T) {
+	for _, kind := range []string{"account", "system", "settings", "anything"} {
+		basket := nodestore.Basket{
+			Account: "studio", RepositoryID: "repo", SnapshotID: "snapshot",
+			Items: []nodestore.RestoreSelection{{Kind: kind}},
+		}
+		if _, err := userBasketRestore("studio", basket, false); err == nil {
+			t.Errorf("a basket of %q was accepted", kind)
+		}
+	}
+	if _, err := userBasketRestore("studio", nodestore.Basket{}, false); err == nil {
+		t.Error("an empty basket was accepted")
+	}
+}
+
+// A basket of one reads on the history page the way a single restore
+// always has, rather than as a new shape nothing else knows.
+func TestABasketOfOneStillNamesItsPart(t *testing.T) {
+	restore, err := userBasketRestore("studio", nodestore.Basket{
+		Account: "studio", RepositoryID: "repo", SnapshotID: "snapshot",
+		Items: []nodestore.RestoreSelection{
+			{Kind: "database", Names: []string{"studio_shop"}},
+		},
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restore.ItemKind != "database" || len(restore.ItemNames) != 1 {
+		t.Fatalf("restore = %+v", restore)
+	}
+}

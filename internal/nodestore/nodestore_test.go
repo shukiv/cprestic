@@ -332,3 +332,110 @@ func TestLifecycleHistoryIsNewestFirstAndBounded(t *testing.T) {
 			events[0].At, events[len(events)-1].At)
 	}
 }
+
+// Choosing runs across several pages and the pages remember nothing
+// between them, so what has been chosen so far is kept here.
+func TestABasketRemembersWhatWasChosenAcrossPages(t *testing.T) {
+	store, err := nodestore.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	if basket, err := store.Basket("c1", "repo1", "snap1"); err != nil || !basket.Empty() {
+		t.Fatalf("a basket nobody started = %+v, %v", basket, err)
+	}
+
+	if _, err := store.PutInBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+		Kind: "database", Names: []string{"c1_shop"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	basket, err := store.PutInBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+		Kind: "dbusers", Names: []string{"c1_shop"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(basket.Items) != 2 || basket.Count() != 2 {
+		t.Fatalf("basket = %+v", basket)
+	}
+
+	// Choosing a category again replaces what was chosen for it: the page
+	// it was chosen on shows what is ticked now, and a basket that
+	// disagreed with its own tick boxes would restore what nobody saw.
+	basket, err = store.PutInBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+		Kind: "database", Names: []string{"c1_wp", "c1_blog"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(basket.Items) != 2 || basket.Count() != 3 {
+		t.Fatalf("basket = %+v", basket)
+	}
+
+	// A basket assembled out of one restore point is not a basket out of
+	// another: the same name means different data in each.
+	if other, err := store.Basket("c1", "repo1", "snap2"); err != nil || !other.Empty() {
+		t.Errorf("another restore point = %+v, %v", other, err)
+	}
+	// Nor does it belong to another account, whatever the form said.
+	if other, err := store.Basket("c2", "repo1", "snap1"); err != nil || !other.Empty() {
+		t.Errorf("another account = %+v, %v", other, err)
+	}
+
+	if _, err := store.TakeFromBasket("c1", "repo1", "snap1", "database"); err != nil {
+		t.Fatal(err)
+	}
+	read, err := store.Basket("c1", "repo1", "snap1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(read.Items) != 1 || read.Items[0].Kind != "dbusers" {
+		t.Fatalf("after removing the databases = %+v", read)
+	}
+
+	// The last thing taken out leaves nothing behind.
+	if _, err := store.TakeFromBasket("c1", "repo1", "snap1", "dbusers"); err != nil {
+		t.Fatal(err)
+	}
+	if read, err := store.Basket("c1", "repo1", "snap1"); err != nil || !read.Empty() {
+		t.Errorf("emptied basket = %+v, %v", read, err)
+	}
+}
+
+// A half-made choice is not evidence of anything, and a future owner of a
+// recycled username must not be handed the last customer's.
+func TestABasketDoesNotOutliveTheAccountThatMadeIt(t *testing.T) {
+	store, err := nodestore.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	for _, snapshot := range []string{"snap1", "snap2"} {
+		if _, err := store.PutInBasket("c1", "repo1", snapshot, nodestore.RestoreSelection{
+			Kind: "dns",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.PutInBasket("c2", "repo1", "snap1", nodestore.RestoreSelection{
+		Kind: "dns",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.ForgetBaskets("c1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, snapshot := range []string{"snap1", "snap2"} {
+		if basket, err := store.Basket("c1", "repo1", snapshot); err != nil || !basket.Empty() {
+			t.Errorf("%s survived: %+v, %v", snapshot, basket, err)
+		}
+	}
+	// Somebody else's basket is not theirs to forget.
+	if basket, err := store.Basket("c2", "repo1", "snap1"); err != nil || basket.Empty() {
+		t.Errorf("another account's basket went with it: %+v, %v", basket, err)
+	}
+}

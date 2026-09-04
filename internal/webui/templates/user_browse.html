@@ -35,6 +35,62 @@
   </div>
 </section>
 
+{{if not $data.Basket.Empty}}
+<section class="cpr-card cpr-recovery-panel" aria-labelledby="basket-title">
+  <div class="cpr-pad cpr-user-section-head">
+    <p class="cpr-eyebrow">Your recovery basket</p>
+    <h2 id="basket-title">{{$data.BasketCount}} chosen from the backup taken {{stamp $data.SnapshotAt}}</h2>
+    <p class="cpr-hint">These come back in one go, so a database and the users that open it
+    arrive together rather than one after the other.</p>
+  </div>
+  <div class="cpr-tablewrap"><table class="cpr-picker-table">
+    <thead><tr><th>Part of your account</th><th>What you chose</th><th class="cpr-right"><span class="cpr-visually-hidden">Remove</span></th></tr></thead>
+    <tbody>
+      {{range $data.BasketRows}}
+      <tr>
+        <td class="cpr-acct">{{.Title}}{{if not .Applies}} <span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>download only</span>{{end}}</td>
+        <td>{{if .Names}}{{range $i, $name := .Names}}{{if $i}}, {{end}}{{$name}}{{end}}{{else}}<span class="cpr-muted">All of them</span>{{end}}</td>
+        <td class="cpr-right">
+          <form method="post" action="restore.live.php" class="cpr-inline">
+            <input type="hidden" name="csrf" value="{{$.CSRF}}">
+            <input type="hidden" name="repository" value="{{$data.Repository}}">
+            <input type="hidden" name="snapshot" value="{{$data.Snapshot}}">
+            <input type="hidden" name="item" value="{{.Kind}}">
+            <button class="cpr-btn" type="submit" name="action" value="remove">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table></div>
+  <form method="post" action="restore.live.php">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <input type="hidden" name="repository" value="{{$data.Repository}}">
+    <input type="hidden" name="snapshot" value="{{$data.Snapshot}}">
+    <input type="hidden" name="basket" value="1">
+    <div class="cpr-pad cpr-recovery-actions">
+      {{if $data.BasketCanApply}}
+      <label class="cpr-confirm">
+        <input type="checkbox" name="confirm" value="1" required>
+        <span><b>Put all of this back into my account.</b> What is there now is replaced by what
+        was in the backup, and anything added since is lost. Leave it unticked to download one
+        package with everything in it instead.</span>
+      </label>
+      {{else}}
+      <div><b>This basket is a download</b><p class="cpr-hint">{{$data.BasketBlocker}} cannot be
+      put back by cP:Restic yet, and a basket goes back whole or not at all. Remove it above to
+      put the rest straight into your account.</p></div>
+      {{end}}
+      <div class="cpr-recovery-buttons">
+        <button class="cpr-btn" type="submit" name="action" value="empty" formnovalidate>Empty the basket</button>
+        <button class="cpr-btn" type="submit" name="action" value="download" formnovalidate>Download as one package</button>
+        {{if $data.BasketCanApply}}<button class="cpr-btn cpr-danger" type="submit" name="action" value="restore">{{$data.BasketLabel}}</button>{{end}}
+      </div>
+    </div>
+  </form>
+</section>
+{{end}}
+
 <section aria-labelledby="recovery-kind-title">
   <div class="cpr-user-section-head">
     <h2 id="recovery-kind-title">What do you want to recover?</h2>
@@ -176,6 +232,7 @@
     the backup, and anything added since is lost. Leave it unticked to download a copy instead.</span>
   </label>
   <div class="cpr-recovery-buttons">
+    <button class="cpr-btn" type="submit" name="action" value="add" formnovalidate>{{if .InBasket .Kind}}Update my basket{{else}}Add to my basket{{end}}</button>
     <button class="cpr-btn" type="submit" name="action" value="download" formnovalidate>Download a copy</button>
     <button class="cpr-btn cpr-danger" type="submit" name="action" value="restore">{{.PutBackLabel}}</button>
   </div>
@@ -185,6 +242,7 @@
   the control panel makes rather than a file copied over another, and that is not built. Your host
   can put it back from this copy.</p></div>
   <div class="cpr-recovery-buttons">
+    <button class="cpr-btn" type="submit" name="action" value="add" formnovalidate>{{if .InBasket .Kind}}Update my basket{{else}}Add to my basket{{end}}</button>
     <button class="cpr-btn cpr-primary" type="submit" name="action" value="download">Download a copy</button>
   </div>
   {{end}}

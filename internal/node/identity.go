@@ -411,6 +411,12 @@ func (e *Engine) renamePolicyAccount(oldName, newName string) error {
 // when backups expire, while the identity record prevents a future owner of
 // the same username from seeing the former customer's data.
 func (e *Engine) AccountRemoved(account string) error {
+	// An unfinished basket is the one thing here that is not evidence: it
+	// is a half-made choice, and a future owner of the same username must
+	// not be handed the last customer's.
+	if err := e.store.ForgetBaskets(account); err != nil {
+		return err
+	}
 	if identity, err := e.store.Identity(account); err == nil {
 		now := time.Now().UTC()
 		identity.RetiredAt = &now
