@@ -226,9 +226,11 @@ func TestMissingRecordsReportNotFound(t *testing.T) {
 
 func errOf(fn func() error) error { return fn() }
 
-// A nightly run queues every account on the same timestamp. Sorting on the
-// timestamp alone leaves their order to the map iteration, so the History
-// page reshuffled itself every three seconds while the run was in flight.
+// PutJobs spaces a batch a nanosecond apart, so a nightly run's rows already
+// have a fixed order. This covers the other way jobs arrive: a caller that
+// supplies its own timestamp, where sorting on the timestamp alone would
+// leave the order to bbolt's iteration and let the page move under whoever
+// is watching it.
 func TestJobsQueuedTogetherKeepAFixedOrder(t *testing.T) {
 	store, err := nodestore.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
