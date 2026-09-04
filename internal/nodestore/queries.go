@@ -435,7 +435,19 @@ func (s *Store) Jobs(limit int) ([]Job, error) {
 		jobs = append(jobs, j)
 		return nil
 	})
-	sort.Slice(jobs, func(i, j int) bool { return jobs[i].QueuedAt.After(jobs[j].QueuedAt) })
+	// Newest first, and a fixed order within one minute: a nightly run
+	// queues nineteen accounts on the same timestamp, and an arbitrary
+	// order among them means the rows move under the operator on every
+	// refresh.
+	sort.Slice(jobs, func(i, j int) bool {
+		if !jobs[i].QueuedAt.Equal(jobs[j].QueuedAt) {
+			return jobs[i].QueuedAt.After(jobs[j].QueuedAt)
+		}
+		if jobs[i].Account != jobs[j].Account {
+			return jobs[i].Account < jobs[j].Account
+		}
+		return jobs[i].ID < jobs[j].ID
+	})
 	if limit > 0 && len(jobs) > limit {
 		jobs = jobs[:limit]
 	}
@@ -502,7 +514,13 @@ func (s *Store) Restores(limit int) ([]Restore, error) {
 		return nil
 	})
 	sort.Slice(restores, func(i, j int) bool {
-		return restores[i].QueuedAt.After(restores[j].QueuedAt)
+		if !restores[i].QueuedAt.Equal(restores[j].QueuedAt) {
+			return restores[i].QueuedAt.After(restores[j].QueuedAt)
+		}
+		if restores[i].Account != restores[j].Account {
+			return restores[i].Account < restores[j].Account
+		}
+		return restores[i].ID < restores[j].ID
 	})
 	if limit > 0 && len(restores) > limit {
 		restores = restores[:limit]

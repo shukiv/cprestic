@@ -198,6 +198,118 @@
 
 })();
 
+// Sortable tables.
+//
+// The server sends every table in the order that matters most — newest
+// first — and that is the order an operator wants nine times out of ten.
+// The tenth time they are asking a different question of the same rows:
+// which account stored the most, which run failed, who has not been backed
+// up. Doing that server-side would mean a round trip and a lost scroll
+// position for a question answered from rows already on the page.
+//
+// What a cell shows and what it sorts by are not the same: "2 h ago" and
+// "6.2 MiB new of 152.5 MiB" sort as text into nonsense, so those cells
+// carry data-sort with a number in it. Anything without one sorts on its
+// text, which is right for an account name.
+(function () {
+  "use strict";
+
+  // Tables an operator has reordered, so a live refresh can put their
+  // order back over the rows the server just sent.
+  var chosen = [];
+
+  function key(row, column) {
+    var cell = row.children[column];
+    if (!cell) { return ""; }
+    var raw = cell.getAttribute("data-sort");
+    return raw === null ? cell.textContent.trim() : raw;
+  }
+
+  function numeric(rows, column) {
+    for (var i = 0; i < rows.length; i++) {
+      var value = key(rows[i], column);
+      if (value !== "" && isNaN(Number(value))) { return false; }
+    }
+    return rows.length > 0;
+  }
+
+  function apply(table, column, descending) {
+    var body = table.tBodies[0];
+    if (!body) { return; }
+    var rows = Array.prototype.slice.call(body.rows);
+    var asNumber = numeric(rows, column);
+    rows.sort(function (a, b) {
+      var left = key(a, column);
+      var right = key(b, column);
+      var order;
+      if (asNumber) {
+        order = Number(left) - Number(right);
+      } else {
+        order = left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+      }
+      return descending ? -order : order;
+    });
+    rows.forEach(function (row) { body.appendChild(row); });
+
+    Array.prototype.forEach.call(table.tHead.rows[0].cells, function (cell, index) {
+      if (index === column) {
+        cell.setAttribute("aria-sort", descending ? "descending" : "ascending");
+      } else if (cell.hasAttribute("aria-sort")) {
+        cell.setAttribute("aria-sort", "none");
+      }
+    });
+  }
+
+  function remember(table, column, descending) {
+    for (var i = 0; i < chosen.length; i++) {
+      if (chosen[i].table === table) {
+        chosen[i].column = column;
+        chosen[i].descending = descending;
+        return;
+      }
+    }
+    chosen.push({ table: table, column: column, descending: descending });
+  }
+
+  function prepare(table) {
+    if (!table.tHead || !table.tHead.rows.length) { return; }
+    Array.prototype.forEach.call(table.tHead.rows[0].cells, function (cell, index) {
+      if (cell.hasAttribute("data-nosort") || cell.textContent.trim() === "") { return; }
+      var label = cell.textContent.trim();
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "cpr-sortbtn";
+      button.textContent = label;
+      cell.textContent = "";
+      cell.appendChild(button);
+      cell.setAttribute("aria-sort", "none");
+      button.addEventListener("click", function () {
+        // Same column again reverses it; a new column starts descending
+        // for numbers and dates, ascending for names, which is what each
+        // one is usually being asked for.
+        var current = cell.getAttribute("aria-sort");
+        var descending = current === "none"
+          ? numeric(Array.prototype.slice.call(table.tBodies[0].rows), index)
+          : current === "ascending";
+        apply(table, index, descending);
+        remember(table, index, descending);
+      });
+    });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll("table[data-sortable]"), prepare);
+
+  // Live refresh replaces the rows wholesale. Without this the operator's
+  // chosen order silently reverts to the server's every three seconds.
+  window.cprestReapplySort = function () {
+    chosen.forEach(function (state) {
+      if (document.contains(state.table)) {
+        apply(state.table, state.column, state.descending);
+      }
+    });
+  };
+})();
+
 // While work is in flight, keep the page current without reloading it.
 //
 // A full reload threw away the scroll position and any open report, which
@@ -227,6 +339,9 @@
       // The rows are new, so the filter the operator typed has to be put
       // back over them.
       window.cprestReapplyFilters();
+    }
+    if (swapped && typeof window.cprestReapplySort === "function") {
+      window.cprestReapplySort();
     }
   }
 

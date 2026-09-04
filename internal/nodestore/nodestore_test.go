@@ -3,6 +3,7 @@ package nodestore_test
 import (
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -224,6 +225,54 @@ func TestMissingRecordsReportNotFound(t *testing.T) {
 }
 
 func errOf(fn func() error) error { return fn() }
+
+// A nightly run queues every account on the same timestamp. Sorting on the
+// timestamp alone leaves their order to the map iteration, so the History
+// page reshuffled itself every three seconds while the run was in flight.
+func TestJobsQueuedTogetherKeepAFixedOrder(t *testing.T) {
+	store, err := nodestore.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer store.Close()
+
+	queued := time.Now().UTC().Truncate(time.Second)
+	for _, account := range []string{"studio", "arkady", "rtflow", "cloud"} {
+		if _, err := store.PutJob(nodestore.Job{
+			Account: account, Status: job.StatusSuccess, QueuedAt: queued,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Something newer, which must still come first.
+	if _, err := store.PutJob(nodestore.Job{
+		Account: "later", Status: job.StatusSuccess, QueuedAt: queued.Add(time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var first []string
+	for run := 0; run < 5; run++ {
+		jobs, err := store.Jobs(0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		order := make([]string, 0, len(jobs))
+		for _, one := range jobs {
+			order = append(order, one.Account)
+		}
+		if run == 0 {
+			first = order
+			if order[0] != "later" {
+				t.Errorf("newest is not first: %v", order)
+			}
+			continue
+		}
+		if !slices.Equal(order, first) {
+			t.Errorf("the order moved between reads: %v then %v", first, order)
+		}
+	}
+}
 
 func TestJobsAndRestoresSurviveAReopen(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.db")

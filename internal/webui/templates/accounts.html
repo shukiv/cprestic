@@ -35,9 +35,9 @@
 
 <div class="cpr-card">
   <div class="cpr-tablewrap">
-    <table id="accounts">
+    <table id="accounts" data-sortable>
       <thead>
-        <tr><th>Account</th><th>Size</th><th>Last backup</th><th>Backups</th><th>State</th><th class="cpr-right">&nbsp;</th></tr>
+        <tr><th>Account</th><th>Size</th><th>Last backup</th><th data-nosort>Backups</th><th>State</th><th class="cpr-right" data-nosort>&nbsp;</th></tr>
       </thead>
       <tbody data-live="accounts">
         {{range $d.Accounts}}
@@ -47,8 +47,8 @@
             {{if .Missing}}<div class="cpr-sublabel cpr-warntext"
               title="cPanel lists this account, but nothing is at its home directory. Its backup will fail until that is sorted out — which is better than it quietly not being backed up at all.">
               home directory missing</div>{{end}}</td>
-          <td class="cpr-mono cpr-num">{{if .SizeBytes}}{{bytes .SizeBytes}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
-          <td>{{if .LastBackup}}{{ago .LastBackup}}{{else}}<span class="cpr-mono">never</span>{{end}}</td>
+          <td class="cpr-mono cpr-num" data-sort="{{.SizeBytes}}">{{if .SizeBytes}}{{bytes .SizeBytes}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
+          <td data-sort="{{unixPtr .LastBackup}}">{{if .LastBackup}}{{ago .LastBackup}}{{else}}<span class="cpr-mono">never</span>{{end}}</td>
           <td>
             {{if .Record}}<span title="Backups of this account that have finished, and how many of those worked.">{{.Record}}</span>
             {{if .Failures}}<div class="cpr-sublabel">{{.Failures}} failed</div>{{end}}

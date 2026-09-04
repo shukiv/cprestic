@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -2035,6 +2036,48 @@ func TestTheBrandIsOnThePageInItsOwnColour(t *testing.T) {
 // Restore is one page with three views. Recovering a whole server used to
 // be its own entry in the rail, which put the page an operator needs during
 // a disaster behind a word they had to already know.
+// The tables answer one question by default — what happened most recently —
+// and an operator with nineteen accounts often has a different one: which
+// stored the most, which failed, who has not been backed up. The rows are
+// already on the page, so the sort happens there; what the server has to
+// get right is a sort key on the cells whose text does not sort.
+func TestTablesCarrySortKeysOnCellsThatNeedThem(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	finished := time.Now().Add(-time.Hour)
+	if _, err := engine.Store().PutJob(nodestore.Job{
+		Account: "customer1", Status: job.StatusSuccess, FinishedAt: &finished,
+		Targets: []nodestore.JobTarget{{
+			RepositoryID: "repo", Status: job.TargetSuccess, SnapshotID: "40dc1520",
+			BytesAdded: 4096, BytesProcessed: 8192,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, history := get(t, client, "/jobs")
+	if strings.Count(history, "<table data-sortable>") < 1 {
+		t.Error("the history tables are not sortable")
+	}
+	// "2026-09-03 21:47" and "6.2 MiB new of 152.5 MiB" sort as text into
+	// nonsense; the cells carry a number for the sort to use.
+	if !strings.Contains(history, `data-sort="4096"`) {
+		t.Error("the stored column has no byte count to sort on")
+	}
+	if !regexp.MustCompile(`<td[^>]*data-sort="1[0-9]{9}"`).MatchString(history) {
+		t.Error("the when column has no timestamp to sort on")
+	}
+	// A column of actions has nothing to order by.
+	if !strings.Contains(history, "data-nosort") {
+		t.Error("every column is offered as sortable, including the buttons")
+	}
+
+	_, accounts := get(t, client, "/accounts")
+	if !strings.Contains(accounts, `<table id="accounts" data-sortable>`) {
+		t.Error("the accounts table is not sortable")
+	}
+}
+
 func TestRestoreCarriesItsThreeViewsAsTabs(t *testing.T) {
 	client, _, _ := newUI(t)
 

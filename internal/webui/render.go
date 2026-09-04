@@ -252,6 +252,28 @@ func templateFuncs() template.FuncMap {
 			// anyone watching a bar expects of the number beside it.
 			return fmt.Sprintf("%.0f%%", math.Round(value))
 		},
+		// Sort keys for the tables. What a cell shows and what it sorts
+		// by are different things: "2 h ago" and "6.2 MiB new of 152.5
+		// MiB" sort as nonsense, so the cell carries a number as well.
+		"unix": func(t time.Time) int64 {
+			if t.IsZero() {
+				return 0
+			}
+			return t.Unix()
+		},
+		"unixPtr": func(t *time.Time) int64 {
+			if t == nil {
+				return 0
+			}
+			return t.Unix()
+		},
+		"addedBytes": func(targets []nodestore.JobTarget) uint64 {
+			var total uint64
+			for _, target := range targets {
+				total += target.BytesAdded
+			}
+			return total
+		},
 		"ago": humanAgo,
 		"agoTime": func(t time.Time) string {
 			return humanAgo(&t)

@@ -7,14 +7,14 @@
 <div class="cpr-card">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Backups</h2></div>
   {{if $data.Jobs}}
-  <div class="cpr-tablewrap"><table>
-    <thead><tr><th>When</th><th>Account</th><th>Result</th><th>Copies</th><th>Stored</th><th class="cpr-right">&nbsp;</th></tr></thead>
+  <div class="cpr-tablewrap"><table data-sortable>
+    <thead><tr><th>When</th><th>Account</th><th>Result</th><th data-nosort>Copies</th><th>Stored</th><th class="cpr-right" data-nosort>&nbsp;</th></tr></thead>
     <tbody data-live="backups">
     {{range $data.Jobs}}
     <tr class="cpr-state {{template "runstripe" .Status}}" {{if not .Status.Terminal}}data-running="1"{{end}}>
-      <td style="white-space:nowrap">{{stamp .QueuedAt}}</td>
+      <td style="white-space:nowrap" data-sort="{{unix .QueuedAt}}">{{stamp .QueuedAt}}</td>
       <td class="cpr-acct">{{.Account}}</td>
-      <td>{{template "runstate" .Status}}{{template "jobprogress" .}}</td>
+      <td data-sort="{{.Status}}">{{template "runstate" .Status}}{{template "jobprogress" .}}</td>
       <td>
         {{range .Targets}}
           {{$name := index $data.Destination .RepositoryID}}
@@ -26,7 +26,7 @@
         {{end}}
         {{if .StagingErr}}<div class="cpr-sublabel">{{.StagingErr}}</div>{{end}}
       </td>
-      <td class="cpr-num">
+      <td class="cpr-num" data-sort="{{addedBytes .Targets}}">
         {{range .Targets}}{{if eq (printf "%s" .Status) "success"}}
         <div>{{bytes .BytesAdded}} new of {{bytes .BytesProcessed}}</div>
         {{end}}{{end}}
@@ -85,15 +85,15 @@
 <div class="cpr-card">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Restores</h2></div>
   {{if $data.Restores}}
-  <div class="cpr-tablewrap"><table>
-    <thead><tr><th>When</th><th>Account</th><th>What</th><th>Result</th><th>Detail</th></tr></thead>
+  <div class="cpr-tablewrap"><table data-sortable>
+    <thead><tr><th>When</th><th>Account</th><th>What</th><th>Result</th><th data-nosort>Detail</th></tr></thead>
     <tbody data-live="restores">
     {{range $data.Restores}}
     <tr class="cpr-state {{template "runstripe" .Status}}" {{if not .Status.Terminal}}data-running="1"{{end}}>
-      <td style="white-space:nowrap">{{stamp .QueuedAt}}</td>
+      <td style="white-space:nowrap" data-sort="{{unix .QueuedAt}}">{{stamp .QueuedAt}}</td>
       <td class="cpr-acct">{{.Account}}</td>
       <td>{{if .ItemKind}}{{.ItemKind}}{{else}}{{.Kind}}{{end}}{{if .Applied}} <span class="cpr-pill cpr-warn"><span class="cpr-dot"></span>applied</span>{{end}}</td>
-      <td>{{template "runstate" .Status}}</td>
+      <td data-sort="{{.Status}}">{{template "runstate" .Status}}</td>
       <td>
         {{if .Detail}}<div class="cpr-mono" style="font-size:12px; color:var(--muted)">{{.Detail}}</div>{{end}}
         {{if .Error}}<div style="font-size:13px">{{.Error}}</div>
