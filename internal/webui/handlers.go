@@ -2552,6 +2552,13 @@ func itemName(kind granular.Kind, entry resticrun.Entry, parts reassemble.Parts)
 		if entry.IsDir() || !strings.HasSuffix(entry.Name, ".sql") {
 			return ""
 		}
+		// The account's database users are staged beside its databases and
+		// are .sql too. They are their own recovery choice; offering them
+		// here would name a database that does not exist.
+		if entry.Name == granular.DatabaseUsersFile ||
+			entry.Name == granular.RunnableDatabaseUsersFile {
+			return ""
+		}
 		return strings.TrimSuffix(entry.Name, ".sql")
 	case granular.KindMailbox:
 		mail := path.Join(parts.Homedir, "mail")

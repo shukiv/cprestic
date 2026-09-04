@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/shuki/cprest/internal/granular"
+	"github.com/shuki/cprest/internal/reassemble"
 	"github.com/shuki/cprest/internal/resticrun"
 )
 
@@ -70,5 +72,35 @@ func TestDumpAccountRecoveryPages(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "account-"+name+".html"), response.Body.Bytes(), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// TestTheDatabaseListDoesNotOfferTheGrantsFiles keeps the two files that
+// carry the account's database users out of the list of databases. They are
+// staged in the same directory as the dumps and end in .sql, so a lister
+// that goes by the suffix alone offers "_users" and "_users-runnable" as
+// though they were databases -- and a restore of one would then be pointed
+// at a database of that name, which does not exist.
+func TestTheDatabaseListDoesNotOfferTheGrantsFiles(t *testing.T) {
+	parts := reassemble.Parts{Databases: "/stage/databases"}
+	for _, name := range []string{
+		granular.DatabaseUsersFile,
+		granular.RunnableDatabaseUsersFile,
+	} {
+		entry := resticrun.Entry{
+			Name: name, Type: "file",
+			Path: path.Join(parts.Databases, name),
+		}
+		if got := itemName(granular.KindDatabase, entry, parts); got != "" {
+			t.Fatalf("%s is offered as the database %q", name, got)
+		}
+	}
+
+	real := resticrun.Entry{
+		Name: "rtflow_wp.sql", Type: "file",
+		Path: path.Join(parts.Databases, "rtflow_wp.sql"),
+	}
+	if got := itemName(granular.KindDatabase, real, parts); got != "rtflow_wp" {
+		t.Fatalf("a real dump listed as %q", got)
 	}
 }
