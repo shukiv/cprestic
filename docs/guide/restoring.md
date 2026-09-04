@@ -46,7 +46,9 @@ Choose an account and a destination. The page then shows:
   checked before any of it is written. A basket carrying a part that cannot be
   written back is a copy to collect, whole — the page names the part
   responsible. It belongs to one account and one backup, and is forgotten
-  after a day.
+  after a day. This basket is WHM's own: the customer's recovery centre keeps
+  a separate one, so a part only WHM offers never lands in a basket they
+  cannot start.
 
 Restores run as restricted restores by default, because the archive holds the
 account's own home directory and cPanel's restore runs as root. The

@@ -116,16 +116,17 @@
   <div class="cpr-tablewrap"><table>
     <thead><tr><th>Name</th><th>Size</th><th class="cpr-right">&nbsp;</th></tr></thead>
     <tbody>
-      {{/* Raw ampersands: the template escapes this once as it goes into
-           the href, and "&amp;" here would arrive as "&amp;amp;". */}}
-      {{$base := printf "?p=browse&repository=%s&account=%s&snapshot=%s" $data.Repository $data.Account $data.Snapshot}}
+      {{/* Each parameter its own action. A prefix built with printf is
+           escaped once on the way out, so "&amp;" written there arrives as
+           "&amp;amp;", and a value off the query string could name
+           parameters of its own. */}}
       {{if $data.Up}}
-      <tr><td colspan="3"><a class="cpr-link" href="{{$base}}&amp;path={{$data.Up}}">↑ up one level</a></td></tr>
+      <tr><td colspan="3"><a class="cpr-link" href="?p=browse&amp;repository={{$data.Repository}}&amp;account={{$data.Account}}&amp;snapshot={{$data.Snapshot}}&amp;path={{$data.Up}}">↑ up one level</a></td></tr>
       {{end}}
       {{range $data.Entries}}
       <tr>
         <td class="cpr-acct">
-          {{if .Dir}}<a class="cpr-link" href="{{$base}}&amp;path={{.Path}}">{{.Name}}/</a>
+          {{if .Dir}}<a class="cpr-link" href="?p=browse&amp;repository={{$data.Repository}}&amp;account={{$data.Account}}&amp;snapshot={{$data.Snapshot}}&amp;path={{.Path}}">{{.Name}}/</a>
           {{else}}{{.Name}}{{end}}</td>
         <td class="cpr-mono cpr-num">{{if .Size}}{{bytes .Size}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
         <td class="cpr-right"><div class="cpr-actions">

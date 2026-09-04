@@ -188,11 +188,11 @@
     <div class="cpr-tablewrap"><table>
       <thead><tr><th>&nbsp;</th><th>Taken</th><th>Size</th><th>Id</th><th class="cpr-right">&nbsp;</th></tr></thead>
       <tbody>
-      {{/* The whole link, not the query alone: a value spliced into the
-           middle of a href is escaped as one query value, ampersands and
-           all, and the parameters after the first are lost. Raw ampersands
-           for the same reason -- one escaping happens on the way out. */}}
-      {{$q := printf "?p=restore&account=%s&repository=%s" $data.Account $data.RepositoryID}}
+      {{/* Every parameter written out on its own. A prefix built with printf
+           and spliced into a href is escaped as one query value, ampersands
+           and all, so everything after the first parameter is lost -- and a
+           prefix carrying a value straight off the query string could name
+           parameters of its own. */}}
       {{range $index, $snapshot := $data.Snapshots}}
       <tr>
         <td><input type="radio" name="snapshot" value="{{$snapshot.ID}}"
@@ -202,7 +202,7 @@
         <td>{{bytes $snapshot.Summary.TotalBytesProcessed}}</td>
         <td class="cpr-mono">{{short $snapshot.ID}}</td>
         <td class="cpr-right"><a class="cpr-btn cpr-quiet"
-          href="{{$q}}&amp;files={{$snapshot.ID}}">Pick files from it</a></td>
+          href="?p=restore&amp;account={{$data.Account}}&amp;repository={{$data.RepositoryID}}&amp;files={{$snapshot.ID}}">Pick files from it</a></td>
       </tr>
       {{end}}
       </tbody>
@@ -215,7 +215,7 @@
     {{end}}
 
     {{if $data.FileEntries}}
-    {{$browse := printf "%s&files=%s" $q $data.FileSnapshot}}
+    
     <div class="cpr-card" style="margin:0 0 var(--s4); box-shadow:none">
       <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
         <span class="cpr-mono" style="font-size:13px">{{$data.FilePath}}</span>
@@ -229,13 +229,13 @@
         <tbody>
           {{if $data.FileUp}}
           <tr><td></td><td colspan="3"><a class="cpr-link"
-            href="{{$browse}}&amp;path={{$data.FileUp}}">↑ up one level</a></td></tr>
+            href="?p=restore&amp;account={{$data.Account}}&amp;repository={{$data.RepositoryID}}&amp;files={{$data.FileSnapshot}}&amp;path={{$data.FileUp}}">↑ up one level</a></td></tr>
           {{end}}
           {{range $data.FileEntries}}
           <tr>
             <td><input type="checkbox" data-choose="{{.Path}}" aria-label="Choose {{.Name}}"></td>
             <td class="cpr-acct">
-              {{if .Dir}}<a class="cpr-link" href="{{$browse}}&amp;path={{.Path}}">{{.Name}}/</a>
+              {{if .Dir}}<a class="cpr-link" href="?p=restore&amp;account={{$data.Account}}&amp;repository={{$data.RepositoryID}}&amp;files={{$data.FileSnapshot}}&amp;path={{.Path}}">{{.Name}}/</a>
               {{else}}{{.Name}}{{end}}</td>
             <td class="cpr-mono cpr-num">{{if .Size}}{{bytes .Size}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
             <td class="cpr-right"><span class="cpr-sublabel cpr-mono">{{.Path}}</span></td>
@@ -296,7 +296,6 @@
 {{end}}
 
 {{if and $data.Account $data.Snapshots}}
-{{$q := printf "?p=restore&account=%s&repository=%s&snapshot=%s" $data.Account $data.RepositoryID $data.SnapshotID}}
 <div class="cpr-card">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
     <h2 style="margin:0">Restore one thing</h2>
@@ -361,7 +360,7 @@
     <div class="cpr-chips">
       {{range $data.Kinds}}
       <a class="cpr-chip" aria-pressed="{{if $data.Selected .}}true{{else}}false{{end}}"
-         href="{{$q}}&amp;item={{.}}">{{$data.KindTitle .}}</a>
+         href="?p=restore&amp;account={{$data.Account}}&amp;repository={{$data.RepositoryID}}&amp;snapshot={{$data.SnapshotID}}&amp;item={{.}}">{{$data.KindTitle .}}</a>
       {{end}}
     </div>
 
@@ -391,13 +390,13 @@
       <tbody>
         {{if $data.Up}}
         <tr><td colspan="3"><a class="cpr-link"
-          href="{{$q}}&amp;item={{$data.Kind}}&amp;path={{$data.Up}}">↑ up one level</a></td></tr>
+          href="?p=restore&amp;account={{$data.Account}}&amp;repository={{$data.RepositoryID}}&amp;snapshot={{$data.SnapshotID}}&amp;item={{$data.Kind}}&amp;path={{$data.Up}}">↑ up one level</a></td></tr>
         {{end}}
         {{range $data.Entries}}
         <tr>
           <td class="cpr-acct">
             {{if .Dir}}<a class="cpr-link"
-              href="{{$q}}&amp;item={{$data.Kind}}&amp;path={{.Path}}">{{.Name}}/</a>
+              href="?p=restore&amp;account={{$data.Account}}&amp;repository={{$data.RepositoryID}}&amp;snapshot={{$data.SnapshotID}}&amp;item={{$data.Kind}}&amp;path={{.Path}}">{{.Name}}/</a>
             {{else}}{{.Name}}{{end}}</td>
           <td class="cpr-mono cpr-num">{{if .Size}}{{bytes .Size}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
           <td class="cpr-right">{{if .Item}}<div class="cpr-actions">

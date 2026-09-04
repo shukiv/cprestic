@@ -76,10 +76,11 @@ the part responsible rather than leaving it to be guessed at.
 
 The basket lives on the server, not in the browser, because the recovery
 centre works with scripting switched off and choosing runs across several
-plain page loads. It belongs to one account, one destination and one restore
-point: a basket assembled out of Tuesday's backup is not a basket out of
-Monday's. It is forgotten after a day, and immediately if the account is
-removed.
+plain page loads. It belongs to one account, one destination, one restore
+point and the page it was made on: a basket assembled out of Tuesday's backup
+is not a basket out of Monday's, and an operator's basket in WHM is not the
+customer's, because WHM offers parts of an account this page does not. It is
+forgotten after a day, and immediately if the account is removed.
 
 ## Database users
 
