@@ -5,7 +5,7 @@ else.
 
 ## What they can do
 
-Restore point → category → item. They can prepare:
+Restore point → category → item. The categories are:
 
 - a full cPanel account archive
 - the home directory
@@ -16,9 +16,24 @@ Restore point → category → item. They can prepare:
 - mail
 - FTP settings
 
-Every self-service request produces a **private download**. A customer cannot
-apply anything to their live account and cannot overwrite anything. The
-operator-only *Apply* flag is not reachable from that socket at all.
+Each of them can be downloaded as a **private package**. Four of them can also
+be **put back into the live account**: the home directory, the website, mail
+and a database. Those are the ones where restoring the backup is the whole
+operation, and the customer is told plainly, and has to tick a box, before the
+live copy is replaced.
+
+The rest stay download-only, because reinstating them is a change the control
+panel has to make rather than a file to copy: a DNS zone, an installed
+certificate, an FTP login. So does the full account archive, whatever else is
+selected — that one goes to cPanel's `restorepkg`, which runs as root over a
+home directory the customer controls, and it remains an operator's decision.
+
+Putting the home directory back is done as the account, never as root: the
+service reads the staged copy, which the customer cannot, and the customer's
+own process writes into their home directory. What lands there is owned by
+them, and a link planted beforehand leads nowhere they could not already
+write. A database is loaded only after the server, not the backup, confirms
+the account owns it.
 
 ## Who is let in
 

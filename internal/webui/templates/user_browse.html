@@ -4,7 +4,7 @@
   <div>
     <div class="cpr-crumb"><a class="cpr-link" href="index.live.php">Overview</a><span aria-hidden="true">›</span><span>Restore &amp; download</span></div>
     <h1>Restore &amp; download</h1>
-    <p class="cpr-sub">Choose a restore point, then choose the account data you need.</p>
+    <p class="cpr-sub">Choose a restore point, then choose what to put back or download.</p>
   </div>
 </section>
 
@@ -85,7 +85,7 @@
     <div class="cpr-picker-toolbar">
       <div>
         <span class="cpr-picker-label">Browsing</span>
-        <span class="cpr-mono">{{$data.Path}}</span>
+        <span class="cpr-mono">{{$data.Here}}</span>
       </div>
       {{if $data.Up}}<a class="cpr-btn" href="browse.live.php?repository={{$data.Repository}}&amp;snapshot={{$data.Snapshot}}&amp;item={{$data.Kind}}&amp;path={{$data.Up}}">Up one level</a>{{end}}
     </div>
@@ -94,7 +94,7 @@
     {{if eq (printf "%s" $data.Kind) "files"}}
     <label class="cpr-select-folder">
       <input type="checkbox" name="name" value="{{$data.Path}}">
-      <span><b>Select this whole folder</b><small>Includes everything below <span class="cpr-mono">{{$data.Path}}</span>.</small></span>
+      <span><b>Select this whole folder</b><small>Includes everything below <span class="cpr-mono">{{$data.Here}}</span>.</small></span>
     </label>
     {{end}}
 
@@ -118,10 +118,7 @@
     <div class="cpr-empty"><p><b>No selectable items were found here.</b><br>Try a different restore point or ask your host to inspect this backup.</p></div>
     {{end}}
 
-    <div class="cpr-pad cpr-recovery-actions">
-      <div><b>Create a private recovery package</b><p class="cpr-hint">The live account will not be changed.</p></div>
-      <button class="cpr-btn cpr-primary" type="submit">Prepare selected items</button>
-    </div>
+    {{template "recoveryactions" $data}}
   </form>
   {{else}}
   <form method="post" action="restore.live.php">
@@ -131,20 +128,40 @@
     <input type="hidden" name="item" value="{{$data.Kind}}">
     <div class="cpr-pad cpr-recovery-summary">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.6-2.9 8-7 10-4.1-2-7-5.4-7-10V6zM9 12l2 2 4-4"/></svg>
-      <div><b>Ready to prepare from {{stamp $data.SnapshotAt}}</b><p class="cpr-hint">A downloadable package will appear on the Overview page when it is ready. Nothing live is overwritten.</p></div>
+      <div><b>From the backup taken {{stamp $data.SnapshotAt}}</b><p class="cpr-hint">Your host puts this part of the account back for you. Download it here and send it to them.</p></div>
     </div>
-    <div class="cpr-pad cpr-recovery-actions">
-      <a class="cpr-btn" href="browse.live.php?repository={{$data.Repository}}&amp;snapshot={{$data.Snapshot}}">Cancel</a>
-      <button class="cpr-btn cpr-primary" type="submit">Prepare {{$data.KindTitle $data.Kind}}</button>
-    </div>
+    {{template "recoveryactions" $data}}
   </form>
   {{end}}
 </section>
 {{else}}
 <div class="cpr-user-safe cpr-user-safe-standalone">
   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.6-2.9 8-7 10-4.1-2-7-5.4-7-10V6zM9 12l2 2 4-4"/></svg>
-  <p><b>Select a category to continue.</b> Recovery packages are account-scoped, private, and never applied to the live account automatically.</p>
+  <p><b>Select a category to continue.</b> Everything here is yours alone. Files, mail and databases can be put straight back into the account; anything else is a private copy to download.</p>
 </div>
 {{end}}
 {{end}}
+{{end}}
+
+{{define "recoveryactions"}}
+<div class="cpr-pad cpr-recovery-actions">
+  {{if .CanApply}}
+  <label class="cpr-confirm">
+    <input type="checkbox" name="confirm" value="1" required>
+    <span><b>Put this back into my account.</b> What is there now is replaced by what was in
+    the backup, and anything added since is lost. Leave it unticked to download a copy instead.</span>
+  </label>
+  <div class="cpr-recovery-buttons">
+    <button class="cpr-btn" type="submit" name="action" value="download" formnovalidate>Download a copy</button>
+    <button class="cpr-btn cpr-danger" type="submit" name="action" value="restore">{{.PutBackLabel}}</button>
+  </div>
+  {{else}}
+  <div><b>Download a private copy</b><p class="cpr-hint">This part of the account is put back by
+  your host: DNS records, certificates and logins are changes the control panel has to make, and
+  copying the old file over the new one does not make them.</p></div>
+  <div class="cpr-recovery-buttons">
+    <button class="cpr-btn cpr-primary" type="submit" name="action" value="download">Download a copy</button>
+  </div>
+  {{end}}
+</div>
 {{end}}

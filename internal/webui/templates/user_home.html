@@ -4,7 +4,7 @@
   <div>
     <p class="cpr-eyebrow">Account backup</p>
     <h1>Your recovery centre</h1>
-    <p class="cpr-sub">Browse restore points for <b>{{$data.Account}}</b> and prepare exactly what you need.</p>
+    <p class="cpr-sub">Browse restore points for <b>{{$data.Account}}</b>, put back what was lost, or download a copy.</p>
   </div>
   {{if $data.TotalPoints}}<a class="cpr-btn cpr-primary cpr-user-cta" href="browse.live.php">Choose a restore point</a>{{end}}
 </section>
@@ -56,19 +56,22 @@
 <section class="cpr-card">
   <div class="cpr-pad cpr-user-section-head">
     <h2>Recovery activity</h2>
-    <p class="cpr-hint">Prepared packages are private to this cPanel account.</p>
+    <p class="cpr-hint">Everything here belongs to this cPanel account and nobody else can see it.</p>
   </div>
   {{if $data.Restores}}
   <div class="cpr-tablewrap" data-live="user-restores"><table>
-    <thead><tr><th>Requested</th><th>Contents</th><th>Status</th><th class="cpr-right"><span class="cpr-visually-hidden">Download</span></th></tr></thead>
+    <thead><tr><th>Requested</th><th>Contents</th><th>What was done</th><th>Status</th><th class="cpr-right"><span class="cpr-visually-hidden">Download</span></th></tr></thead>
     <tbody>
       {{range $data.Restores}}
       <tr class="cpr-state {{template "runstripe" .Status}}" {{if not .Status.Terminal}}data-running="1"{{end}}>
         <td style="white-space:nowrap">{{stamp .QueuedAt}}<div class="cpr-sublabel">{{agoTime .QueuedAt}}</div></td>
         <td class="cpr-acct">{{$data.RestoreTitle .}}</td>
+        <td>{{if .Apply}}Put back into the account{{else}}Copied out to download{{end}}
+          {{if and .Applied .Detail}}<div class="cpr-sublabel">{{.Detail}}</div>{{end}}</td>
         <td>{{template "runstate" .Status}}</td>
         <td class="cpr-right"><div class="cpr-actions">
           {{if .Collectable}}<a class="cpr-btn cpr-primary" href="download.live.php?id={{.ID}}">Download package</a>
+          {{else if .Applied}}<span class="cpr-sublabel">Nothing to download: it is in your account.</span>
           {{else if .Error}}<span class="cpr-sublabel">{{.Error}}</span>{{end}}
         </div></td>
       </tr>
@@ -80,7 +83,9 @@
   {{end}}
   <div class="cpr-pad cpr-user-safe">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.6-2.9 8-7 10-4.1-2-7-5.4-7-10V6zM9 12l2 2 4-4"/></svg>
-    <p><b>Safe by default.</b> cP:Restic prepares a copy for download. It does not overwrite the live account.</p>
+    <p><b>You choose what happens.</b> Files, mail and databases can be put straight back into the
+    account, replacing what is there now. Everything else is prepared as a copy to download, and
+    nothing is changed until you ask for it.</p>
   </div>
 </section>
 {{end}}

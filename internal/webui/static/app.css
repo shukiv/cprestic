@@ -905,6 +905,12 @@
   border-top:1px solid var(--line); background:var(--surface-2);
 }
 .cprest.cpr-user .cpr-recovery-actions > div:first-child { margin-inline-end:auto; }
+.cprest.cpr-user .cpr-confirm {
+  display:flex; align-items:flex-start; gap:11px; flex:1 1 34ch; min-width:0;
+  margin:0; font-size:13px; font-weight:400; line-height:1.5; color:var(--ink); cursor:pointer;
+}
+.cprest.cpr-user .cpr-confirm input { flex:none; width:17px; height:17px; margin-top:2px; cursor:pointer; }
+.cprest.cpr-user .cpr-recovery-buttons { display:flex; gap:12px; flex:none; }
 
 @media (max-width:900px) {
   .cprest.cpr-user .cpr-user-stats { grid-template-columns:1fr; }
@@ -927,4 +933,5 @@
   .cprest.cpr-user .cpr-recovery-actions { align-items:stretch; flex-direction:column; }
   .cprest.cpr-user .cpr-recovery-actions > div:first-child { margin:0; }
   .cprest.cpr-user .cpr-recovery-actions .cpr-btn { width:100%; }
+  .cprest.cpr-user .cpr-recovery-buttons { flex-direction:column; }
 }

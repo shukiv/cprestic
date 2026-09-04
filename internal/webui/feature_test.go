@@ -129,8 +129,8 @@ func TestAccountRestoreHistoryDoesNotExposeRootDiagnostics(t *testing.T) {
 	}
 }
 
-func TestAccountRecoveryRequestsStayDownloadOnly(t *testing.T) {
-	full, err := userRestoreRequest("studio", "repo", "snapshot", userKindAccount, nil)
+func TestAccountRecoveryRequestsKeepTheirBoundaries(t *testing.T) {
+	full, err := userRestoreRequest("studio", "repo", "snapshot", userKindAccount, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestAccountRecoveryRequestsStayDownloadOnly(t *testing.T) {
 	}
 
 	database, err := userRestoreRequest("studio", "repo", "snapshot",
-		granular.KindDatabase, []string{" studio_wp ", ""})
+		granular.KindDatabase, []string{" studio_wp ", ""}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,12 +150,47 @@ func TestAccountRecoveryRequestsStayDownloadOnly(t *testing.T) {
 	}
 
 	if _, err := userRestoreRequest("studio", "repo", "snapshot",
-		granular.KindDatabase, nil); !errors.Is(err, errUserRestoreNeedsNames) {
+		granular.KindDatabase, nil, false); !errors.Is(err, errUserRestoreNeedsNames) {
 		t.Fatalf("database without a selection was accepted: %v", err)
 	}
 	if _, err := userRestoreRequest("studio", "repo", "snapshot",
-		granular.KindSettings, nil); err == nil {
+		granular.KindSettings, nil, false); err == nil {
 		t.Fatal("raw panel settings were exposed to the account interface")
+	}
+}
+
+// An account can ask for a restore to be written into its own account, but
+// only for the parts that can be written back. Asking for it on any other
+// part is refused rather than quietly turned into a download: the request
+// said "replace this", and handing back a copy while reporting success
+// would tell the customer their site was fixed when it was not.
+//
+// The whole-account archive is the one that matters most here. It is what
+// cPanel's restorepkg takes, it runs as root, and the archive holds the
+// customer's own home directory.
+func TestAnAccountCanApplyOnlyWhatCanBeWrittenBack(t *testing.T) {
+	writable := map[granular.Kind]bool{
+		granular.KindFiles:    true,
+		granular.KindMailbox:  true,
+		granular.KindDatabase: true,
+	}
+	for _, kind := range userKinds {
+		names := []string{"something"}
+		request, err := userRestoreRequest("studio", "repo", "snapshot", kind, names, true)
+		if !writable[kind] {
+			if err == nil {
+				t.Errorf("%s was accepted for writing into the live account: %+v",
+					kind, request)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s should be writable into the account: %v", kind, err)
+			continue
+		}
+		if !request.Apply {
+			t.Errorf("%s lost the request to write it back: %+v", kind, request)
+		}
 	}
 }
 
@@ -184,6 +219,72 @@ func TestAccountRecoveryPagesRenderTheGuidedFlow(t *testing.T) {
 		if !strings.Contains(page, want) {
 			t.Errorf("account recovery page is missing %q", want)
 		}
+	}
+}
+
+// The two things a customer can do with a backup are on the same page and
+// on the same form. Which of them is offered depends on the part of the
+// account chosen, and the one that replaces live data asks first.
+func TestTheRecoveryPageOffersPuttingBackOnlyWhereItIsPossible(t *testing.T) {
+	server, err := New(nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1_800_000_000, 0).UTC()
+	render := func(kind granular.Kind, view userView) string {
+		t.Helper()
+		view.Account = "studio"
+		view.Kinds = userKinds
+		view.Repository = "repo"
+		view.Snapshot = "abcdef"
+		view.SnapshotAt = now
+		view.Snapshots = []resticrun.Snapshot{{ID: "abcdef", Time: now}}
+		view.Kind = kind
+		request := httptest.NewRequest(http.MethodGet, "/browse", nil)
+		request = request.WithContext(context.WithValue(request.Context(), accountKey{}, "studio"))
+		response := httptest.NewRecorder()
+		server.renderUser(response, request, "user_browse.html", view)
+		if response.Code != http.StatusOK {
+			t.Fatalf("render %s = %d: %s", kind, response.Code, response.Body.String())
+		}
+		return response.Body.String()
+	}
+
+	databases := render(granular.KindDatabase, userView{
+		Root: "/var/lib/cprest/staging/stage-studio/databases",
+		Path: "/var/lib/cprest/staging/stage-studio/databases",
+		Entries: []browseEntry{{
+			Name: "studio_wp.sql", Item: "studio_wp",
+			Path: "/var/lib/cprest/staging/stage-studio/databases/studio_wp.sql",
+		}},
+	})
+	for _, want := range []string{
+		`name="action" value="restore"`,
+		`name="action" value="download"`,
+		`name="confirm" value="1" required`,
+		"Restore these databases",
+	} {
+		if !strings.Contains(databases, want) {
+			t.Errorf("the databases page is missing %q", want)
+		}
+	}
+	// The download has to stay reachable without ticking the box, which
+	// means it must not be held up by the box being required.
+	if !strings.Contains(databases, `value="download" formnovalidate`) {
+		t.Error("downloading a copy is blocked by the confirmation the other button needs")
+	}
+	// Where the backup happens to be staged is root's business.
+	if strings.Contains(databases, "/var/lib/cprest") {
+		t.Error("the account page shows the server's staging directory")
+	}
+
+	// DNS is put back by the host, so the page offers only the copy.
+	dns := render(granular.KindDNS, userView{})
+	if strings.Contains(dns, `value="restore"`) || strings.Contains(dns, `name="confirm"`) {
+		t.Error("DNS records were offered for writing into the live account")
+	}
+	if !strings.Contains(dns, `name="action" value="download"`) {
+		t.Error("DNS records cannot be downloaded")
 	}
 }
 

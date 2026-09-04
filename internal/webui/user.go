@@ -283,6 +283,7 @@ type userView struct {
 	SnapshotAt time.Time
 	Snapshots  []resticrun.Snapshot
 	Path       string
+	Root       string
 	Up         string
 	Entries    []browseEntry
 	Kind       granular.Kind
@@ -298,8 +299,10 @@ type userRepository struct {
 }
 
 // userKindAccount is a UI choice rather than a granular plan: it rebuilds
-// the complete cpmove archive, still as a download and never as an automatic
-// overwrite of the live account.
+// the complete cpmove archive, always as a download. It is the one choice a
+// customer can never have written back for them: the whole archive goes to
+// cPanel's restorepkg, which runs as root over a home directory the customer
+// controls, and that is an operator's decision.
 const userKindAccount granular.Kind = "account"
 
 // KindTitle names account recovery choices in customer-facing language.
@@ -348,7 +351,49 @@ func (v userView) KindDescription(k granular.Kind) string {
 }
 
 func (v userView) Selected(k granular.Kind) bool { return v.Kind == k }
-func (v userView) NeedsNames() bool              { return v.Kind.NeedsNames() }
+
+// CanApply reports whether the chosen part of the account can be written
+// back into it, rather than only handed over as a copy.
+func (v userView) CanApply() bool { return v.Kind.CanApply() }
+
+// Here is where the picker is, in the account's own terms. Path is where
+// the backup put it -- a home directory as it was named on the server that
+// took it, or a staging directory belonging to root -- and neither is a
+// place the customer has ever seen or can do anything with.
+func (v userView) Here() string {
+	label := "This backup"
+	switch v.Kind {
+	case granular.KindFiles:
+		label = "Home directory"
+	case granular.KindMailbox:
+		label = "Mail"
+	case granular.KindDatabase:
+		label = "Databases"
+	}
+	if v.Root == "" || v.Path == "" {
+		return label
+	}
+	below := strings.TrimPrefix(strings.TrimPrefix(v.Path, v.Root), "/")
+	if below == "" {
+		return label
+	}
+	return label + "/" + below
+}
+
+// PutBackLabel names the button that writes this part of the account back,
+// in the words of the thing being restored.
+func (v userView) PutBackLabel() string {
+	switch v.Kind {
+	case granular.KindDatabase:
+		return "Restore these databases"
+	case granular.KindMailbox:
+		return "Restore this mail"
+	case granular.KindFiles:
+		return "Restore these files"
+	}
+	return "Restore into my account"
+}
+func (v userView) NeedsNames() bool { return v.Kind.NeedsNames() }
 func (v userView) RestoreTitle(row restoreRow) string {
 	if row.ItemKind != "" {
 		return v.KindTitle(granular.Kind(row.ItemKind))
@@ -512,6 +557,7 @@ func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view.Path = root
+	view.Root = root
 	if asked := path.Clean(r.URL.Query().Get("path")); asked != "." && asked != "" {
 		if asked == root || strings.HasPrefix(asked, root+"/") {
 			view.Path = asked
@@ -586,8 +632,20 @@ func (s *Server) handleUserRestore(w http.ResponseWriter, r *http.Request) {
 	// digestshadow and cPanel internals without the context of a complete
 	// cPanel account archive. A complete archive is handled explicitly.
 	asked := granular.Kind(r.PostFormValue("item"))
+	// Two buttons on one form: put it back, or hand me a copy. Anything
+	// else that arrives here is a copy, because that is the one that
+	// changes nothing.
+	apply := r.PostFormValue("action") == "restore"
+	// The page makes the tick box a condition of the button. Checking it
+	// here as well means a request that reached this handler another way
+	// cannot replace an account's data without one.
+	if apply && r.PostFormValue("confirm") == "" {
+		redirectUser(w, "/", "error",
+			"Tick the box to confirm before restoring into your account.")
+		return
+	}
 	restore, err := userRestoreRequest(account, r.PostFormValue("repository"),
-		r.PostFormValue("snapshot"), asked, r.PostForm["name"])
+		r.PostFormValue("snapshot"), asked, r.PostForm["name"], apply)
 	if err != nil {
 		if errors.Is(err, errUserRestoreNeedsNames) {
 			back := "/browse?repository=" + url.QueryEscape(r.PostFormValue("repository")) +
@@ -616,6 +674,12 @@ func (s *Server) handleUserRestore(w http.ResponseWriter, r *http.Request) {
 			message = "A backup or restore is already running for your account. Wait for it to finish."
 		}
 		redirectUser(w, "/", "error", message)
+		return
+	}
+	if restore.Apply {
+		redirectUser(w, "/", "ok",
+			"Started. When it finishes, this part of your account will be back as it "+
+				"was in that backup.")
 		return
 	}
 	redirectUser(w, "/", "ok",
@@ -650,15 +714,30 @@ var errUserRestoreNeedsNames = errors.New("account recovery needs at least one i
 
 // userRestoreRequest converts the account page's narrow vocabulary into an
 // engine request. In particular, "account" is the full archive flow rather
-// than an unrecognised granular kind, and no account-side request can turn on
-// Apply: recovery remains a downloadable copy until an operator takes an
-// explicit action outside this interface.
-func userRestoreRequest(account, repository, snapshot string, asked granular.Kind, names []string) (nodestore.Restore, error) {
+// than an unrecognised granular kind.
+//
+// apply is the customer asking for the backup to replace what is live
+// rather than to be handed over as a copy. It is honoured only for the
+// parts of an account that can be written back, and never for the complete
+// account archive: that one goes to cPanel's restorepkg, which runs as root
+// over an archive whose home directory the customer controls, and it is not
+// a decision the customer makes on their own. An apply that cannot be
+// granted is refused rather than downgraded to a download, because the
+// request said "replace this" and reporting success over a copy would tell
+// somebody their site was fixed when it was not.
+func userRestoreRequest(account, repository, snapshot string, asked granular.Kind,
+	names []string, apply bool) (nodestore.Restore, error) {
+
 	if !isUserKind(asked) {
 		return nodestore.Restore{}, fmt.Errorf("account recovery kind %q is not allowed", asked)
 	}
+	if apply && !asked.CanApply() {
+		return nodestore.Restore{}, fmt.Errorf(
+			"account recovery kind %q cannot be written into the live account", asked)
+	}
 	restore := nodestore.Restore{
 		Account: account, RepositoryID: repository, SnapshotID: snapshot,
+		Apply: apply,
 	}
 	if asked == userKindAccount {
 		restore.Kind = protocol.RestoreAccount
