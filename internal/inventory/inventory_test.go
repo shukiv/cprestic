@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/shuki/cprest/internal/granular"
@@ -56,9 +57,16 @@ var fakeParts = reassemble.Parts{
 
 // fakeReader serves the snapshot without a restic binary.
 type fakeReader struct {
+	mu      sync.Mutex
 	dumps   int
 	noAuth  bool
 	failing bool
+}
+
+func (f *fakeReader) read() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.dumps
 }
 
 func (f *fakeReader) Ls(_ context.Context, _ resticrun.Repository, _ string,
@@ -72,7 +80,9 @@ func (f *fakeReader) Ls(_ context.Context, _ resticrun.Repository, _ string,
 func (f *fakeReader) Dump(_ context.Context, _ resticrun.Repository, _, file string,
 	out io.Writer) error {
 
+	f.mu.Lock()
 	f.dumps++
+	f.mu.Unlock()
 	if f.failing {
 		return fmt.Errorf("the repository could not be read")
 	}
@@ -228,8 +238,8 @@ func TestTheArchiveIsReadOncePerRestorePoint(t *testing.T) {
 	}
 	// The archive, the stored passwords and the grants: three files, read
 	// once between them however many parts were asked about.
-	if reader.dumps != 3 {
-		t.Errorf("read the snapshot %d times, want 3", reader.dumps)
+	if reader.read() != 3 {
+		t.Errorf("read the snapshot %d times, want 3", reader.read())
 	}
 }
 
@@ -237,6 +247,43 @@ func TestTheArchiveIsReadOncePerRestorePoint(t *testing.T) {
 // grants. The users are worth listing from a backup that cannot restore
 // them: knowing they were there is what tells somebody to look for a more
 // recent restore point.
+// Two pages opened together ask about the same restore point at the same
+// time. The second waits for the first rather than streaming the archive
+// out of the repository again -- and reads what the first left, which is
+// what -race is here to check.
+func TestTwoVisitsAtOnceReadTheSnapshotOnce(t *testing.T) {
+	reader := &fakeReader{}
+	cache := &Cache{}
+	kinds := []granular.Kind{
+		granular.KindDNS, granular.KindSSL, granular.KindDomains,
+		granular.KindCron, granular.KindFTP, granular.KindDBUsers,
+	}
+	var wait sync.WaitGroup
+	failures := make(chan error, len(kinds))
+	for _, kind := range kinds {
+		wait.Add(1)
+		go func(kind granular.Kind) {
+			defer wait.Done()
+			items, err := cache.Items(context.Background(), reader, source(), kind)
+			if err != nil {
+				failures <- fmt.Errorf("%s: %w", kind, err)
+				return
+			}
+			if len(items) == 0 {
+				failures <- fmt.Errorf("%s: nothing listed", kind)
+			}
+		}(kind)
+	}
+	wait.Wait()
+	close(failures)
+	for err := range failures {
+		t.Error(err)
+	}
+	if reader.read() != 3 {
+		t.Errorf("read the snapshot %d times, want 3", reader.read())
+	}
+}
+
 func TestUsersAreStillListedFromABackupWithoutTheirPasswords(t *testing.T) {
 	cache := &Cache{}
 	items, err := cache.Items(context.Background(), &fakeReader{noAuth: true},
@@ -260,8 +307,8 @@ func TestAFailedReadingIsNotRemembered(t *testing.T) {
 			t.Fatal("a repository that could not be read was reported as empty")
 		}
 	}
-	if reader.dumps != 2 {
-		t.Errorf("tried %d times, want 2", reader.dumps)
+	if reader.read() != 2 {
+		t.Errorf("tried %d times, want 2", reader.read())
 	}
 }
 
@@ -280,8 +327,8 @@ func TestTheFileKindsAreNotReadFromTheArchive(t *testing.T) {
 			t.Errorf("%s: %v %+v", kind, err, items)
 		}
 	}
-	if reader.dumps != 0 {
-		t.Errorf("read the snapshot %d times for kinds that are files", reader.dumps)
+	if reader.read() != 0 {
+		t.Errorf("read the snapshot %d times for kinds that are files", reader.read())
 	}
 }
 

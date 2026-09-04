@@ -342,16 +342,16 @@ func TestABasketRemembersWhatWasChosenAcrossPages(t *testing.T) {
 	}
 	defer store.Close()
 
-	if basket, err := store.Basket("c1", "repo1", "snap1"); err != nil || !basket.Empty() {
+	if basket, err := store.Basket(nodestore.BasketOfAccount, "c1", "repo1", "snap1"); err != nil || !basket.Empty() {
 		t.Fatalf("a basket nobody started = %+v, %v", basket, err)
 	}
 
-	if _, err := store.PutInBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+	if _, err := store.PutInBasket(nodestore.BasketOfAccount, "c1", "repo1", "snap1", nodestore.RestoreSelection{
 		Kind: "database", Names: []string{"c1_shop"},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	basket, err := store.PutInBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+	basket, err := store.PutInBasket(nodestore.BasketOfAccount, "c1", "repo1", "snap1", nodestore.RestoreSelection{
 		Kind: "dbusers", Names: []string{"c1_shop"},
 	})
 	if err != nil {
@@ -364,7 +364,7 @@ func TestABasketRemembersWhatWasChosenAcrossPages(t *testing.T) {
 	// Choosing a category again replaces what was chosen for it: the page
 	// it was chosen on shows what is ticked now, and a basket that
 	// disagreed with its own tick boxes would restore what nobody saw.
-	basket, err = store.PutInBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+	basket, err = store.PutInBasket(nodestore.BasketOfAccount, "c1", "repo1", "snap1", nodestore.RestoreSelection{
 		Kind: "database", Names: []string{"c1_wp", "c1_blog"},
 	})
 	if err != nil {
@@ -376,18 +376,18 @@ func TestABasketRemembersWhatWasChosenAcrossPages(t *testing.T) {
 
 	// A basket assembled out of one restore point is not a basket out of
 	// another: the same name means different data in each.
-	if other, err := store.Basket("c1", "repo1", "snap2"); err != nil || !other.Empty() {
+	if other, err := store.Basket(nodestore.BasketOfAccount, "c1", "repo1", "snap2"); err != nil || !other.Empty() {
 		t.Errorf("another restore point = %+v, %v", other, err)
 	}
 	// Nor does it belong to another account, whatever the form said.
-	if other, err := store.Basket("c2", "repo1", "snap1"); err != nil || !other.Empty() {
+	if other, err := store.Basket(nodestore.BasketOfAccount, "c2", "repo1", "snap1"); err != nil || !other.Empty() {
 		t.Errorf("another account = %+v, %v", other, err)
 	}
 
-	if _, err := store.TakeFromBasket("c1", "repo1", "snap1", "database"); err != nil {
+	if _, err := store.TakeFromBasket(nodestore.BasketOfAccount, "c1", "repo1", "snap1", "database"); err != nil {
 		t.Fatal(err)
 	}
-	read, err := store.Basket("c1", "repo1", "snap1")
+	read, err := store.Basket(nodestore.BasketOfAccount, "c1", "repo1", "snap1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,10 +396,10 @@ func TestABasketRemembersWhatWasChosenAcrossPages(t *testing.T) {
 	}
 
 	// The last thing taken out leaves nothing behind.
-	if _, err := store.TakeFromBasket("c1", "repo1", "snap1", "dbusers"); err != nil {
+	if _, err := store.TakeFromBasket(nodestore.BasketOfAccount, "c1", "repo1", "snap1", "dbusers"); err != nil {
 		t.Fatal(err)
 	}
-	if read, err := store.Basket("c1", "repo1", "snap1"); err != nil || !read.Empty() {
+	if read, err := store.Basket(nodestore.BasketOfAccount, "c1", "repo1", "snap1"); err != nil || !read.Empty() {
 		t.Errorf("emptied basket = %+v, %v", read, err)
 	}
 }
@@ -414,13 +414,13 @@ func TestABasketDoesNotOutliveTheAccountThatMadeIt(t *testing.T) {
 	defer store.Close()
 
 	for _, snapshot := range []string{"snap1", "snap2"} {
-		if _, err := store.PutInBasket("c1", "repo1", snapshot, nodestore.RestoreSelection{
+		if _, err := store.PutInBasket(nodestore.BasketOfAccount, "c1", "repo1", snapshot, nodestore.RestoreSelection{
 			Kind: "dns",
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := store.PutInBasket("c2", "repo1", "snap1", nodestore.RestoreSelection{
+	if _, err := store.PutInBasket(nodestore.BasketOfAccount, "c2", "repo1", "snap1", nodestore.RestoreSelection{
 		Kind: "dns",
 	}); err != nil {
 		t.Fatal(err)
@@ -430,13 +430,53 @@ func TestABasketDoesNotOutliveTheAccountThatMadeIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, snapshot := range []string{"snap1", "snap2"} {
-		if basket, err := store.Basket("c1", "repo1", snapshot); err != nil || !basket.Empty() {
+		if basket, err := store.Basket(nodestore.BasketOfAccount, "c1", "repo1", snapshot); err != nil || !basket.Empty() {
 			t.Errorf("%s survived: %+v, %v", snapshot, basket, err)
 		}
 	}
 	// Somebody else's basket is not theirs to forget.
-	if basket, err := store.Basket("c2", "repo1", "snap1"); err != nil || basket.Empty() {
+	if basket, err := store.Basket(nodestore.BasketOfAccount, "c2", "repo1", "snap1"); err != nil || basket.Empty() {
 		t.Errorf("another account's basket went with it: %+v, %v", basket, err)
+	}
+}
+
+// WHM offers parts of an account the recovery centre does not, so a basket
+// filled there is not the customer's basket: theirs would name a choice
+// their own page can neither show nor start.
+func TestAnOperatorsBasketIsNotTheCustomersBasket(t *testing.T) {
+	store, err := nodestore.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	if _, err := store.PutInBasket(nodestore.BasketOfOperator, "c1", "repo1", "snap1",
+		nodestore.RestoreSelection{Kind: "settings"}); err != nil {
+		t.Fatal(err)
+	}
+	if basket, err := store.Basket(nodestore.BasketOfAccount, "c1", "repo1", "snap1"); err != nil ||
+		!basket.Empty() {
+		t.Errorf("the customer sees the operator's basket: %+v, %v", basket, err)
+	}
+	if _, err := store.PutInBasket(nodestore.BasketOfAccount, "c1", "repo1", "snap1",
+		nodestore.RestoreSelection{Kind: "database", Names: []string{"c1_shop"}}); err != nil {
+		t.Fatal(err)
+	}
+	operator, err := store.Basket(nodestore.BasketOfOperator, "c1", "repo1", "snap1")
+	if err != nil || len(operator.Items) != 1 || operator.Items[0].Kind != "settings" {
+		t.Errorf("the customer wrote over the operator's basket: %+v, %v", operator, err)
+	}
+
+	// Both are still one account's, and go when the account does.
+	if err := store.ForgetBaskets("c1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range []nodestore.BasketOwner{
+		nodestore.BasketOfAccount, nodestore.BasketOfOperator,
+	} {
+		if basket, err := store.Basket(owner, "c1", "repo1", "snap1"); err != nil || !basket.Empty() {
+			t.Errorf("%s basket survived: %+v, %v", owner, basket, err)
+		}
 	}
 }
 
@@ -451,13 +491,13 @@ func TestAddingOneThingAtATimeKeepsTheRest(t *testing.T) {
 	defer store.Close()
 
 	for _, name := range []string{"studio.co.il/sales", "studio.co.il/info"} {
-		if _, err := store.AddToBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+		if _, err := store.AddToBasket(nodestore.BasketOfAccount, "c1", "repo1", "snap1", nodestore.RestoreSelection{
 			Kind: "mailbox", Names: []string{name},
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	basket, err := store.Basket("c1", "repo1", "snap1")
+	basket, err := store.Basket(nodestore.BasketOfAccount, "c1", "repo1", "snap1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,28 +505,28 @@ func TestAddingOneThingAtATimeKeepsTheRest(t *testing.T) {
 		t.Fatalf("basket = %+v", basket)
 	}
 	// The same one twice is still one.
-	if _, err := store.AddToBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+	if _, err := store.AddToBasket(nodestore.BasketOfAccount, "c1", "repo1", "snap1", nodestore.RestoreSelection{
 		Kind: "mailbox", Names: []string{"studio.co.il/sales"},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if basket, _ = store.Basket("c1", "repo1", "snap1"); len(basket.Items[0].Names) != 2 {
+	if basket, _ = store.Basket(nodestore.BasketOfAccount, "c1", "repo1", "snap1"); len(basket.Items[0].Names) != 2 {
 		t.Errorf("basket = %+v", basket)
 	}
 
 	// A part chosen whole stays whole: a list of names beside "all of
 	// them" says less than "all of them" does.
-	if _, err := store.AddToBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+	if _, err := store.AddToBasket(nodestore.BasketOfAccount, "c1", "repo1", "snap1", nodestore.RestoreSelection{
 		Kind: "dns",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.AddToBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+	if _, err := store.AddToBasket(nodestore.BasketOfAccount, "c1", "repo1", "snap1", nodestore.RestoreSelection{
 		Kind: "dns", Names: []string{"studio.co.il"},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	basket, _ = store.Basket("c1", "repo1", "snap1")
+	basket, _ = store.Basket(nodestore.BasketOfAccount, "c1", "repo1", "snap1")
 	for _, item := range basket.Items {
 		if item.Kind == "dns" && len(item.Names) != 0 {
 			t.Errorf("dns = %+v", item)
@@ -494,12 +534,12 @@ func TestAddingOneThingAtATimeKeepsTheRest(t *testing.T) {
 	}
 
 	// Ticking a form replaces, because the form shows what is ticked.
-	if _, err := store.PutInBasket("c1", "repo1", "snap1", nodestore.RestoreSelection{
+	if _, err := store.PutInBasket(nodestore.BasketOfAccount, "c1", "repo1", "snap1", nodestore.RestoreSelection{
 		Kind: "mailbox", Names: []string{"studio.co.il/info"},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	basket, _ = store.Basket("c1", "repo1", "snap1")
+	basket, _ = store.Basket(nodestore.BasketOfAccount, "c1", "repo1", "snap1")
 	for _, item := range basket.Items {
 		if item.Kind == "mailbox" && len(item.Names) != 1 {
 			t.Errorf("mailbox = %+v", item)

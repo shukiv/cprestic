@@ -21,12 +21,26 @@ import (
 // out of Tuesday's backup is not a basket out of Monday's, and quietly
 // carrying one over to the other would restore files nobody looked at.
 type Basket struct {
+	Owner        BasketOwner        `json:"owner"`
 	Account      string             `json:"account"`
 	RepositoryID string             `json:"repository_id"`
 	SnapshotID   string             `json:"snapshot_id"`
 	Items        []RestoreSelection `json:"items,omitempty"`
 	UpdatedAt    time.Time          `json:"updated_at"`
 }
+
+// BasketOwner is the page a basket was assembled on. WHM offers parts of
+// an account that the recovery centre does not, so the two keep separate
+// baskets: an operator adding one of those to a customer's basket would
+// leave the customer a basket their own page can neither show nor start.
+type BasketOwner string
+
+const (
+	// BasketOfAccount is a basket the account holder is filling.
+	BasketOfAccount BasketOwner = "account"
+	// BasketOfOperator is a basket an operator is filling in WHM.
+	BasketOfOperator BasketOwner = "whm"
+)
 
 // BasketLife is how long an unfinished basket is kept. Long enough to
 // answer the door and come back, short enough that a restore point which
@@ -50,19 +64,21 @@ func (b Basket) Count() int {
 	return total
 }
 
-func basketKey(account, repository, snapshot string) string {
-	return account + "\x00" + repository + "\x00" + snapshot
+func basketKey(owner BasketOwner, account, repository, snapshot string) string {
+	// The account leads, so forgetting an account's baskets stays one
+	// prefix scan across both owners.
+	return account + "\x00" + string(owner) + "\x00" + repository + "\x00" + snapshot
 }
 
 // Basket reads what has been chosen out of one restore point. A basket
 // nobody has started is empty rather than missing.
-func (s *Store) Basket(account, repository, snapshot string) (Basket, error) {
-	empty := Basket{Account: account, RepositoryID: repository, SnapshotID: snapshot}
-	if account == "" || repository == "" || snapshot == "" {
+func (s *Store) Basket(owner BasketOwner, account, repository, snapshot string) (Basket, error) {
+	empty := Basket{Owner: owner, Account: account, RepositoryID: repository, SnapshotID: snapshot}
+	if owner == "" || account == "" || repository == "" || snapshot == "" {
 		return empty, nil
 	}
 	var basket Basket
-	err := s.get(bucketBaskets, basketKey(account, repository, snapshot), &basket)
+	err := s.get(bucketBaskets, basketKey(owner, account, repository, snapshot), &basket)
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return empty, nil
@@ -82,10 +98,10 @@ func (s *Store) Basket(account, repository, snapshot string) (Basket, error) {
 // to it, because the page it was chosen on shows what is ticked now: the
 // two cannot be merged without the result disagreeing with the tick boxes
 // that produced it.
-func (s *Store) PutInBasket(account, repository, snapshot string,
+func (s *Store) PutInBasket(owner BasketOwner, account, repository, snapshot string,
 	selection RestoreSelection) (Basket, error) {
 
-	return s.changeBasket(account, repository, snapshot, func(basket *Basket) {
+	return s.changeBasket(owner, account, repository, snapshot, func(basket *Basket) {
 		basket.Items = withSelection(basket.Items, selection)
 	})
 }
@@ -97,24 +113,24 @@ func (s *Store) PutInBasket(account, repository, snapshot string,
 // at a time, and the row it was clicked on says nothing about the rows
 // above it. A form of tick boxes replaces instead, because that form shows
 // what is chosen now.
-func (s *Store) AddToBasket(account, repository, snapshot string,
+func (s *Store) AddToBasket(owner BasketOwner, account, repository, snapshot string,
 	selection RestoreSelection) (Basket, error) {
 
-	return s.changeBasket(account, repository, snapshot, func(basket *Basket) {
+	return s.changeBasket(owner, account, repository, snapshot, func(basket *Basket) {
 		basket.Items = withMoreNames(basket.Items, selection)
 	})
 }
 
 // TakeFromBasket removes one part of an account from the basket.
-func (s *Store) TakeFromBasket(account, repository, snapshot, kind string) (Basket, error) {
-	return s.changeBasket(account, repository, snapshot, func(basket *Basket) {
+func (s *Store) TakeFromBasket(owner BasketOwner, account, repository, snapshot, kind string) (Basket, error) {
+	return s.changeBasket(owner, account, repository, snapshot, func(basket *Basket) {
 		basket.Items = withoutKind(basket.Items, kind)
 	})
 }
 
 // EmptyBasket forgets everything chosen out of one restore point.
-func (s *Store) EmptyBasket(account, repository, snapshot string) error {
-	err := s.delete(bucketBaskets, basketKey(account, repository, snapshot))
+func (s *Store) EmptyBasket(owner BasketOwner, account, repository, snapshot string) error {
+	err := s.delete(bucketBaskets, basketKey(owner, account, repository, snapshot))
 	if errors.Is(err, ErrNotFound) {
 		return nil
 	}
@@ -173,14 +189,14 @@ func withoutKind(items []RestoreSelection, kind string) []RestoreSelection {
 // changeBasket applies one change under a single transaction, so two
 // requests arriving together cannot each read the basket, add their own
 // part and write the other's away.
-func (s *Store) changeBasket(account, repository, snapshot string,
+func (s *Store) changeBasket(owner BasketOwner, account, repository, snapshot string,
 	change func(*Basket)) (Basket, error) {
 
-	if account == "" || repository == "" || snapshot == "" {
+	if owner == "" || account == "" || repository == "" || snapshot == "" {
 		return Basket{}, fmt.Errorf("nodestore: a basket belongs to one restore point")
 	}
-	key := []byte(basketKey(account, repository, snapshot))
-	basket := Basket{Account: account, RepositoryID: repository, SnapshotID: snapshot}
+	key := []byte(basketKey(owner, account, repository, snapshot))
+	basket := Basket{Owner: owner, Account: account, RepositoryID: repository, SnapshotID: snapshot}
 
 	err := s.db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(bucketBaskets)

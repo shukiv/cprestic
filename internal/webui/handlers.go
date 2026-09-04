@@ -2484,7 +2484,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		s.fillPicker(r, &view)
 	}
 	if view.Account != "" && view.RepositoryID != "" && view.SnapshotID != "" {
-		basket, err := s.engine.Store().Basket(view.Account, view.RepositoryID, view.SnapshotID)
+		basket, err := s.engine.Store().Basket(nodestore.BasketOfOperator, view.Account, view.RepositoryID, view.SnapshotID)
 		if err != nil {
 			s.log.Error("read the recovery basket", "account", view.Account, "error", err)
 		} else {
@@ -3970,7 +3970,7 @@ func (s *Server) changeBasket(w http.ResponseWriter, r *http.Request, action, ba
 		kind       = granular.Kind(r.PostFormValue("item"))
 	)
 	if action == "empty" {
-		if err := s.engine.Store().EmptyBasket(account, repository, snapshot); err != nil {
+		if err := s.engine.Store().EmptyBasket(nodestore.BasketOfOperator, account, repository, snapshot); err != nil {
 			s.redirect(w, r, back, "error", err.Error())
 			return
 		}
@@ -3978,7 +3978,7 @@ func (s *Server) changeBasket(w http.ResponseWriter, r *http.Request, action, ba
 		return
 	}
 	if action == "remove" {
-		if _, err := s.engine.Store().TakeFromBasket(account, repository, snapshot,
+		if _, err := s.engine.Store().TakeFromBasket(nodestore.BasketOfOperator, account, repository, snapshot,
 			string(kind)); err != nil {
 			s.redirect(w, r, back, "error", err.Error())
 			return
@@ -4011,7 +4011,7 @@ func (s *Server) changeBasket(w http.ResponseWriter, r *http.Request, action, ba
 	if action == "append" {
 		put = s.engine.Store().AddToBasket
 	}
-	basket, err := put(account, repository, snapshot,
+	basket, err := put(nodestore.BasketOfOperator, account, repository, snapshot,
 		nodestore.RestoreSelection{Kind: string(kind), Names: names})
 	if err != nil {
 		s.redirect(w, r, back, "error", err.Error())
@@ -4033,7 +4033,7 @@ func (s *Server) startBasket(w http.ResponseWriter, r *http.Request, back string
 		snapshot   = r.PostFormValue("snapshot")
 		apply      = r.PostFormValue("apply") != ""
 	)
-	basket, err := s.engine.Store().Basket(account, repository, snapshot)
+	basket, err := s.engine.Store().Basket(nodestore.BasketOfOperator, account, repository, snapshot)
 	if err != nil {
 		s.redirect(w, r, back, "error", err.Error())
 		return
@@ -4063,7 +4063,7 @@ func (s *Server) startBasket(w http.ResponseWriter, r *http.Request, back string
 		s.redirect(w, r, back, "error", err.Error())
 		return
 	}
-	if err := s.engine.Store().EmptyBasket(account, repository, snapshot); err != nil {
+	if err := s.engine.Store().EmptyBasket(nodestore.BasketOfOperator, account, repository, snapshot); err != nil {
 		s.log.Error("empty the recovery basket", "account", account, "error", err)
 	}
 	if apply {

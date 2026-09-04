@@ -26,11 +26,14 @@ type Cache struct {
 	entries map[string]*entry
 }
 
+// entry is one reading, or one in progress. done is closed once held, err
+// and read are set, and is the only thing that says so: a reader that has
+// let go of the mutex has no other way to know they are safe to read.
 type entry struct {
-	read  time.Time
-	held  *contents
-	err   error
-	ready chan struct{}
+	done chan struct{}
+	read time.Time
+	held *contents
+	err  error
 }
 
 // Items says what one part of an account this backup holds.
@@ -76,20 +79,29 @@ func (c *Cache) contents(ctx context.Context, reader Reader, src Source) (*conte
 		c.entries = map[string]*entry{}
 	}
 	if found, ok := c.entries[key]; ok {
-		fresh := found.ready == nil && time.Since(found.read) < c.ttl()
-		if fresh || found.ready != nil {
-			c.mu.Unlock()
-			if found.ready != nil {
-				select {
-				case <-found.ready:
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				}
+		select {
+		case <-found.done:
+			if time.Since(found.read) < c.ttl() {
+				c.mu.Unlock()
+				return found.held, found.err
 			}
-			return found.held, found.err
+			// Old enough to read again. A repository can gain a
+			// snapshot at any time, and a stale answer about a backup
+			// is worse than a slow one.
+		default:
+			// Somebody is already reading it. Two pages opened together
+			// would otherwise stream the same archive out of the
+			// repository twice.
+			c.mu.Unlock()
+			select {
+			case <-found.done:
+				return found.held, found.err
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}
 	}
-	pending := &entry{ready: make(chan struct{})}
+	pending := &entry{done: make(chan struct{})}
 	c.entries[key] = pending
 	c.mu.Unlock()
 
@@ -97,11 +109,10 @@ func (c *Cache) contents(ctx context.Context, reader Reader, src Source) (*conte
 
 	c.mu.Lock()
 	pending.held, pending.err, pending.read = held, err, time.Now()
-	close(pending.ready)
-	pending.ready = nil
-	if err != nil {
+	close(pending.done)
+	if err != nil && c.entries[key] == pending {
 		// A failure is not kept: the next click should try again rather
-		// than repeat an error for two minutes.
+		// than repeat an error for as long as a reading would last.
 		delete(c.entries, key)
 	}
 	c.mu.Unlock()

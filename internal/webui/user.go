@@ -623,7 +623,7 @@ func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view.SnapshotAt = snapshot.Time
-	if basket, err := s.engine.Store().Basket(view.Account, view.Repository, view.Snapshot); err != nil {
+	if basket, err := s.engine.Store().Basket(nodestore.BasketOfAccount, view.Account, view.Repository, view.Snapshot); err != nil {
 		s.log.Error("read the recovery basket", "account", view.Account, "error", err)
 	} else {
 		view.Basket = basket
@@ -783,7 +783,7 @@ func (s *Server) handleUserRestore(w http.ResponseWriter, r *http.Request) {
 	)
 	if fromBasket {
 		var basket nodestore.Basket
-		if basket, err = s.engine.Store().Basket(account, repository, snapshotID); err == nil {
+		if basket, err = s.engine.Store().Basket(nodestore.BasketOfAccount, account, repository, snapshotID); err == nil {
 			restore, err = userBasketRestore(account, basket, apply)
 		}
 	} else {
@@ -823,7 +823,7 @@ func (s *Server) handleUserRestore(w http.ResponseWriter, r *http.Request) {
 	if fromBasket {
 		// It has been asked for, so it is no longer a choice being made.
 		// Leaving it would offer the same restore again on the next visit.
-		if err := s.engine.Store().EmptyBasket(account, repository, snapshotID); err != nil {
+		if err := s.engine.Store().EmptyBasket(nodestore.BasketOfAccount, account, repository, snapshotID); err != nil {
 			s.log.Error("empty the recovery basket", "account", account, "error", err)
 		}
 	}
@@ -984,7 +984,7 @@ func (s *Server) changeUserBasket(w http.ResponseWriter, r *http.Request,
 	}
 
 	if action == "empty" {
-		if err := s.engine.Store().EmptyBasket(account, repository, snapshot); err != nil {
+		if err := s.engine.Store().EmptyBasket(nodestore.BasketOfAccount, account, repository, snapshot); err != nil {
 			s.log.Error("empty the recovery basket", "account", account, "error", err)
 			redirectUser(w, back, "error", "That could not be changed. Try again.")
 			return
@@ -1000,7 +1000,7 @@ func (s *Server) changeUserBasket(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	if action == "remove" {
-		if _, err := s.engine.Store().TakeFromBasket(account, repository, snapshot,
+		if _, err := s.engine.Store().TakeFromBasket(nodestore.BasketOfAccount, account, repository, snapshot,
 			string(asked)); err != nil {
 			s.log.Error("change the recovery basket", "account", account, "error", err)
 			redirectUser(w, back, "error", "That could not be changed. Try again.")
@@ -1031,7 +1031,7 @@ func (s *Server) changeUserBasket(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	basket, err := s.engine.Store().PutInBasket(account, repository, snapshot,
+	basket, err := s.engine.Store().PutInBasket(nodestore.BasketOfAccount, account, repository, snapshot,
 		nodestore.RestoreSelection{Kind: string(asked), Names: names})
 	if err != nil {
 		s.log.Error("change the recovery basket", "account", account, "error", err)
