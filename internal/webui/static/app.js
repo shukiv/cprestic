@@ -21,17 +21,28 @@
     }
 
     var shown = 0;
+    var table = document.querySelector(selector);
     rowsOf(selector).forEach(function (row) {
       var name = (row.dataset.name || "").toLowerCase();
       var matchesTerm = !term || name.indexOf(term) !== -1;
       var matchesState = !state || row.dataset.state === state;
       var visible = matchesTerm && matchesState;
+      // Two things hide a row — the filter and the page it is not on —
+      // and each has to know what the other decided. The filter records
+      // its verdict here; the paginator has the last word on .hidden.
+      row.dataset.filtered = visible ? "" : "1";
       row.hidden = !visible;
       if (visible) { shown++; }
     });
 
     var counter = document.querySelector('[data-count-for="' + selector + '"]');
     if (counter) { counter.textContent = String(shown); }
+
+    if (table && typeof window.cprestRepaginate === "function") {
+      // A filtered list is a shorter list: back to the first page, or the
+      // operator is looking at page four of a single match.
+      window.cprestRepaginate(table, true);
+    }
   }
 
   Array.prototype.forEach.call(document.querySelectorAll("[data-filter]"), function (input) {
@@ -198,6 +209,153 @@
 
 })();
 
+// Pagination.
+//
+// Nineteen accounts a night fills a table faster than anyone reads it, and
+// a long page is slow to scroll and slower to scan. The rows are already
+// here — the server sends a bounded number of them — so the paging happens
+// in the browser, which keeps it instant and keeps it working with the sort
+// and the filter beside it.
+//
+// The control appears only when there is something to page through: a table
+// shorter than the smallest page size gets no furniture it does not need.
+(function () {
+  "use strict";
+
+  var SIZES = [20, 50, 100];
+  var STORAGE = "cprest.rows";
+  var states = [];
+
+  function preferred() {
+    try {
+      var saved = parseInt(window.localStorage.getItem(STORAGE), 10);
+      if (SIZES.indexOf(saved) !== -1) { return saved; }
+    } catch (e) {}
+    return SIZES[0];
+  }
+
+  function remember(size) {
+    try { window.localStorage.setItem(STORAGE, String(size)); } catch (e) {}
+  }
+
+  function eligible(table) {
+    var body = table.tBodies[0];
+    if (!body) { return []; }
+    return Array.prototype.slice.call(body.rows).filter(function (row) {
+      // A row the filter has already rejected is not on any page.
+      return row.dataset.filtered !== "1";
+    });
+  }
+
+  function draw(state) {
+    var rows = eligible(state.table);
+    var pages = Math.max(1, Math.ceil(rows.length / state.size));
+    if (state.page > pages) { state.page = pages; }
+    var first = (state.page - 1) * state.size;
+    var last = Math.min(first + state.size, rows.length);
+
+    rows.forEach(function (row, index) {
+      row.hidden = index < first || index >= last;
+    });
+
+    // Nothing to page through: the control would be noise.
+    state.bar.hidden = rows.length <= SIZES[0];
+    state.range.textContent = rows.length === 0
+      ? "nothing to show"
+      : (first + 1) + "–" + last + " of " + rows.length;
+    state.previous.disabled = state.page <= 1;
+    state.next.disabled = state.page >= pages;
+  }
+
+  function build(table) {
+    var wrap = table.closest(".cpr-tablewrap") || table;
+
+    var bar = document.createElement("div");
+    bar.className = "cpr-pager";
+
+    var label = document.createElement("label");
+    label.className = "cpr-pager-size";
+    label.textContent = "Rows ";
+    var select = document.createElement("select");
+    SIZES.forEach(function (size) {
+      var option = document.createElement("option");
+      option.value = String(size);
+      option.textContent = String(size);
+      select.appendChild(option);
+    });
+    label.appendChild(select);
+
+    var range = document.createElement("span");
+    range.className = "cpr-pager-range";
+    range.setAttribute("aria-live", "polite");
+
+    var previous = document.createElement("button");
+    previous.type = "button";
+    previous.className = "cpr-btn cpr-quiet";
+    previous.textContent = "Previous";
+    var next = document.createElement("button");
+    next.type = "button";
+    next.className = "cpr-btn cpr-quiet";
+    next.textContent = "Next";
+
+    var buttons = document.createElement("div");
+    buttons.className = "cpr-pager-steps";
+    buttons.appendChild(previous);
+    buttons.appendChild(next);
+
+    bar.appendChild(label);
+    bar.appendChild(range);
+    bar.appendChild(buttons);
+    wrap.parentNode.insertBefore(bar, wrap.nextSibling);
+
+    var state = {
+      table: table, bar: bar, range: range, select: select,
+      previous: previous, next: next, size: preferred(), page: 1,
+    };
+    select.value = String(state.size);
+
+    select.addEventListener("change", function () {
+      state.size = parseInt(select.value, 10) || SIZES[0];
+      state.page = 1;
+      remember(state.size);
+      // One choice, every table: an operator who wants a hundred rows
+      // wants them on the next page too.
+      states.forEach(function (other) {
+        if (other !== state) {
+          other.size = state.size;
+          other.page = 1;
+          other.select.value = String(state.size);
+          draw(other);
+        }
+      });
+      draw(state);
+    });
+    previous.addEventListener("click", function () {
+      if (state.page > 1) { state.page--; draw(state); }
+    });
+    next.addEventListener("click", function () {
+      state.page++;
+      draw(state);
+    });
+
+    states.push(state);
+    draw(state);
+  }
+
+  Array.prototype.forEach.call(
+    document.querySelectorAll("table[data-sortable], table[data-paginate]"), build);
+
+  // Sorting reorders the rows under the page, and a live refresh replaces
+  // them; both leave the page showing whatever landed in the slice.
+  window.cprestRepaginate = function (table, toFirstPage) {
+    states.forEach(function (state) {
+      if (table && state.table !== table) { return; }
+      if (toFirstPage) { state.page = 1; }
+      draw(state);
+    });
+  };
+})();
+
 // Sortable tables.
 //
 // The server sends every table in the order that matters most — newest
@@ -258,6 +416,12 @@
         cell.setAttribute("aria-sort", "none");
       }
     });
+
+    // The rows moved, so which of them are on this page did too. Sorting
+    // is a new question, and the answer starts at the top of it.
+    if (typeof window.cprestRepaginate === "function") {
+      window.cprestRepaginate(table, true);
+    }
   }
 
   function remember(table, column, descending) {
@@ -342,6 +506,11 @@
     }
     if (swapped && typeof window.cprestReapplySort === "function") {
       window.cprestReapplySort();
+    }
+    if (swapped && typeof window.cprestRepaginate === "function") {
+      // Stay on the page the operator was reading rather than snapping
+      // back to the first one every three seconds.
+      window.cprestRepaginate(null, false);
     }
   }
 
