@@ -402,8 +402,8 @@ func (v userView) PutBackNote() string {
 	switch {
 	case v.Kind == granular.KindDBUsers:
 		return "The users come back with the passwords they had and the access they had " +
-			"to this account's databases. A user that still exists is set back to the " +
-			"password in the backup."
+			"to this account's databases: a user that still exists is set back to the " +
+			"password in the backup. Your own cPanel login keeps its current password."
 	case v.Kind.CanApply():
 		return "This can go straight back into the account, or be downloaded as a copy."
 	}

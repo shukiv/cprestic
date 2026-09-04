@@ -2514,6 +2514,13 @@ func (s *Server) fillPicker(r *http.Request, view *restoreView) {
 			// thing rather than a file at a time. Only domains are listed.
 			continue
 		}
+		if view.Kind == granular.KindDatabase && databaseUsersPart(entry.Name) {
+			// The account's database users are staged beside its
+			// databases. They are their own recovery choice, and listing
+			// them here — even unselectable — reads as three databases
+			// nobody recognises.
+			continue
+		}
 		view.Entries = append(view.Entries, browseEntry{
 			Name: entry.Name,
 			Path: entry.Path,
@@ -2552,11 +2559,10 @@ func itemName(kind granular.Kind, entry resticrun.Entry, parts reassemble.Parts)
 		if entry.IsDir() || !strings.HasSuffix(entry.Name, ".sql") {
 			return ""
 		}
-		// The account's database users are staged beside its databases and
-		// are .sql too. They are their own recovery choice; offering them
-		// here would name a database that does not exist.
-		if entry.Name == granular.DatabaseUsersFile ||
-			entry.Name == granular.RunnableDatabaseUsersFile {
+		// The account's database users are staged beside its databases
+		// and are .sql too. They are their own recovery choice; offering
+		// them here would name a database that does not exist.
+		if databaseUsersPart(entry.Name) {
 			return ""
 		}
 		return strings.TrimSuffix(entry.Name, ".sql")
@@ -2570,6 +2576,18 @@ func itemName(kind granular.Kind, entry resticrun.Entry, parts reassemble.Parts)
 	default:
 		return entry.Path
 	}
+}
+
+// databaseUsersPart reports whether a file staged beside an account's
+// database dumps belongs to its database users rather than to a database.
+func databaseUsersPart(name string) bool {
+	switch name {
+	case granular.DatabaseUsersFile,
+		granular.RunnableDatabaseUsersFile,
+		granular.DatabaseUsersAuthFile:
+		return true
+	}
+	return false
 }
 
 // maildirInternal reports whether a name in ~/mail is part of the

@@ -387,8 +387,12 @@ func (a *Agent) restoreDatabaseUsers(ctx context.Context, log *slog.Logger,
 
 	users, err := readStagedDatabaseUsers(databases)
 	if err != nil {
-		return "", "This backup does not hold the account's database users. Try an " +
-			"earlier restore point.", err
+		// A more recent one, not an earlier one. What a backup can be
+		// missing here is the file that carries the stored passwords,
+		// which cprest has not always written -- so going further back
+		// is going further from having it.
+		return "", "This backup does not hold the account's database users. Try a " +
+			"more recent restore point, or download this one and ask your host.", err
 	}
 	if len(users) == 0 {
 		return "", "This backup holds no database users for the account.", errors.New(

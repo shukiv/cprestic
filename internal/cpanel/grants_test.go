@@ -19,7 +19,9 @@ func fakeMysql(t *testing.T) string {
 for arg in "$@"; do last="$arg"; done
 case "$last" in
   *"FROM mysql.user WHERE user = 'cprtest1_app'"*)
-    printf 'cprtest1_app\tlocalhost\t*E237814D1AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\tmysql_native_password\n'
+    # HEX(authentication_string), which is what the query asks for now: a
+    # caching_sha2_password string is binary and is lost read as text.
+    printf 'cprtest1_app\tlocalhost\t2A45323337383134443141414141414141414141414141414141414141414141414141414141414141\tmysql_native_password\n'
     ;;
   *"SHOW GRANTS FOR "*)
     printf 'GRANT USAGE ON *.* TO ` + "`cprtest1_app`@`localhost`" + `\n'

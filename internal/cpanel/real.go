@@ -472,7 +472,7 @@ func (r *Real) dumpDatabaseUsers(ctx context.Context, req StageRequest, dir stri
 				auth[who.User] = map[string]databaseAuth{}
 			}
 			auth[who.User][who.Host] = databaseAuth{
-				PassHash: hex.EncodeToString([]byte(who.Hash)),
+				PassHash: who.HexHash,
 				Plugin:   who.Plugin,
 			}
 		}
@@ -509,10 +509,16 @@ type databaseAuth struct {
 
 // databaseUserAccount is one user@host and what authenticates it.
 type databaseUserAccount struct {
-	User   string
-	Host   string
-	Hash   string
-	Plugin string
+	User string
+	Host string
+	// Hash is the stored password as MySQL prints it, which is what
+	// cPanel's files carry. HexHash is the same bytes as hex, which is
+	// how they are read and how a restore puts them back: a
+	// caching_sha2_password string is binary, and reading it as text
+	// through the mysql client loses it.
+	Hash    string
+	HexHash string
+	Plugin  string
 }
 
 // databaseUserAccounts reads every host a database user exists on. One
@@ -524,7 +530,8 @@ func (r *Real) databaseUserAccounts(ctx context.Context, name string) ([]databas
 	// exists.
 	out, err := exec.CommandContext(ctx, r.mysql(), "--batch", "--raw", "--skip-column-names",
 		"--execute", fmt.Sprintf(
-			"SELECT user, host, authentication_string, plugin FROM mysql.user WHERE user = '%s'",
+			"SELECT user, host, HEX(authentication_string), plugin "+
+				"FROM mysql.user WHERE user = '%s'",
 			name)).Output()
 	if err != nil {
 		return nil, fmt.Errorf("cpanel: look up database user %s: %w", name, err)
@@ -538,8 +545,17 @@ func (r *Real) databaseUserAccounts(ctx context.Context, name string) ([]databas
 		if len(fields) < 4 {
 			return nil, fmt.Errorf("cpanel: unreadable row for database user %s", name)
 		}
+		// HEX() on the way out and decoded here: the column can hold
+		// bytes that are not text, and a tab or a newline among them
+		// would have split this row in the wrong place.
+		stored, err := hex.DecodeString(fields[2])
+		if err != nil {
+			return nil, fmt.Errorf(
+				"cpanel: unreadable stored password for database user %s: %w", name, err)
+		}
 		accounts = append(accounts, databaseUserAccount{
-			User: fields[0], Host: fields[1], Hash: fields[2], Plugin: fields[3],
+			User: fields[0], Host: fields[1],
+			Hash: string(stored), HexHash: fields[2], Plugin: fields[3],
 		})
 	}
 	return accounts, nil

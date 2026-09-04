@@ -54,7 +54,11 @@ Three things have to happen and no single interface does all of them:
 
 The account's own MySQL user is the exception: it owns that record rather than
 appearing in it, so cPanel refuses both of the last two steps for it, and its
-grants are written directly instead.
+grants are written directly instead. Its **password is not put back**. cPanel
+keeps that login in step with the cPanel account password, so restoring the
+backup's password would set the two out of step — and would undo a password
+change made because the old one leaked, which is what a restore must not
+quietly do.
 
 Two checks are made before anything runs, and either one fails the whole
 request rather than skipping an entry: no other account may currently hold the

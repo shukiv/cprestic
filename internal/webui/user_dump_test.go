@@ -75,17 +75,21 @@ func TestDumpAccountRecoveryPages(t *testing.T) {
 	}
 }
 
-// TestTheDatabaseListDoesNotOfferTheGrantsFiles keeps the two files that
-// carry the account's database users out of the list of databases. They are
-// staged in the same directory as the dumps and end in .sql, so a lister
-// that goes by the suffix alone offers "_users" and "_users-runnable" as
-// though they were databases -- and a restore of one would then be pointed
-// at a database of that name, which does not exist.
+// TestTheDatabaseListDoesNotOfferTheGrantsFiles keeps the files that carry
+// the account's database users out of the list of databases. They are
+// staged in the same directory as the dumps and two of them end in .sql, so
+// a lister that goes by the suffix alone offers "_users" and
+// "_users-runnable" as though they were databases -- and a restore of one
+// would then be pointed at a database of that name, which does not exist.
+//
+// They are not listed at all, selectable or not. A row nobody can choose,
+// named after a file nobody recognises, is the question this started as.
 func TestTheDatabaseListDoesNotOfferTheGrantsFiles(t *testing.T) {
 	parts := reassemble.Parts{Databases: "/stage/databases"}
 	for _, name := range []string{
 		granular.DatabaseUsersFile,
 		granular.RunnableDatabaseUsersFile,
+		granular.DatabaseUsersAuthFile,
 	} {
 		entry := resticrun.Entry{
 			Name: name, Type: "file",
@@ -94,6 +98,12 @@ func TestTheDatabaseListDoesNotOfferTheGrantsFiles(t *testing.T) {
 		if got := itemName(granular.KindDatabase, entry, parts); got != "" {
 			t.Fatalf("%s is offered as the database %q", name, got)
 		}
+		if !databaseUsersPart(name) {
+			t.Fatalf("%s is still listed among the databases", name)
+		}
+	}
+	if databaseUsersPart("rtflow_wp.sql") {
+		t.Fatal("a real dump was taken for one of the database-user files")
 	}
 
 	real := resticrun.Entry{

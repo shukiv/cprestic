@@ -302,7 +302,10 @@ func (r *Real) PutDatabaseUsers(ctx context.Context, user string, users []Databa
 		mapped = append(mapped, account)
 	}
 
-	if err := r.createDatabaseUsers(ctx, users); err != nil {
+	if err := r.createDatabaseUsers(ctx, owner, false); err != nil {
+		return err
+	}
+	if err := r.createDatabaseUsers(ctx, mapped, true); err != nil {
 		return err
 	}
 	if len(mapped) > 0 {
@@ -357,12 +360,22 @@ func (r *Real) grantOwnerDatabases(ctx context.Context, owner []DatabaseUser) er
 
 // createDatabaseUsers makes the logins exist with the passwords they had.
 //
-// ALTER follows CREATE because CREATE USER IF NOT EXISTS does nothing at
-// all to a user who is already there. Restoring a user whose password was
-// changed after the backup has to put the old password back -- that is what
-// the customer asked for and what the confirmation they ticked says will
-// happen -- and without the ALTER it would silently not.
-func (r *Real) createDatabaseUsers(ctx context.Context, users []DatabaseUser) error {
+// setPassword says whether a user who is already there is set back to the
+// password in the backup. For the account's own database users it is what
+// was asked for: CREATE USER IF NOT EXISTS does nothing at all to an
+// existing user, so without the ALTER a restore of a user whose password
+// was changed would silently not restore the password.
+//
+// For the account's own MySQL user it is false, and that is not a
+// shortcut. cPanel keeps that login's password in step with the cPanel
+// account password, so putting the backup's password back would set the
+// two out of step -- and would undo a password change made because the old
+// one leaked, which is exactly what a restore must not quietly do. That
+// user is created if it is somehow missing and otherwise left as it is.
+func (r *Real) createDatabaseUsers(ctx context.Context, users []DatabaseUser, setPassword bool) error {
+	if len(users) == 0 {
+		return nil
+	}
 	var script strings.Builder
 	for _, account := range users {
 		identified := fmt.Sprintf("IDENTIFIED WITH '%s'", account.Plugin)
@@ -371,8 +384,10 @@ func (r *Real) createDatabaseUsers(ctx context.Context, users []DatabaseUser) er
 		}
 		fmt.Fprintf(&script, "CREATE USER IF NOT EXISTS `%s`@`%s` %s;\n",
 			account.Name, account.Host, identified)
-		fmt.Fprintf(&script, "ALTER USER `%s`@`%s` %s;\n",
-			account.Name, account.Host, identified)
+		if setPassword {
+			fmt.Fprintf(&script, "ALTER USER `%s`@`%s` %s;\n",
+				account.Name, account.Host, identified)
+		}
 	}
 	create := exec.CommandContext(ctx, r.mysql())
 	create.Stdin = strings.NewReader(script.String())
