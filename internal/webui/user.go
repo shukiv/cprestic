@@ -842,23 +842,8 @@ func userRestoreRequest(account, repository, snapshot string, asked granular.Kin
 	if !asked.PicksItems() {
 		restore.ItemNames = nil
 	}
-	// These names reach a command line, a file name and the list of
-	// members taken out of the account's archive. Each is checked again
-	// further down; they are checked here because this is where they
-	// arrive from a browser.
-	for _, name := range restore.ItemNames {
-		var err error
-		switch asked {
-		case granular.KindDatabase:
-			err = granular.UsableDatabaseName(name)
-		case granular.KindDBUsers:
-			err = granular.UsableDatabaseUserName(name)
-		case granular.KindDNS, granular.KindSSL, granular.KindDomains:
-			err = granular.UsableDomainName(name)
-		}
-		if err != nil {
-			return nodestore.Restore{}, err
-		}
+	if err := usableItemNames(asked, restore.ItemNames); err != nil {
+		return nodestore.Restore{}, err
 	}
 	return restore, nil
 }

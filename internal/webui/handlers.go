@@ -20,6 +20,7 @@ import (
 	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/destination"
 	"github.com/shuki/cprest/internal/granular"
+	"github.com/shuki/cprest/internal/inventory"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/node"
 	"github.com/shuki/cprest/internal/nodestore"
@@ -2160,6 +2161,31 @@ func (r restoreRow) Parts() string {
 	return strings.Join(kinds, ", ")
 }
 
+// usableItemNames checks the names chosen for a granular restore.
+//
+// They reach a command line, a file name and the list of members taken out
+// of the account's archive. Each is checked again further down; they are
+// checked here because this is where they arrive from a browser, and a
+// domain carrying a slash would select members belonging to a different
+// part of the account.
+func usableItemNames(kind granular.Kind, names []string) error {
+	for _, name := range names {
+		var err error
+		switch kind {
+		case granular.KindDatabase:
+			err = granular.UsableDatabaseName(name)
+		case granular.KindDBUsers:
+			err = granular.UsableDatabaseUserName(name)
+		case granular.KindDNS, granular.KindSSL, granular.KindDomains:
+			err = granular.UsableDomainName(name)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // collectableRows pairs each restore with the state of what it left behind.
 func collectableRows(restores []nodestore.Restore) []restoreRow {
 	rows := make([]restoreRow, 0, len(restores))
@@ -2223,6 +2249,24 @@ type restoreView struct {
 	Up         string
 	Entries    []browseEntry
 	BrowseErr  string
+	// Items is what this part of the account holds, for the parts that
+	// are not files and so cannot be listed by browsing the snapshot.
+	Items []inventory.Item
+}
+
+// PicksItems reports whether the listed items can be chosen between,
+// rather than only read.
+func (v restoreView) PicksItems() bool { return v.Kind.PicksItems() }
+
+// ItemsNote says what the list under a kind means, which differs by
+// whether choosing narrows the restore or only says what is in it.
+func (v restoreView) ItemsNote() string {
+	if v.Kind.PicksItems() {
+		return "Tick what you want. Leave every box empty to take all of them."
+	}
+	return "What this backup holds. They come out together: a crontab and the FTP " +
+		"logins are each one file, and handing back part of one would hand back a " +
+		"file that is not the one in the backup."
 }
 
 // browseEntry is one line of a snapshot, as the picker shows it.
@@ -2493,6 +2537,16 @@ func (s *Server) fillPicker(r *http.Request, view *restoreView) {
 	case granular.KindDatabase:
 		root = parts.Databases
 	default:
+		// The rest of an account is inside its archive or one file beside
+		// the dumps, so what it holds is read rather than browsed.
+		if view.Kind.ListsItems() {
+			items, err := s.engine.Items(r.Context(), view.RepositoryID, snapshot.ID, parts, view.Kind)
+			if err != nil {
+				view.BrowseErr = err.Error()
+				return
+			}
+			view.Items = items
+		}
 		return
 	}
 	if root == "" {
@@ -2659,6 +2713,16 @@ func (s *Server) handleRestoreItems(w http.ResponseWriter, r *http.Request) {
 		if trimmed := strings.TrimSpace(name); trimmed != "" {
 			restore.ItemNames = append(restore.ItemNames, trimmed)
 		}
+	}
+	// A kind that lists what it holds without being able to hand back part
+	// of it -- a crontab is one file, and so is the FTP password file --
+	// takes no names. Carrying them would say the choice was honoured.
+	if !granular.Kind(restore.ItemKind).PicksItems() {
+		restore.ItemNames = nil
+	}
+	if err := usableItemNames(granular.Kind(restore.ItemKind), restore.ItemNames); err != nil {
+		s.redirect(w, r, back, "error", err.Error())
+		return
 	}
 
 	if _, err := s.engine.QueueRestore(restore); err != nil {

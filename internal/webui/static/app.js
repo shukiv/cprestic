@@ -778,3 +778,39 @@
     if (button) { apply(button.dataset.themeChoice); }
   });
 })();
+
+// Select-all for the pickers. A backup of an account with forty mailboxes
+// is a page where "all of them" costs forty clicks.
+//
+// The box ships hidden and is shown here, because without scripting it
+// could not tick anything and a control that does nothing is worse than no
+// control: every picker already means all of them when none is ticked.
+(function () {
+  Array.prototype.forEach.call(document.querySelectorAll("[data-checkall]"), function (master) {
+    var table = master.closest("table");
+    if (!table) { return; }
+
+    function boxes() {
+      return Array.prototype.slice.call(
+        table.querySelectorAll('tbody input[type="checkbox"][name="name"]'));
+    }
+    function sync() {
+      var all = boxes();
+      var ticked = all.filter(function (box) { return box.checked; });
+      master.checked = all.length > 0 && ticked.length === all.length;
+      // Partly ticked is its own state, and showing it as unticked would
+      // make one click clear a selection somebody just made.
+      master.indeterminate = ticked.length > 0 && ticked.length < all.length;
+    }
+
+    master.hidden = false;
+    master.addEventListener("change", function () {
+      boxes().forEach(function (box) { box.checked = master.checked; });
+      sync();
+    });
+    table.addEventListener("change", function (event) {
+      if (event.target !== master) { sync(); }
+    });
+    sync();
+  });
+})();

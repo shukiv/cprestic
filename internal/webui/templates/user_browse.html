@@ -100,7 +100,7 @@
 
     {{if $data.Entries}}
     <div class="cpr-tablewrap"><table class="cpr-picker-table">
-      <thead><tr><th class="cpr-check-col"><span class="cpr-visually-hidden">Select</span></th><th>Name</th><th>Type</th><th class="cpr-right">Size</th></tr></thead>
+      <thead><tr><th class="cpr-check-col"><input type="checkbox" data-checkall hidden aria-label="Select everything listed"><span class="cpr-visually-hidden">Select</span></th><th>Name</th><th>Type</th><th class="cpr-right">Size</th></tr></thead>
       <tbody>
         {{range $data.Entries}}
         <tr>
@@ -136,7 +136,7 @@
     {{if $data.Items}}
     <div class="cpr-tablewrap"><table class="cpr-picker-table">
       <thead><tr>
-        {{if $data.PicksItems}}<th class="cpr-check-col"><span class="cpr-visually-hidden">Select</span></th>{{end}}
+        {{if $data.PicksItems}}<th class="cpr-check-col"><input type="checkbox" data-checkall hidden aria-label="Select everything listed"><span class="cpr-visually-hidden">Select</span></th>{{end}}
         <th>In this restore point</th><th>Detail</th>
       </tr></thead>
       <tbody>

@@ -365,15 +365,37 @@
     {{else if $data.Kind.NeedsNames}}
     <p class="cpr-hint" style="margin-top:var(--s4)">Nothing here in this backup.</p>
     {{else}}
-    <form method="post" action="?p=restore/items" class="cpr-row" style="margin-top:var(--s4)">
+    <form method="post" action="?p=restore/items" style="margin-top:var(--s4)">
       <input type="hidden" name="csrf" value="{{$.CSRF}}">
       <input type="hidden" name="account" value="{{$data.Account}}">
       <input type="hidden" name="repository" value="{{$data.RepositoryID}}">
       <input type="hidden" name="snapshot" value="{{$data.SnapshotID}}">
       <input type="hidden" name="item" value="{{$data.Kind}}">
-      <button class="cpr-btn cpr-primary">Copy out {{$data.KindTitle $data.Kind}}</button>
-      {{if $data.Kind.CanApply}}<button class="cpr-btn cpr-danger" name="apply" value="1">Put it back into the account</button>{{end}}
-      <span class="cpr-hint" style="margin:0">Taken out of the account archive in that backup.</span>
+      {{if $data.Items}}
+      <div class="cpr-tablewrap"><table>
+        <thead><tr>
+          {{if $data.PicksItems}}<th style="width:1%"><input type="checkbox" data-checkall hidden aria-label="Select everything listed"><span class="cpr-visually-hidden">Select</span></th>{{end}}
+          <th>In this backup</th><th>Detail</th>
+        </tr></thead>
+        <tbody>
+          {{range $data.Items}}
+          <tr>
+            {{if $data.PicksItems}}<td>{{if .Name}}<input type="checkbox" name="name" value="{{.Name}}" aria-label="Select {{.Label}}">{{end}}</td>{{end}}
+            <td class="cpr-acct">{{.Label}}</td>
+            <td class="cpr-sublabel">{{if .Detail}}{{.Detail}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table></div>
+      <p class="cpr-hint">{{$data.ItemsNote}}</p>
+      {{else if $data.Kind.ListsItems}}
+      <p class="cpr-hint">Nothing here in this backup.</p>
+      {{end}}
+      <div class="cpr-row">
+        <button class="cpr-btn cpr-primary">Copy out {{$data.KindTitle $data.Kind}}</button>
+        {{if $data.Kind.CanApply}}<button class="cpr-btn cpr-danger" name="apply" value="1">Put it back into the account</button>{{end}}
+        <span class="cpr-hint" style="margin:0">Taken out of the account archive in that backup.</span>
+      </div>
     </form>
     {{end}}
     {{end}}

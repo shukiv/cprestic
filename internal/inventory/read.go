@@ -50,6 +50,12 @@ func readArchive(ctx context.Context, reader Reader, src Source) (
 	}()
 
 	members, bodies, scanErr := scanArchive(pipeReader)
+	if scanErr == nil {
+		// A tar reader stops at the end-of-archive marker, and restic is
+		// still writing the padding after it. Closing the pipe here would
+		// fail that write and turn a complete reading into an error.
+		_, _ = io.Copy(io.Discard, pipeReader)
+	}
 	// A scan that stopped early leaves the dump with nowhere to write, and
 	// it would block there for as long as the repository takes to read.
 	pipeReader.CloseWithError(io.EOF)
@@ -134,6 +140,12 @@ func readFile(ctx context.Context, reader Reader, repo resticrun.Repository,
 		done <- err
 	}()
 	body, readErr := io.ReadAll(io.LimitReader(pipeReader, maxBody))
+	if readErr == nil {
+		// A file past the cap has more behind it, and the dump writing
+		// that remainder into a closed pipe would fail a reading that
+		// gave us everything we asked for.
+		_, _ = io.Copy(io.Discard, pipeReader)
+	}
 	pipeReader.CloseWithError(io.EOF)
 	dumpErr := <-done
 
