@@ -417,10 +417,38 @@ func (e *Engine) TestDestination(ctx context.Context, destinationID string) erro
 	if checkErr != nil {
 		dest.LastCheckError = checkErr.Error()
 	}
+	// How much room is left is worth knowing before the night it runs out,
+	// and asking costs one statfs or one df. It is only asked when the
+	// destination answered at all: a df against a machine that is not
+	// there would fail slowly for a reason already recorded above.
+	if checkErr == nil {
+		dest.Space = measureSpace(ctx, built)
+	}
 	if _, err := e.store.PutDestination(dest); err != nil {
 		return err
 	}
 	return checkErr
+}
+
+// measureSpace asks a destination how much room it has, if its kind can
+// say. An S3 bucket has no size and a restic REST server does not report
+// the disk under it; those record that they cannot rather than a zero,
+// which would read on the page as a disk that is full.
+func measureSpace(ctx context.Context, built destination.Destination) nodestore.DestinationSpace {
+	now := time.Now().UTC()
+	sizer, ok := built.(destination.Sizer)
+	if !ok {
+		return nodestore.DestinationSpace{Unsupported: true, MeasuredAt: &now}
+	}
+	space, err := sizer.Space(ctx)
+	if err != nil {
+		return nodestore.DestinationSpace{MeasuredAt: &now, Error: err.Error()}
+	}
+	return nodestore.DestinationSpace{
+		TotalBytes: space.TotalBytes,
+		FreeBytes:  space.FreeBytes,
+		MeasuredAt: &now,
+	}
 }
 
 // Snapshots lists an account's snapshots in a repository.

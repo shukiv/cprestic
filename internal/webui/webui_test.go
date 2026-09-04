@@ -2146,6 +2146,45 @@ func TestTablesCarrySortKeysOnCellsThatNeedThem(t *testing.T) {
 // A server that lost a disk lost every account on it. Clicking through
 // nineteen restores one at a time, in a hurry, keeping your own tally of
 // which ones are done, is how one gets missed.
+// A destination that is nearly full is the reason tonight's backup fails,
+// and the page that lists destinations was the one place that did not say
+// so. What it must not do is show a zero for a kind of storage that has no
+// size: "0 free" and "cannot say" are different sentences.
+func TestDestinationsShowTheRoomTheyHaveLeft(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	measured := time.Now().Add(-20 * time.Minute)
+	if _, err := engine.Store().PutDestination(nodestore.Destination{
+		Name: "backup disk", Type: "local", Config: map[string]string{"root": "/mnt/backups"},
+		Space: nodestore.DestinationSpace{
+			TotalBytes: 50 << 30, FreeBytes: 5 << 30, MeasuredAt: &measured,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Store().PutDestination(nodestore.Destination{
+		Name: "the bucket", Type: "s3", Config: map[string]string{"bucket": "backups"},
+		Space: nodestore.DestinationSpace{Unsupported: true, MeasuredAt: &measured},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/destinations")
+	for _, want := range []string{
+		"5.0 GiB free",
+		"90% of 50.0 GiB used",
+		"this kind does not report space",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the destinations page does not say %q", want)
+		}
+	}
+	// Nearly full reads as nearly full, not as a healthy bar.
+	if !strings.Contains(page, `<i class="cpr-none"`) {
+		t.Error("a destination at 90% is not marked as one")
+	}
+}
+
 func TestSeveralAccountsCanBeRestoredAtOnce(t *testing.T) {
 	client, _, engine := newUI(t)
 

@@ -20,7 +20,47 @@ type Destination struct {
 	CreatedAt           time.Time         `json:"created_at"`
 	LastCheckedAt       *time.Time        `json:"last_checked_at,omitempty"`
 	LastCheckError      string            `json:"last_check_error,omitempty"`
+	// Space is what the storage behind this destination last reported.
+	// It is stored rather than asked for on demand because the page that
+	// shows it must render while a backup server is unreachable, and
+	// "when this was last true" is more useful than a spinner.
+	Space DestinationSpace `json:"space,omitempty"`
 }
+
+// DestinationSpace is the room on the storage behind a destination.
+//
+// Zero TotalBytes with no error means the kind of destination cannot say:
+// an S3 bucket has no size, and a restic REST server does not report the
+// disk underneath it. That is different from a disk that is full, and the
+// interface says so in different words.
+type DestinationSpace struct {
+	TotalBytes uint64     `json:"total_bytes,omitempty"`
+	FreeBytes  uint64     `json:"free_bytes,omitempty"`
+	MeasuredAt *time.Time `json:"measured_at,omitempty"`
+	Error      string     `json:"error,omitempty"`
+	// Unsupported records that this destination type has no such number,
+	// so the page can say that instead of showing nothing measured yet.
+	Unsupported bool `json:"unsupported,omitempty"`
+}
+
+// UsedBytes is everything on that storage, ours and everybody else's.
+func (s DestinationSpace) UsedBytes() uint64 {
+	if s.TotalBytes < s.FreeBytes {
+		return 0
+	}
+	return s.TotalBytes - s.FreeBytes
+}
+
+// UsedPercent is how full the storage is, 0 when it cannot say.
+func (s DestinationSpace) UsedPercent() int {
+	if s.TotalBytes == 0 {
+		return 0
+	}
+	return int(float64(s.UsedBytes()) / float64(s.TotalBytes) * 100)
+}
+
+// Known reports whether there is a measurement worth showing.
+func (s DestinationSpace) Known() bool { return s.TotalBytes > 0 && s.MeasuredAt != nil }
 
 // Repository is a restic repository inside a destination.
 type Repository struct {

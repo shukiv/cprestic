@@ -162,3 +162,27 @@
   {{else}}<div class="cpr-empty"><p>{{.Empty}}</p></div>{{end}}
 </div>
 {{end}}
+
+{{/* How much room a destination has left. Free comes first because it is
+     the number that decides whether tonight's backup fits; the total is
+     context for it. A destination whose kind cannot say so says that,
+     rather than showing a zero that reads as a full disk. */}}
+{{define "destspace"}}
+{{if .Known}}
+  <div class="cpr-mono cpr-num">{{bytes .FreeBytes}} free</div>
+  <div class="cpr-meter cpr-meter-slim" title="{{.UsedPercent}}% of {{bytes .TotalBytes}} used">
+    <i class="{{if ge .UsedPercent 90}}cpr-none{{else if ge .UsedPercent 75}}cpr-stale{{else}}cpr-ok{{end}}"
+       style="width:{{.UsedPercent}}%"></i>
+  </div>
+  <div class="cpr-sublabel">{{.UsedPercent}}% of {{bytes .TotalBytes}} used{{with .MeasuredAt}} · {{ago .}}{{end}}</div>
+{{else if .Unsupported}}
+  <span class="cpr-muted">—</span>
+  <div class="cpr-sublabel" title="An S3 bucket has no size, and a restic REST server does not report the disk underneath it.">this kind does not report space</div>
+{{else if .Error}}
+  <span class="cpr-muted">—</span>
+  <div class="cpr-sublabel cpr-warntext">{{.Error}}</div>
+{{else}}
+  <span class="cpr-muted">—</span>
+  <div class="cpr-sublabel">not measured yet</div>
+{{end}}
+{{end}}

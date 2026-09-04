@@ -128,6 +128,7 @@
 .cprest .cpr-cov-figure small { font-size:15px; font-weight:400; color:var(--muted); letter-spacing:0; }
 .cprest .cpr-meter { display:flex; height:10px; border-radius:99px; overflow:hidden; background:var(--line); margin:var(--s3) 0 var(--s2); }
 .cprest .cpr-meter i { display:block; }
+.cprest .cpr-meter-slim { height:6px; margin:3px 0; max-width:180px; }
 .cprest .cpr-meter .cpr-ok { background:var(--good); }
 .cprest .cpr-meter .cpr-stale { background:var(--warn); }
 .cprest .cpr-meter .cpr-none { background:var(--bad); }

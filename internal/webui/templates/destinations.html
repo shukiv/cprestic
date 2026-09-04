@@ -64,7 +64,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
   </div>
   {{if $data.Destinations}}
   <div class="cpr-tablewrap"><table>
-    <thead><tr><th>Name</th><th>Address</th><th>Repository</th><th>State</th><th class="cpr-right">&nbsp;</th></tr></thead>
+    <thead><tr><th>Name</th><th>Address</th><th>Repository</th><th>Space</th><th>State</th><th class="cpr-right">&nbsp;</th></tr></thead>
     <tbody>
     {{range $data.Destinations}}
     <tr class="cpr-state {{.Stripe}}">
@@ -74,6 +74,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
       <td class="cpr-mono">{{.Repository.Path}}
         {{if .Repository.InitialisedAt}}<div class="cpr-sublabel">created {{stampPtr .Repository.InitialisedAt}}</div>
         {{else}}<div class="cpr-sublabel">not created yet</div>{{end}}</td>
+      <td>{{template "destspace" .Space}}</td>
       <td>{{template "deststate" .}}</td>
       <td class="cpr-right"><div class="cpr-actions">
         <form method="post" action="?p=destinations/test" class="cpr-inline">
