@@ -116,7 +116,9 @@
   <div class="cpr-tablewrap"><table>
     <thead><tr><th>Name</th><th>Size</th><th class="cpr-right">&nbsp;</th></tr></thead>
     <tbody>
-      {{$base := printf "?p=browse&amp;repository=%s&amp;account=%s&amp;snapshot=%s" $data.Repository $data.Account $data.Snapshot}}
+      {{/* Raw ampersands: the template escapes this once as it goes into
+           the href, and "&amp;" here would arrive as "&amp;amp;". */}}
+      {{$base := printf "?p=browse&repository=%s&account=%s&snapshot=%s" $data.Repository $data.Account $data.Snapshot}}
       {{if $data.Up}}
       <tr><td colspan="3"><a class="cpr-link" href="{{$base}}&amp;path={{$data.Up}}">↑ up one level</a></td></tr>
       {{end}}

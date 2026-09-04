@@ -102,3 +102,43 @@ func isDigitByte(b byte) bool { return b >= '0' && b <= '9' }
 func isNameStart(b byte) bool {
 	return b == '_' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
+
+var (
+	templateAction = regexp.MustCompile(`{{.*?}}`)
+	midLink        = regexp.MustCompile(`href="\?[^"]*&amp;{{\s*\$`)
+)
+
+// A link built in two halves is escaped as one value.
+//
+// html/template escapes what goes into an href by where it lands. A whole
+// URL is normalised, leaving its ampersands and equals signs alone; a value
+// spliced in after the query has begun is escaped as one query value, so a
+// prefix carrying its own parameters arrives as a single unreadable one and
+// everything after the first parameter is lost. And a prefix built with
+// printf is escaped once on the way out, so "&amp;" written there arrives
+// as "&amp;amp;" and names a parameter nobody reads.
+//
+// Both faults render a page that looks right and links nowhere, which is
+// why they are caught here rather than by eye.
+func TestALinkBuiltFromAPrefixStillCarriesItsParameters(t *testing.T) {
+	files, err := templateFS.ReadDir("templates")
+	if err != nil {
+		t.Fatalf("read templates: %v", err)
+	}
+	for _, f := range files {
+		body, err := templateFS.ReadFile("templates/" + f.Name())
+		if err != nil {
+			t.Fatalf("read %s: %v", f.Name(), err)
+		}
+		for _, action := range templateAction.FindAllString(string(body), -1) {
+			if strings.Contains(action, "printf") && strings.Contains(action, "&amp;") {
+				t.Errorf("%s: a printf-built link writes &amp; where a raw & is meant: %s",
+					f.Name(), action)
+			}
+		}
+		if found := midLink.FindString(string(body)); found != "" {
+			t.Errorf("%s: a link prefix is spliced into the middle of a query: %s",
+				f.Name(), found)
+		}
+	}
+}
