@@ -336,8 +336,9 @@ type Restore struct {
 	// account asked for, and which one.
 	ItemKind  string   `json:"item_kind,omitempty"`
 	ItemNames []string `json:"item_names,omitempty"`
-	// Apply hands the rebuilt archive to restorepkg, overwriting the live
-	// account. Off unless explicitly asked for.
+	// Apply writes the restore into the live account rather than leaving a
+	// copy to collect. A whole account goes to restorepkg; a part of one
+	// is written back where it belongs. Off unless explicitly asked for.
 	// Unrestricted asks cPanel to skip its Restricted Restore checks
 	// when applying the archive. The default is restricted.
 	Unrestricted  bool       `json:"unrestricted,omitempty"`

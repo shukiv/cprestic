@@ -67,8 +67,10 @@ type RestoreAssignment struct {
 	// was told to read.
 	ItemKind  string   `json:"item_kind,omitempty"`
 	ItemNames []string `json:"item_names,omitempty"`
-	// Apply hands the rebuilt archive to cPanel's restorepkg, overwriting
-	// the live account. Off unless an operator asked for it.
+	// Apply writes the restore into the live account instead of leaving a
+	// copy to collect: a whole account goes to cPanel's restorepkg, and
+	// the parts of one that can be written back are written back. Off
+	// unless it was explicitly asked for.
 	Apply bool `json:"apply"`
 	// Unrestricted asks cPanel to restore the archive without its
 	// Restricted Restore protections. The default is restricted, because

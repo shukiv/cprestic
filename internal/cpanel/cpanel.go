@@ -117,4 +117,24 @@ type Provider interface {
 	// live account. Callers must only reach this when an operator has
 	// explicitly asked for it.
 	Apply(ctx context.Context, archivePath string, options ApplyOptions) error
+
+	// PutHomeDir copies a restored subtree back into an account's home
+	// directory, as that account.
+	//
+	// The tree comes out of a root-owned staging directory, which the
+	// account cannot read; what lands in the home directory is written by
+	// the account itself, so it is owned by them and can reach nothing
+	// they could not already reach. The caller passes the tree rooted
+	// where the home directory was: what is under from/public_html lands
+	// in the account's own public_html.
+	PutHomeDir(ctx context.Context, user, from string) error
+
+	// LoadDatabase replaces the contents of one of the account's databases
+	// with a dump taken from a backup.
+	//
+	// The database must already exist and must belong to the account. It
+	// is not created here: creating one is a cPanel operation, with a
+	// quota and a database map behind it, and a restore that quietly made
+	// one would leave the panel not knowing about it.
+	LoadDatabase(ctx context.Context, user, database, dumpPath string) error
 }

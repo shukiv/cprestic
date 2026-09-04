@@ -39,6 +39,24 @@ type Fake struct {
 	// Excludes is what NativeExcludes returns, for a test that needs the
 	// account to have some.
 	Excludes []string
+	// PutBackHome and LoadedDatabases record what was written back into
+	// live accounts, for a test that needs to know a restore did more than
+	// leave a copy behind.
+	PutBackHome     []PutBackHome
+	LoadedDatabases []LoadedDatabase
+}
+
+// PutBackHome is one home-directory tree written back into an account.
+type PutBackHome struct {
+	User string
+	From string
+}
+
+// LoadedDatabase is one dump loaded into a live database.
+type LoadedDatabase struct {
+	User     string
+	Database string
+	DumpPath string
 }
 
 var _ Provider = (*Fake)(nil)
@@ -175,6 +193,51 @@ func (f *Fake) Apply(_ context.Context, archivePath string, options ApplyOptions
 	f.AppliedWith = append(f.AppliedWith, options)
 	f.Applied = append(f.Applied, archivePath)
 	return nil
+}
+
+// PutHomeDir records that a restored tree would have been copied into an
+// account's home directory. The fake has no separate account to become, so
+// it checks the tree is there and remembers the call.
+func (f *Fake) PutHomeDir(_ context.Context, user, from string) error {
+	info, err := os.Stat(from)
+	if err != nil {
+		return fmt.Errorf("cpanel: restored home directory: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("cpanel: %s is not a directory", from)
+	}
+	f.PutBackHome = append(f.PutBackHome, PutBackHome{User: user, From: from})
+	return nil
+}
+
+// LoadDatabase records that a dump would have been loaded into a live
+// database. It makes the same ownership check the real provider makes, so a
+// caller that fails to confine a request to the account's own databases
+// fails here too.
+func (f *Fake) LoadDatabase(_ context.Context, user, database, dumpPath string) error {
+	if !f.owns(user, database) {
+		return fmt.Errorf("cpanel: %s does not own the database %s", user, database)
+	}
+	info, err := os.Stat(dumpPath)
+	if err != nil {
+		return fmt.Errorf("cpanel: database dump: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("cpanel: database dump %s is a directory", dumpPath)
+	}
+	f.LoadedDatabases = append(f.LoadedDatabases, LoadedDatabase{
+		User: user, Database: database, DumpPath: dumpPath,
+	})
+	return nil
+}
+
+func (f *Fake) owns(user, database string) bool {
+	for _, owned := range f.Databases[user] {
+		if owned == database {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *Fake) Certify(ctx context.Context, archivePath, disposableUser string) error {

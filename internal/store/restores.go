@@ -21,8 +21,9 @@ type RestoreRequest struct {
 	Kind         string
 	IncludePaths []string
 	TargetDir    string
-	// Apply hands the rebuilt archive to restorepkg, overwriting the live
-	// account.
+	// Apply writes the restore into the live account rather than leaving
+	// a copy to collect. A whole account goes to restorepkg; a part of one
+	// is written back where it belongs.
 	Apply bool
 }
 

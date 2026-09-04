@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -20,12 +21,13 @@ import (
 // restoreItems takes one part of an account out of a snapshot: a mailbox,
 // a database, the DNS records, the certificates.
 //
-// The result is a directory and an archive of it, left on this server for
-// the operator to put back where it belongs. Nothing is written into the
-// live account: restoring a mailbox in place needs the file ownership the
-// account had, and putting a zone file back is a DNS change, not a file
-// copy. Both are worth doing on purpose rather than as a side effect of a
-// download.
+// The result is a directory and an archive of it, left on this server to
+// collect. When the request asks for it, and only for the parts that can be
+// written back -- files, the website, mail, a database -- what came out is
+// then written into the live account. The rest stay a copy: putting a zone
+// file back is a DNS change and reinstating an FTP login is a change to a
+// password store, neither of which is a file copy, and both are worth doing
+// on purpose rather than as a side effect of a restore.
 func (a *Agent) restoreItems(ctx context.Context, log *slog.Logger,
 	assignment protocol.RestoreAssignment, repo resticrun.Repository,
 	dir *staging.Dir, report protocol.RestoreReport) (protocol.RestoreReport, bool) {
@@ -127,6 +129,27 @@ func (a *Agent) restoreItems(ctx context.Context, log *slog.Logger,
 		// directory as though it were their data.
 		report.Error = fmt.Sprintf(
 			"agent: this backup holds nothing for %s", plan.Description)
+		return report, false
+	}
+
+	if assignment.Apply {
+		// Written into the live account rather than handed over. The raw
+		// restic tree is not wanted either way.
+		if err := os.RemoveAll(raw); err != nil {
+			log.Warn("remove the raw restore tree", "error", err)
+		}
+		written, err := a.applyItems(ctx, log, assignment, out)
+		if err != nil {
+			report.Error = err.Error()
+			return report, false
+		}
+		report.Status = string(job.StatusSuccess)
+		report.BytesRestored = bytes
+		report.Applied = true
+		report.Detail = written
+		log.Warn("granular restore written into the live account",
+			"account", assignment.CPanelUser, "kind", assignment.ItemKind,
+			"files", files, "wrote", written)
 		return report, false
 	}
 
@@ -253,4 +276,55 @@ func measure(dir string) (files int, bytes uint64, err error) {
 		return 0, 0, fmt.Errorf("agent: measure the restored files: %w", err)
 	}
 	return files, bytes, nil
+}
+
+// applyItems writes what came out of the backup into the live account, and
+// says what it wrote.
+//
+// Only the kinds granular says can be applied reach here; the node refuses
+// the others before a job exists. The check is made again because this runs
+// as root on a live account, and a second reading of the same rule costs
+// nothing next to what getting it wrong costs.
+func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
+	assignment protocol.RestoreAssignment, out string) (string, error) {
+
+	kind := granular.Kind(assignment.ItemKind)
+	if !kind.CanApply() {
+		return "", fmt.Errorf(
+			"agent: a %s restore cannot be written into the live account", kind)
+	}
+
+	if kind == granular.KindDatabase {
+		databases := filepath.Join(out, "databases")
+		var loaded []string
+		for _, name := range assignment.ItemNames {
+			dump := filepath.Join(databases, name+".sql")
+			if _, err := os.Stat(dump); err != nil {
+				return "", fmt.Errorf(
+					"agent: this backup holds no dump of the database %s", name)
+			}
+			if err := a.provider.LoadDatabase(ctx, assignment.CPanelUser, name, dump); err != nil {
+				return "", err
+			}
+			log.Warn("database loaded from a backup",
+				"account", assignment.CPanelUser, "database", name)
+			loaded = append(loaded, name)
+		}
+		if len(loaded) == 0 {
+			return "", errors.New("agent: no database was named to restore")
+		}
+		return "loaded into " + strings.Join(loaded, ", "), nil
+	}
+
+	// Files, the website and mail are all the home directory, restored
+	// where they were.
+	homedir := filepath.Join(out, "homedir")
+	if _, err := os.Stat(homedir); err != nil {
+		return "", errors.New(
+			"agent: this backup holds none of the account's files")
+	}
+	if err := a.provider.PutHomeDir(ctx, assignment.CPanelUser, homedir); err != nil {
+		return "", err
+	}
+	return "written into the home directory of " + assignment.CPanelUser, nil
 }

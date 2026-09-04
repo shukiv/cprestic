@@ -91,6 +91,24 @@ func (k Kind) Title() string {
 
 // NeedsNames reports whether a kind is meaningless without the operator
 // naming what they want.
+// CanApply reports whether a restore of this kind can be written back into
+// a live account, rather than only handed over as a copy.
+//
+// The four that can are the ones where putting the backup back is the whole
+// operation: files land in the home directory, a dump loads into the
+// database it came from. The rest describe things the control panel owns --
+// a DNS zone, an installed certificate, an FTP login, the account's own
+// configuration. Copying yesterday's file over today's would leave the panel
+// and its services disagreeing about what exists, so those stay a copy the
+// account's host puts back deliberately.
+func (k Kind) CanApply() bool {
+	switch k {
+	case KindFiles, KindWebsite, KindMailbox, KindDatabase:
+		return true
+	}
+	return false
+}
+
 func (k Kind) NeedsNames() bool {
 	switch k {
 	case KindFiles, KindMailbox, KindDatabase:

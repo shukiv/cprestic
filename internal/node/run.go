@@ -15,6 +15,7 @@ import (
 
 	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/destination"
+	"github.com/shuki/cprest/internal/granular"
 	"github.com/shuki/cprest/internal/human"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/nodestore"
@@ -149,8 +150,24 @@ func (e *Engine) QueueRestore(restore nodestore.Restore) (nodestore.Restore, err
 	if restore.Kind == protocol.RestoreFiles && len(restore.IncludePaths) == 0 {
 		return nodestore.Restore{}, errors.New("node: a files restore needs at least one path")
 	}
-	if restore.Apply && restore.Kind != protocol.RestoreAccount {
-		return nodestore.Restore{}, errors.New("node: only a whole-account restore can be applied")
+	// Applying means writing into the live account. A whole account goes
+	// through cPanel's own restore; a single part of one is written back
+	// only for the parts that can be, which granular decides. Nothing else
+	// may carry the flag: a request that reached here asking to apply a
+	// zone file or the account's configuration is refused, not downgraded.
+	if restore.Apply {
+		switch restore.Kind {
+		case protocol.RestoreAccount:
+		case protocol.RestoreItems:
+			if !granular.Kind(restore.ItemKind).CanApply() {
+				return nodestore.Restore{}, fmt.Errorf(
+					"node: a %s restore cannot be written into the live account",
+					restore.ItemKind)
+			}
+		default:
+			return nodestore.Restore{}, errors.New(
+				"node: only a whole-account restore can be applied")
+		}
 	}
 
 	running, err := e.store.RunningJobFor(restore.Account)

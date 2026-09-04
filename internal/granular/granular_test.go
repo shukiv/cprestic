@@ -182,3 +182,22 @@ func TestTheStagedUsersFileNameMatchesReassemble(t *testing.T) {
 			RunnableDatabaseUsersFile, reassemble.RunnableDatabaseUsersFile)
 	}
 }
+
+// TestOnlyWhatCanBeWrittenBackSaysSo pins the list of kinds a restore may
+// put into a live account. Every other kind is a change to something the
+// control panel owns -- a zone, a certificate, a login -- and copying the
+// backed-up file over the live one does not make that change.
+func TestOnlyWhatCanBeWrittenBackSaysSo(t *testing.T) {
+	canApply := map[Kind]bool{
+		KindFiles:    true,
+		KindWebsite:  true,
+		KindMailbox:  true,
+		KindDatabase: true,
+	}
+	all := append([]Kind{KindSystem}, Kinds...)
+	for _, kind := range all {
+		if got := kind.CanApply(); got != canApply[kind] {
+			t.Errorf("%s.CanApply() = %v, want %v", kind, got, canApply[kind])
+		}
+	}
+}

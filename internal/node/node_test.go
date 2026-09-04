@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/shuki/cprest/internal/cpanel"
+	"github.com/shuki/cprest/internal/granular"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/node"
 	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shuki/cprest/internal/protocol"
 	"github.com/shuki/cprest/internal/resticrun"
 	"github.com/shuki/cprest/internal/staging"
 	"github.com/shuki/cprest/internal/vault"
@@ -246,13 +248,42 @@ func TestQueueRestoreValidates(t *testing.T) {
 	}); err == nil {
 		t.Error("a files restore with no paths should be refused")
 	}
-	// restorepkg takes a whole account archive, so this combination is
-	// meaningless rather than merely unusual.
+	// A files restore leaves the paths where the operator asked for them,
+	// which is what "apply" would have meant; there is nothing else for it
+	// to do.
 	if _, err := engine.QueueRestore(nodestore.Restore{
 		Account: "c1", SnapshotID: "abc", Kind: "files",
 		IncludePaths: []string{"/home/c1/x"}, Apply: true,
 	}); err == nil {
 		t.Error("applying a files restore should be refused")
+	}
+	// Writing part of an account back is allowed only for the parts that
+	// can be written back. Everything else is a change the control panel
+	// has to make, and a granular restore of it is a copy to hand over.
+	for _, kind := range []granular.Kind{
+		granular.KindDNS, granular.KindSSL, granular.KindDBUsers,
+		granular.KindFTP, granular.KindCron, granular.KindDomains,
+		granular.KindSettings, granular.KindSystem, granular.Kind("anything"),
+	} {
+		if _, err := engine.QueueRestore(nodestore.Restore{
+			Account: "c1", SnapshotID: "abc", Kind: protocol.RestoreItems,
+			ItemKind: string(kind), ItemNames: []string{"x"}, Apply: true,
+		}); err == nil {
+			t.Errorf("applying a %s restore should be refused", kind)
+		}
+	}
+	// A different account, because one account only ever has one piece of
+	// work queued and c1's is asserted on below.
+	applied, err := engine.QueueRestore(nodestore.Restore{
+		Account: "c2", SnapshotID: "abc", Kind: protocol.RestoreItems,
+		ItemKind:  string(granular.KindDatabase),
+		ItemNames: []string{"c2_shop"}, Apply: true,
+	})
+	if err != nil {
+		t.Fatalf("applying a database restore: %v", err)
+	}
+	if !applied.Apply {
+		t.Error("the queued database restore lost its apply")
 	}
 
 	queued, err := engine.QueueRestore(nodestore.Restore{Account: "c1", SnapshotID: "abc"})
