@@ -357,16 +357,19 @@
 })();
 
 // Theme control. WHM does not tell a plugin which theme it is wearing, so
-// the operator gets the final say; "system" follows prefers-color-scheme.
-// The choice lives in this browser only — it is a viewing preference, not
-// server state.
+// the operator gets the final say. Light is the default — it is the theme
+// this interface is designed in — and an operator who prefers dark, or who
+// wants the machine's preference to decide, says so here. The choice lives
+// in this browser only: it is a viewing preference, not server state.
 (function () {
   "use strict";
   var group = document.getElementById("theme");
   if (!group) { return; }
 
   function stored() {
-    try { return localStorage.getItem("cprest.theme") || "system"; } catch (e) { return "system"; }
+    var choice;
+    try { choice = localStorage.getItem("cprest.theme"); } catch (e) { return "light"; }
+    return (choice === "dark" || choice === "system") ? choice : "light";
   }
 
   function apply(choice) {

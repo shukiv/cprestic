@@ -2025,6 +2025,34 @@ func TestTheBrandIsOnThePageInItsOwnColour(t *testing.T) {
 	}
 }
 
+// Light is the default, and it has to be the default before the stylesheet
+// paints — a page that decides its theme only once app.js has run shows the
+// wrong one first. A machine set to dark is a fact about the machine, not a
+// choice made here, so only an explicit "system" hands the decision over.
+func TestThePageOpensInLightUnlessToldOtherwise(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	_, page := get(t, client, "/")
+	for _, want := range []string{
+		`var choice = "light";`,
+		`if (choice !== "system") {`,
+		`document.documentElement.setAttribute("data-theme", choice);`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the page does not open in light: %s is missing", want)
+		}
+	}
+	if !strings.Contains(page, `data-theme-choice="light" aria-pressed="true"`) {
+		t.Error("the picker does not show light as the current theme")
+	}
+	if !strings.Contains(page, `data-theme-choice="dark"`) {
+		t.Error("dark is no longer offered")
+	}
+	if !strings.Contains(page, `return (choice === "dark" || choice === "system") ? choice : "light";`) {
+		t.Error("app.js does not fall back to light")
+	}
+}
+
 func TestWHMPagesUseTheOperationalRail(t *testing.T) {
 	client, _, _ := newUI(t)
 
