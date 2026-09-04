@@ -261,7 +261,7 @@ func TestQueueRestoreValidates(t *testing.T) {
 	// can be written back. Everything else is a change the control panel
 	// has to make, and a granular restore of it is a copy to hand over.
 	for _, kind := range []granular.Kind{
-		granular.KindDNS, granular.KindSSL, granular.KindDBUsers,
+		granular.KindDNS, granular.KindSSL,
 		granular.KindFTP, granular.KindCron, granular.KindDomains,
 		granular.KindSettings, granular.KindSystem, granular.Kind("anything"),
 	} {

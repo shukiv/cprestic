@@ -187,6 +187,7 @@ func TestAnAccountCanApplyOnlyWhatCanBeWrittenBack(t *testing.T) {
 		granular.KindFiles:    true,
 		granular.KindMailbox:  true,
 		granular.KindDatabase: true,
+		granular.KindDBUsers:  true,
 	}
 	for _, kind := range userKinds {
 		names := []string{"something"}
@@ -290,6 +291,22 @@ func TestTheRecoveryPageOffersPuttingBackOnlyWhereItIsPossible(t *testing.T) {
 	// Where the backup happens to be staged is root's business.
 	if strings.Contains(databases, "/var/lib/cprest") {
 		t.Error("the account page shows the server's staging directory")
+	}
+
+	// Database users are chosen whole rather than item by item, so they
+	// go through the other form on the same page. That form has to offer
+	// the same two choices, and a database restored without the user that
+	// reads it is the reason it matters.
+	users := render(granular.KindDBUsers, userView{})
+	for _, want := range []string{
+		`name="action" value="restore"`,
+		`name="action" value="download"`,
+		`name="confirm" value="1" required`,
+		"Restore these database users",
+	} {
+		if !strings.Contains(users, want) {
+			t.Errorf("the database users page is missing %q", want)
+		}
 	}
 
 	// DNS is put back by the host, so the page offers only the copy.

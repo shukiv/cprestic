@@ -173,3 +173,203 @@ func TestApplyingWhatCannotBeAppliedIsRefusedByTheAgentToo(t *testing.T) {
 		t.Errorf("something was written: %+v %+v", fake.LoadedDatabases, fake.PutBackHome)
 	}
 }
+
+// stagedUsers writes the two files a dbusers restore reads: the hashes and
+// plugins, as cPanel records them, and the grants beside them.
+func stagedUsers(t *testing.T, out, auth, grants string) {
+	t.Helper()
+	dir := filepath.Join(out, "databases")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, granular.DatabaseUsersAuthFile),
+		[]byte(auth), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, granular.RunnableDatabaseUsersFile),
+		[]byte(grants), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const shopUserAuth = `{"c1_shop":{"localhost":{"pass_hash":"2A4636","auth_plugin":"mysql_native_password"}}}`
+
+// The same user on the two hosts cPanel gives every account. It is one
+// login as far as anyone reading the page is concerned.
+const shopUserOnTwoHosts = `{"c1_shop":{"localhost":{"pass_hash":"2A4636","auth_plugin":"mysql_native_password"},` +
+	`"10.0.0.1":{"pass_hash":"2A4636","auth_plugin":"mysql_native_password"}}}`
+
+// cPanel gives every database user a login on several hosts. Reporting
+// "recreated c1_shop, c1_shop, c1_shop" would make one restored user look
+// like three.
+func TestAUserOnSeveralHostsIsReportedOnce(t *testing.T) {
+	out := restoredTree(t)
+	stagedUsers(t, out, shopUserOnTwoHosts,
+		"GRANT ALL PRIVILEGES ON `c1\\_shop`.* TO 'c1_shop'@'localhost';\n"+
+			"GRANT ALL PRIVILEGES ON `c1\\_shop`.* TO 'c1_shop'@'10.0.0.1';\n")
+	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {"c1_shop"}}}
+	agent := quietAgent(fake)
+
+	written, _, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			ItemKind:   string(granular.KindDBUsers),
+		}, out)
+	if err != nil {
+		t.Fatalf("applyItems: %v", err)
+	}
+	if written != "recreated c1_shop" {
+		t.Errorf("reported %q", written)
+	}
+	// Both hosts still have to reach the provider: a grant put back
+	// against the wrong host is an application that cannot connect.
+	if len(fake.RestoredDBUsers[0].Users) != 2 {
+		t.Errorf("restored %+v", fake.RestoredDBUsers[0].Users)
+	}
+}
+
+// A restored database with no user to read it is a site that still cannot
+// start, so the users come back with the password they had and the access
+// they had -- not merely as names.
+func TestDatabaseUsersComeBackWithTheirPasswordsAndTheirGrants(t *testing.T) {
+	out := restoredTree(t)
+	stagedUsers(t, out, shopUserAuth,
+		"-- Database users and grants for c1\n"+
+			"CREATE USER IF NOT EXISTS `c1_shop`@`localhost` IDENTIFIED WITH 'mysql_native_password' AS '*46';\n"+
+			"GRANT ALL PRIVILEGES ON `c1\\_shop`.* TO 'c1_shop'@'localhost';\n")
+	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {"c1_shop", "c1_wp"}}}
+	agent := quietAgent(fake)
+
+	written, _, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			ItemKind:   string(granular.KindDBUsers),
+		}, out)
+	if err != nil {
+		t.Fatalf("applyItems: %v", err)
+	}
+	if len(fake.RestoredDBUsers) != 1 {
+		t.Fatalf("restored %d sets of users, want 1", len(fake.RestoredDBUsers))
+	}
+	restored := fake.RestoredDBUsers[0].Users
+	if len(restored) != 1 {
+		t.Fatalf("restored %+v", restored)
+	}
+	user := restored[0]
+	if user.Name != "c1_shop" || user.Host != "localhost" {
+		t.Errorf("restored %s@%s", user.Name, user.Host)
+	}
+	// Without these the login exists and nothing can connect as it.
+	if user.Hash != "2A4636" || user.Plugin != "mysql_native_password" {
+		t.Errorf("restored the user without its password: %+v", user)
+	}
+	if len(user.Grants) != 1 || user.Grants[0].Database != "c1_shop" ||
+		strings.Join(user.Grants[0].Privileges, ",") != "ALL PRIVILEGES" {
+		t.Errorf("restored the grants as %+v", user.Grants)
+	}
+	if !strings.Contains(written, "c1_shop") {
+		t.Errorf("reported %q", written)
+	}
+}
+
+// SHOW GRANTS prints the database as the LIKE pattern MySQL stores, so the
+// underscore in every cPanel database name arrives escaped. Restoring the
+// name with the backslash still in it would ask cPanel for a database that
+// does not exist, which is every database on the server.
+func TestAnEscapedUnderscoreInAGrantIsStillAnUnderscore(t *testing.T) {
+	out := restoredTree(t)
+	stagedUsers(t, out, shopUserAuth,
+		"GRANT ALL PRIVILEGES ON `c1\\_shop`.* TO 'c1_shop'@'localhost';\n")
+	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {"c1_shop"}}}
+	agent := quietAgent(fake)
+
+	if _, _, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			ItemKind:   string(granular.KindDBUsers),
+		}, out); err != nil {
+		t.Fatalf("applyItems: %v", err)
+	}
+	if len(fake.RestoredDBUsers) != 1 {
+		t.Fatalf("restored %d sets of users, want 1", len(fake.RestoredDBUsers))
+	}
+	grants := fake.RestoredDBUsers[0].Users[0].Grants
+	if len(grants) != 1 || grants[0].Database != "c1_shop" {
+		t.Errorf("the grant was restored on %+v", grants)
+	}
+}
+
+// A grant on anything but one of the account's own databases is refused
+// rather than guessed at. Dropping it would leave an application unable to
+// connect while the restore reported success; widening it would hand the
+// account more than it had.
+func TestAGrantThatIsNotOnASingleDatabaseIsRefused(t *testing.T) {
+	for _, grant := range []string{
+		"GRANT SELECT ON *.* TO 'c1_shop'@'localhost';",
+		"GRANT ALL PRIVILEGES ON `c1_%`.* TO 'c1_shop'@'localhost';",
+		"GRANT ALL PRIVILEGES ON `c1\\_shop`.* TO 'c1_shop'@'localhost' WITH GRANT OPTION;",
+		"DROP DATABASE c1_shop;",
+	} {
+		out := restoredTree(t)
+		stagedUsers(t, out, shopUserAuth, grant+"\n")
+		fake := &cpanel.Fake{Databases: map[string][]string{"c1": {"c1_shop"}}}
+		agent := quietAgent(fake)
+
+		if _, _, err := agent.applyItems(context.Background(), agent.log,
+			protocol.RestoreAssignment{
+				CPanelUser: "c1",
+				ItemKind:   string(granular.KindDBUsers),
+			}, out); err == nil {
+			t.Errorf("%q was accepted", grant)
+		}
+		if len(fake.RestoredDBUsers) != 0 {
+			t.Errorf("%q reached the live account", grant)
+		}
+	}
+}
+
+// Restoring the users before the database they read is the order a customer
+// will try, so being told "ask your host" would make the likeliest mistake
+// the one thing the page cannot explain.
+func TestRestoringUsersForAMissingDatabaseSaysWhatToDoAboutIt(t *testing.T) {
+	out := restoredTree(t)
+	stagedUsers(t, out, shopUserAuth,
+		"GRANT ALL PRIVILEGES ON `c1\\_shop`.* TO 'c1_shop'@'localhost';\n")
+	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {"c1_wp"}}}
+	agent := quietAgent(fake)
+
+	_, hint, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			ItemKind:   string(granular.KindDBUsers),
+		}, out)
+	if err == nil {
+		t.Fatal("granting on a database the account does not have should fail")
+	}
+	if !strings.Contains(hint, "c1_shop") || !strings.Contains(hint, "first") {
+		t.Errorf("the customer was told %q", hint)
+	}
+	if len(fake.RestoredDBUsers) != 0 {
+		t.Errorf("users were restored anyway: %+v", fake.RestoredDBUsers)
+	}
+}
+
+// A backup that is too old to hold the users says so, rather than
+// reporting a restore of nothing as a success.
+func TestABackupWithoutTheUsersSaysSoRatherThanSucceeding(t *testing.T) {
+	out := restoredTree(t)
+	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {"c1_shop"}}}
+	agent := quietAgent(fake)
+
+	_, hint, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			ItemKind:   string(granular.KindDBUsers),
+		}, out)
+	if err == nil {
+		t.Fatal("a backup with no database users should fail the restore")
+	}
+	if hint == "" {
+		t.Error("the customer was given no explanation")
+	}
+}

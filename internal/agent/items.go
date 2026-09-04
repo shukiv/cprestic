@@ -2,14 +2,18 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 
+	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/granular"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/protocol"
@@ -23,11 +27,11 @@ import (
 //
 // The result is a directory and an archive of it, left on this server to
 // collect. When the request asks for it, and only for the parts that can be
-// written back -- files, the website, mail, a database -- what came out is
-// then written into the live account. The rest stay a copy: putting a zone
-// file back is a DNS change and reinstating an FTP login is a change to a
-// password store, neither of which is a file copy, and both are worth doing
-// on purpose rather than as a side effect of a restore.
+// written back -- files, the website, mail, a database, the database users
+// -- what came out is then written into the live account. The rest stay a
+// copy, not because putting them back is impossible but because each needs
+// a change the control panel has to make -- a zone edit, an installed
+// certificate, an FTP login -- and none of those is built yet.
 func (a *Agent) restoreItems(ctx context.Context, log *slog.Logger,
 	assignment protocol.RestoreAssignment, repo resticrun.Repository,
 	dir *staging.Dir, report protocol.RestoreReport) (protocol.RestoreReport, bool) {
@@ -298,6 +302,9 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 	if kind == granular.KindDatabase {
 		return a.loadDatabases(ctx, log, assignment, filepath.Join(out, "databases"))
 	}
+	if kind == granular.KindDBUsers {
+		return a.restoreDatabaseUsers(ctx, log, assignment, filepath.Join(out, "databases"))
+	}
 
 	// Files, the website and mail are all the home directory, restored
 	// where they were.
@@ -366,4 +373,211 @@ func (a *Agent) loadDatabases(ctx context.Context, log *slog.Logger,
 		loaded = append(loaded, name)
 	}
 	return "loaded into " + strings.Join(loaded, ", "), "", nil
+}
+
+// restoreDatabaseUsers recreates the account's database users from what the
+// backup recorded of them.
+//
+// The users are read out of the staged files here rather than in the
+// privileged provider: what runs there runs as root against the server's
+// MySQL, and it takes checked values rather than a file whose contents
+// nobody has looked at.
+func (a *Agent) restoreDatabaseUsers(ctx context.Context, log *slog.Logger,
+	assignment protocol.RestoreAssignment, databases string) (written, hint string, err error) {
+
+	users, err := readStagedDatabaseUsers(databases)
+	if err != nil {
+		return "", "This backup does not hold the account's database users. Try an " +
+			"earlier restore point.", err
+	}
+	if len(users) == 0 {
+		return "", "This backup holds no database users for the account.", errors.New(
+			"agent: this backup holds no database users")
+	}
+
+	// Which databases the account has now. A grant on one it no longer
+	// has is the same situation as restoring into a dropped database, and
+	// deserves the same answer rather than "ask your host".
+	account, err := a.provider.Account(ctx, assignment.CPanelUser)
+	if err != nil {
+		return "", "", err
+	}
+	present := make(map[string]bool, len(account.Databases))
+	for _, name := range account.Databases {
+		present[name] = true
+	}
+	var missing []string
+	for _, user := range users {
+		for _, grant := range user.Grants {
+			if !present[grant.Database] && !contains(missing, grant.Database) {
+				missing = append(missing, grant.Database)
+			}
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return "", fmt.Sprintf(
+				"These users had access to %s, which the account does not have any "+
+					"more. Restore or create those databases first, then restore the "+
+					"users: a grant cannot be given on a database that is not there.",
+				strings.Join(missing, " and ")), fmt.Errorf(
+				"agent: %s no longer has the database(s) %s",
+				assignment.CPanelUser, strings.Join(missing, ", "))
+	}
+
+	if err := a.provider.PutDatabaseUsers(ctx, assignment.CPanelUser, users); err != nil {
+		return "", "", err
+	}
+	// One name, however many hosts it exists on. Naming it once per host
+	// is what the operator's log and the customer's page would otherwise
+	// both say.
+	var names []string
+	seen := map[string]bool{}
+	for _, user := range users {
+		if !seen[user.Name] {
+			seen[user.Name] = true
+			names = append(names, user.Name)
+		}
+	}
+	sort.Strings(names)
+	log.Warn("database users recreated from a backup",
+		"account", assignment.CPanelUser, "users", strings.Join(names, ","))
+	return "recreated " + strings.Join(names, ", "), "", nil
+}
+
+func contains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+// stagedGrant matches the grant lines cprest itself writes into the
+// runnable file: one database, no global privileges and nothing after the
+// grantee. Anything else is refused rather than guessed at, because the
+// two things that could be guessed -- dropping a privilege an application
+// connects with, or widening one past the account -- are both worse than
+// saying so.
+var stagedGrant = regexp.MustCompile(
+	"^GRANT (.+) ON `(.+)`\\.\\* TO '([^']+)'@'([^']+)'$")
+
+// readStagedDatabaseUsers reads the users, their stored passwords and their
+// grants out of a restored databases directory.
+func readStagedDatabaseUsers(databases string) ([]cpanel.DatabaseUser, error) {
+	raw, err := os.ReadFile(filepath.Join(databases, granular.DatabaseUsersAuthFile))
+	if err != nil {
+		return nil, fmt.Errorf("agent: read the database users in this backup: %w", err)
+	}
+	// cPanel's shape: user -> host -> what authenticates it.
+	var auth map[string]map[string]struct {
+		PassHash string `json:"pass_hash"`
+		Plugin   string `json:"auth_plugin"`
+	}
+	if err := json.Unmarshal(raw, &auth); err != nil {
+		return nil, fmt.Errorf("agent: read the database users in this backup: %w", err)
+	}
+
+	grants, err := readStagedGrants(filepath.Join(databases, granular.RunnableDatabaseUsersFile))
+	if err != nil {
+		return nil, err
+	}
+
+	var users []cpanel.DatabaseUser
+	for name, hosts := range auth {
+		for host, credentials := range hosts {
+			users = append(users, cpanel.DatabaseUser{
+				Name:   name,
+				Host:   host,
+				Plugin: credentials.Plugin,
+				Hash:   credentials.PassHash,
+				Grants: grants[name+"@"+host],
+			})
+		}
+	}
+	sort.Slice(users, func(i, j int) bool {
+		if users[i].Name != users[j].Name {
+			return users[i].Name < users[j].Name
+		}
+		return users[i].Host < users[j].Host
+	})
+	return users, nil
+}
+
+// readStagedGrants reads the privileges each user had, keyed by user@host.
+func readStagedGrants(path string) (map[string][]cpanel.DatabaseGrant, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("agent: read the database grants in this backup: %w", err)
+	}
+	grants := map[string][]cpanel.DatabaseGrant{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(line), ";"))
+		if line == "" || strings.HasPrefix(line, "--") ||
+			strings.HasPrefix(line, "CREATE USER ") {
+			continue
+		}
+		if !strings.HasPrefix(line, "GRANT ") {
+			return nil, fmt.Errorf(
+				"agent: the database users in this backup hold a line this cannot read")
+		}
+		parts := stagedGrant.FindStringSubmatch(line)
+		if parts == nil {
+			return nil, fmt.Errorf(
+				"agent: a grant in this backup is not one on a single database, " +
+					"and restoring it is not something this can do")
+		}
+		database, literal := unescapeGrantDatabase(parts[2])
+		if !literal {
+			return nil, fmt.Errorf(
+				"agent: a grant in this backup is on a pattern rather than on one "+
+					"database (%s), and restoring it is not something this can do",
+				parts[2])
+		}
+		var privileges []string
+		for _, privilege := range strings.Split(parts[1], ",") {
+			privilege = strings.TrimSpace(privilege)
+			if privilege != "" {
+				privileges = append(privileges, privilege)
+			}
+		}
+		who := parts[3] + "@" + parts[4]
+		grants[who] = append(grants[who], cpanel.DatabaseGrant{
+			Database:   database,
+			Privileges: privileges,
+		})
+	}
+	return grants, nil
+}
+
+// unescapeGrantDatabase turns the database name in a GRANT back into the
+// name of a database.
+//
+// MySQL stores the database of a grant as a LIKE pattern, so SHOW GRANTS
+// prints "acct\\_shop" for the database "acct_shop" -- the backslash is
+// what makes the underscore mean itself rather than any character. Carrying
+// that name through unchanged would ask cPanel for a database nobody has.
+//
+// An underscore or a per-cent that is not escaped really is a wildcard: the
+// grant covers every database matching it, which is not one database and
+// not something this can put back. Those are reported rather than restored
+// against whichever database the pattern happens to look like.
+func unescapeGrantDatabase(pattern string) (name string, literal bool) {
+	var out strings.Builder
+	for i := 0; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '\\':
+			if i+1 >= len(pattern) {
+				return "", false
+			}
+			i++
+			out.WriteByte(pattern[i])
+		case '_', '%':
+			return "", false
+		default:
+			out.WriteByte(pattern[i])
+		}
+	}
+	return out.String(), true
 }

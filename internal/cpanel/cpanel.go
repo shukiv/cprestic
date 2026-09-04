@@ -137,4 +137,40 @@ type Provider interface {
 	// quota and a database map behind it, and a restore that quietly made
 	// one would leave the panel not knowing about it.
 	LoadDatabase(ctx context.Context, user, database, dumpPath string) error
+
+	// PutDatabaseUsers recreates the account's database users, with the
+	// passwords they had, and grants them what the backup says they had.
+	//
+	// A database restored without the user that reads it is a site that
+	// still cannot start, which is why this exists beside LoadDatabase.
+	// The users are taken as values rather than as a file: what runs here
+	// runs as root against the server's MySQL, and the statements are
+	// built from checked fields rather than from something a backup
+	// happens to contain.
+	PutDatabaseUsers(ctx context.Context, user string, users []DatabaseUser) error
+}
+
+// DatabaseUser is one database login as a backup recorded it.
+type DatabaseUser struct {
+	// Name and Host are the two halves of a MySQL account. One name can
+	// exist on several hosts with different privileges, and a grant put
+	// back against the wrong host is an application that cannot connect.
+	Name string
+	Host string
+	// Plugin authenticates Hash: caching_sha2_password, mysql_native_password.
+	Plugin string
+	// Hash is the stored authentication string, hex-encoded. It is hex
+	// because caching_sha2_password's is binary and would not survive
+	// being carried as text.
+	Hash string
+	// Grants are the privileges the backup recorded, per database.
+	Grants []DatabaseGrant
+}
+
+// DatabaseGrant is what one user was allowed to do to one database.
+type DatabaseGrant struct {
+	Database string
+	// Privileges are MySQL privilege names as the backup recorded them,
+	// or "ALL PRIVILEGES".
+	Privileges []string
 }

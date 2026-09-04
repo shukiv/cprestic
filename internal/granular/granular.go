@@ -94,16 +94,17 @@ func (k Kind) Title() string {
 // CanApply reports whether a restore of this kind can be written back into
 // a live account, rather than only handed over as a copy.
 //
-// The four that can are the ones where putting the backup back is the whole
-// operation: files land in the home directory, a dump loads into the
-// database it came from. The rest describe things the control panel owns --
-// a DNS zone, an installed certificate, an FTP login, the account's own
-// configuration. Copying yesterday's file over today's would leave the panel
-// and its services disagreeing about what exists, so those stay a copy the
-// account's host puts back deliberately.
+// The five that can are the ones where the backup holds everything needed
+// to make the account whole again: files land in the home directory, a dump
+// loads into the database it came from, a database user is recreated from
+// the hash the backup carries. The rest are not refused because putting
+// them back is impossible -- it is that each needs the control panel to
+// make a change of its own, and none of that is built yet. A DNS zone, an
+// installed certificate, an FTP login and the account's own configuration
+// are all a copy their host puts back until it is.
 func (k Kind) CanApply() bool {
 	switch k {
-	case KindFiles, KindWebsite, KindMailbox, KindDatabase:
+	case KindFiles, KindWebsite, KindMailbox, KindDatabase, KindDBUsers:
 		return true
 	}
 	return false
@@ -294,6 +295,15 @@ const DatabaseUsersFile = "_users.sql"
 // users.
 const RunnableDatabaseUsersFile = "_users-runnable.sql"
 
+// DatabaseUsersAuthFile is where the hash and the authentication plugin of
+// each user are staged, as cPanel stages them: beside the grants, named
+// after DatabaseUsersFile.
+//
+// It exists because the grants cannot carry the password on a current
+// MySQL. Restoring a user from the SQL alone would recreate the login and
+// not what authenticates it, which is a user nothing can connect as.
+const DatabaseUsersAuthFile = DatabaseUsersFile + "-auth.json"
+
 func buildDatabaseUsers(parts reassemble.Parts) (Plan, error) {
 	if parts.Databases == "" {
 		return Plan{}, fmt.Errorf(
@@ -303,6 +313,7 @@ func buildDatabaseUsers(parts reassemble.Parts) (Plan, error) {
 		Include: []string{
 			path.Join(parts.Databases, DatabaseUsersFile),
 			path.Join(parts.Databases, RunnableDatabaseUsersFile),
+			path.Join(parts.Databases, DatabaseUsersAuthFile),
 		},
 		Description: "the database users and their grants",
 	}, nil

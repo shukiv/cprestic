@@ -60,6 +60,12 @@ type Real struct {
 	// ServerExcludeConf is the server-wide cpbackup-exclude.conf. Empty
 	// means the standard location.
 	ServerExcludeConf string
+	// DBMapTool records which database users and databases belong to an
+	// account. Empty means the standard cPanel script.
+	DBMapTool string
+	// UapiPath calls cPanel's user API as a named account. Empty means
+	// the standard cPanel script.
+	UapiPath string
 }
 
 var _ Provider = (*Real)(nil)
@@ -83,6 +89,13 @@ func (r *Real) mysql() string {
 		return r.MysqlPath
 	}
 	return "mysql"
+}
+
+func (r *Real) uapi() string {
+	if r.UapiPath != "" {
+		return r.UapiPath
+	}
+	return "/usr/local/cpanel/bin/uapi"
 }
 
 func (r *Real) homeRoot() string {

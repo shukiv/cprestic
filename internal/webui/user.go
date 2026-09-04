@@ -390,9 +390,26 @@ func (v userView) PutBackLabel() string {
 		return "Restore this mail"
 	case granular.KindFiles:
 		return "Restore these files"
+	case granular.KindDBUsers:
+		return "Restore these database users"
 	}
 	return "Restore into my account"
 }
+
+// PutBackNote says what asking for this restore will do, for the kinds
+// chosen whole rather than item by item.
+func (v userView) PutBackNote() string {
+	switch {
+	case v.Kind == granular.KindDBUsers:
+		return "The users come back with the passwords they had and the access they had " +
+			"to this account's databases. A user that still exists is set back to the " +
+			"password in the backup."
+	case v.Kind.CanApply():
+		return "This can go straight back into the account, or be downloaded as a copy."
+	}
+	return "Download it here and send it to your host, who can put it back."
+}
+
 func (v userView) NeedsNames() bool { return v.Kind.NeedsNames() }
 func (v userView) RestoreTitle(row restoreRow) string {
 	if row.ItemKind != "" {

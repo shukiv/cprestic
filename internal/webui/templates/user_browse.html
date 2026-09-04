@@ -128,7 +128,7 @@
     <input type="hidden" name="item" value="{{$data.Kind}}">
     <div class="cpr-pad cpr-recovery-summary">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.6-2.9 8-7 10-4.1-2-7-5.4-7-10V6zM9 12l2 2 4-4"/></svg>
-      <div><b>From the backup taken {{stamp $data.SnapshotAt}}</b><p class="cpr-hint">Your host puts this part of the account back for you. Download it here and send it to them.</p></div>
+      <div><b>From the backup taken {{stamp $data.SnapshotAt}}</b><p class="cpr-hint">{{$data.PutBackNote}}</p></div>
     </div>
     {{template "recoveryactions" $data}}
   </form>
@@ -137,7 +137,7 @@
 {{else}}
 <div class="cpr-user-safe cpr-user-safe-standalone">
   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.6-2.9 8-7 10-4.1-2-7-5.4-7-10V6zM9 12l2 2 4-4"/></svg>
-  <p><b>Select a category to continue.</b> Everything here is yours alone. Files, mail and databases can be put straight back into the account; anything else is a private copy to download.</p>
+  <p><b>Select a category to continue.</b> Everything here is yours alone. Files, mail, databases and their users can be put straight back into the account; anything else is a private copy to download.</p>
 </div>
 {{end}}
 {{end}}
@@ -156,9 +156,10 @@
     <button class="cpr-btn cpr-danger" type="submit" name="action" value="restore">{{.PutBackLabel}}</button>
   </div>
   {{else}}
-  <div><b>Download a private copy</b><p class="cpr-hint">This part of the account is put back by
-  your host: DNS records, certificates and logins are changes the control panel has to make, and
-  copying the old file over the new one does not make them.</p></div>
+  <div><b>Download a private copy</b><p class="cpr-hint">Putting this part back is not something
+  cP:Restic does yet. DNS records, certificates, FTP logins and panel settings each need a change
+  the control panel makes rather than a file copied over another, and that is not built. Your host
+  can put it back from this copy.</p></div>
   <div class="cpr-recovery-buttons">
     <button class="cpr-btn cpr-primary" type="submit" name="action" value="download">Download a copy</button>
   </div>

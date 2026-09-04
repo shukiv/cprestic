@@ -3,6 +3,7 @@ package cpanel
 import (
 	"archive/tar"
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -44,6 +45,11 @@ type Fake struct {
 	// leave a copy behind.
 	PutBackHome     []PutBackHome
 	LoadedDatabases []LoadedDatabase
+	RestoredDBUsers []RestoredDBUsers
+	// DBUserOwners is which account each database user belongs to on this
+	// synthetic server. A user nobody claims is one this account may
+	// recreate, which is the case a restore of a deleted user is.
+	DBUserOwners map[string]string
 }
 
 // PutBackHome is one home-directory tree written back into an account.
@@ -57,6 +63,12 @@ type LoadedDatabase struct {
 	User     string
 	Database string
 	DumpPath string
+}
+
+// RestoredDBUsers is one set of database users written back into an account.
+type RestoredDBUsers struct {
+	User  string
+	Users []DatabaseUser
 }
 
 var _ Provider = (*Fake)(nil)
@@ -228,6 +240,30 @@ func (f *Fake) LoadDatabase(_ context.Context, user, database, dumpPath string) 
 	f.LoadedDatabases = append(f.LoadedDatabases, LoadedDatabase{
 		User: user, Database: database, DumpPath: dumpPath,
 	})
+	return nil
+}
+
+// PutDatabaseUsers records that database users would have been recreated.
+// It makes the same two checks the real provider makes -- that no other
+// account holds the user, and that every database granted is this
+// account's -- so a caller that fails to confine a request fails here too.
+func (f *Fake) PutDatabaseUsers(_ context.Context, user string, users []DatabaseUser) error {
+	if len(users) == 0 {
+		return errors.New("cpanel: no database user was named to restore")
+	}
+	for _, account := range users {
+		if owner, known := f.DBUserOwners[account.Name]; known && owner != user {
+			return fmt.Errorf("cpanel: the database user %s belongs to %s, not to %s",
+				account.Name, owner, user)
+		}
+		for _, grant := range account.Grants {
+			if !f.owns(user, grant.Database) {
+				return fmt.Errorf("cpanel: %s does not own the database %s",
+					user, grant.Database)
+			}
+		}
+	}
+	f.RestoredDBUsers = append(f.RestoredDBUsers, RestoredDBUsers{User: user, Users: users})
 	return nil
 }
 
