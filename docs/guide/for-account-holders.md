@@ -26,7 +26,7 @@ replaced.
 
 Cron is replaced whole, because an account's jobs are lines in a single file
 and that file is what cron reads. A job added since the backup was taken goes
-with the rest; the jobs being replaced are kept beside the restored ones, so a
+with the rest; a copy of the jobs being replaced is kept on the server, so a
 host can put one back.
 
 The rest stay download-only. Not because putting them back is impossible, but

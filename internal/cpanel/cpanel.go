@@ -154,7 +154,7 @@ type Provider interface {
 	// and what cron reads: an account's jobs are lines in one file, and
 	// putting back some of them would leave a file that is neither what
 	// is running now nor what was backed up. A job added since the backup
-	// was taken goes; the copy replaced is kept beside the restored one.
+	// was taken goes; a copy of what was replaced is kept on the server.
 	PutCrontab(ctx context.Context, user, from string) error
 
 	// PutDatabaseUsers recreates the account's database users, with the

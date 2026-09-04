@@ -465,8 +465,8 @@ func (v userView) ItemsNote() string {
 	if v.Kind == granular.KindCron {
 		return "This is what the backup holds. Putting them back replaces your " +
 			"scheduled jobs with these: they are lines in a single file, so a job " +
-			"you added since this backup was taken would go. The jobs being " +
-			"replaced are kept, so your host can put one back."
+			"you added since this backup was taken would go. A copy of the jobs " +
+			"being replaced is kept on the server, so your host can put one back."
 	}
 	return "This is what the backup holds. They come back together: a crontab and " +
 		"the FTP logins are each one file, and handing back part of one would hand " +

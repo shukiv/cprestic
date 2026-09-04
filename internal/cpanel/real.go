@@ -69,6 +69,9 @@ type Real struct {
 	// Crontab writes an account's cron jobs. Empty means "crontab" on
 	// PATH.
 	Crontab string
+	// ReplacedDir is where a copy of what a restore wrote over is kept.
+	// Empty means the standard location under /var/lib/cprest.
+	ReplacedDir string
 }
 
 var _ Provider = (*Real)(nil)

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/shuki/cprest/internal/granular"
 )
@@ -277,16 +278,24 @@ func (r *Real) PutCrontab(ctx context.Context, user, from string) error {
 		return fmt.Errorf("cpanel: the cron jobs in this backup are not text")
 	}
 
-	// What is running now, kept where the restore's own files are. This
-	// is the only copy of it once crontab has written.
+	// What is running now, kept where it outlives the restore. The
+	// staging directory an applied restore used is removed when it
+	// finishes -- the files went into the account -- so a copy left there
+	// would be a copy nobody could find.
+	//
+	// An account with no crontab at all makes this command fail, and
+	// there is nothing to keep. Not a reason to refuse the restore.
 	previous := exec.CommandContext(ctx, r.crontab(), "-u", user, "-l")
-	if current, err := previous.Output(); err == nil {
-		if err := os.WriteFile(from+".replaced", current, 0o600); err != nil {
+	if current, err := previous.Output(); err == nil && len(current) > 0 {
+		if err := os.MkdirAll(r.replacedDir(), 0o700); err != nil {
+			return fmt.Errorf("cpanel: keep the crontab being replaced: %w", err)
+		}
+		kept := filepath.Join(r.replacedDir(), fmt.Sprintf("crontab-%s-%s",
+			user, time.Now().UTC().Format("20060102-150405")))
+		if err := os.WriteFile(kept, current, 0o600); err != nil {
 			return fmt.Errorf("cpanel: keep the crontab being replaced: %w", err)
 		}
 	}
-	// An account with no crontab at all makes that command fail, and
-	// there is nothing to keep. Not a reason to refuse the restore.
 
 	install := exec.CommandContext(ctx, r.crontab(), "-u", user, from)
 	var stderr bytes.Buffer
@@ -296,6 +305,14 @@ func (r *Real) PutCrontab(ctx context.Context, user, from string) error {
 			user, lastLine(stderr.Bytes()), err)
 	}
 	return nil
+}
+
+// replacedDir is where a copy of what a restore wrote over is kept.
+func (r *Real) replacedDir() string {
+	if r.ReplacedDir != "" {
+		return r.ReplacedDir
+	}
+	return "/var/lib/cprest/replaced"
 }
 
 func (r *Real) crontab() string {
