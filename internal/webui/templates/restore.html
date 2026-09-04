@@ -4,6 +4,40 @@
   <h1>Restore</h1>
   <p class="cpr-sub">Recover a whole account, or single files, from a backup.</p>
 </div>
+{{template "restoretabs" $data.Tab}}
+
+{{if eq $data.Tab "deleted"}}
+<div class="cpr-card">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
+    <h2 style="margin:0">Accounts cPanel no longer has</h2>
+  </div>
+  {{if $data.Deleted}}
+  <div class="cpr-pad">
+    <p class="cpr-hint" style="margin:0">Removed from this server, with backups still here. Restoring
+    one hands the archive to cPanel's own restore, which creates the account again.</p>
+  </div>
+  <div class="cpr-tablewrap"><table>
+    <thead><tr><th>Account</th><th>Deleted</th><th>Last backup</th><th class="cpr-right">&nbsp;</th></tr></thead>
+    <tbody>
+    {{range $data.Deleted}}
+    <tr>
+      <td class="cpr-acct">{{.Account}}</td>
+      <td>{{ago .RetiredAt}}</td>
+      <td>{{ago .LastBackup}}</td>
+      <td class="cpr-right"><a class="cpr-btn" href="?p=restore&amp;account={{.Account}}">Restore it…</a></td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  {{else}}
+  <div class="cpr-pad">
+    <p class="cpr-hint" style="margin:0">No account has been removed from this server since cP:Restic
+    started watching it. Backups of an account this server never held are under
+    <a class="cpr-link" href="?p=restore&amp;tab=server">Whole server</a>.</p>
+  </div>
+  {{end}}
+</div>
+{{else}}
 <div class="cpr-card">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Choose a backup</h2></div>
   <div class="cpr-pad">
@@ -30,7 +64,7 @@
         </select>
         {{if $data.Deleted}}
         <p class="cpr-sublabel">Deleted accounts are gone from cPanel but still have backups here. An account
-        this server never held is on <a class="cpr-link" href="?p=recover">Server recovery</a>.</p>
+        this server never held is under <a class="cpr-link" href="?p=restore&amp;tab=server">Whole server</a>.</p>
         {{end}}
       </div>
       <div>
@@ -266,6 +300,8 @@
     {{end}}
   </div>
 </div>
+{{end}}
+
 {{end}}
 
 <div class="cpr-card">

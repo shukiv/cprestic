@@ -2032,6 +2032,55 @@ func TestTheBrandIsOnThePageInItsOwnColour(t *testing.T) {
 // An account cPanel has removed disappears from the live account list, and
 // with it from every picker built from that list — which is exactly when its
 // backups matter most. They are offered in their own group instead.
+// Restore is one page with three views. Recovering a whole server used to
+// be its own entry in the rail, which put the page an operator needs during
+// a disaster behind a word they had to already know.
+func TestRestoreCarriesItsThreeViewsAsTabs(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	_, account := get(t, client, "/restore")
+	for _, want := range []string{
+		`<nav class="cpr-tabs" aria-label="Restore views">`,
+		`href="?p=restore" aria-current="page"`,
+		`href="?p=restore&amp;tab=deleted"`,
+		`href="?p=restore&amp;tab=server"`,
+	} {
+		if !strings.Contains(account, want) {
+			t.Errorf("the restore page is missing %q", want)
+		}
+	}
+
+	status, deleted := get(t, client, "/restore?tab=deleted")
+	if status != http.StatusOK {
+		t.Fatalf("GET /restore?tab=deleted = %d", status)
+	}
+	if !strings.Contains(deleted, "Accounts cPanel no longer has") {
+		t.Error("the deleted view does not list deleted accounts")
+	}
+	if !strings.Contains(deleted, `href="?p=restore&amp;tab=deleted" aria-current="page"`) {
+		t.Error("the deleted view does not mark its own tab")
+	}
+
+	// The whole-server view is the old recovery page, reached from here.
+	status, server := get(t, client, "/restore?tab=server")
+	if status != http.StatusOK {
+		t.Fatalf("GET /restore?tab=server = %d", status)
+	}
+	for _, want := range []string{
+		"Recovery key", "Read the backups",
+		`href="?p=restore&amp;tab=server" aria-current="page"`,
+	} {
+		if !strings.Contains(server, want) {
+			t.Errorf("the whole-server view is missing %q", want)
+		}
+	}
+	// The rail no longer carries it separately, so the tab is the only
+	// way in and has to work.
+	if strings.Contains(server, `aria-label="Server recovery"`) {
+		t.Error("the rail still has a separate server recovery entry")
+	}
+}
+
 func TestRestoreOffersAccountsCPanelHasDeleted(t *testing.T) {
 	client, _, engine := newUI(t)
 

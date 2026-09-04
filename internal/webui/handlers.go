@@ -2165,6 +2165,10 @@ func onDisk(path string) bool {
 }
 
 type restoreView struct {
+	// Tab is which of the three restore views is showing: "account",
+	// "deleted" or "server". The server view renders from recover.html,
+	// so this field only ever holds the first two.
+	Tab      string
 	Accounts []accountView
 	// Deleted are accounts cPanel has removed whose backups are still
 	// here, offered in their own group so a deleted account is something
@@ -2236,9 +2240,9 @@ type deletedAccount struct {
 // deletedAccounts lists the names this server retired and still has backups
 // for. It reads what the lifecycle hooks recorded rather than the repository
 // itself: reading the destination is authoritative, and slow enough that
-// every visit to this page would wait on restic. The Server recovery page
-// remains the place that reads a destination directly, which is also where
-// an account this server never knew — one from a different host — shows up.
+// every visit to this page would wait on restic. The whole-server view is
+// the one that reads a destination directly, which is also where an account
+// this server never knew — one from a different host — shows up.
 func (s *Server) deletedAccounts(live []accountView) ([]deletedAccount, error) {
 	identities, err := s.engine.Store().Identities()
 	if err != nil {
@@ -2296,6 +2300,12 @@ func (s *Server) deletedAccounts(live []accountView) ([]deletedAccount, error) {
 }
 
 func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
+	// Recovering a whole server is a restore, and used to be its own page
+	// in the rail. It is the third tab here; the old address still works.
+	if r.URL.Query().Get("tab") == "server" {
+		s.handleRecover(w, r)
+		return
+	}
 	accounts, _, err := s.accountViews(r)
 	if err != nil {
 		s.fail(w, r, http.StatusInternalServerError, err)
@@ -2318,7 +2328,12 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tab := "account"
+	if r.URL.Query().Get("tab") == "deleted" {
+		tab = "deleted"
+	}
 	view := restoreView{
+		Tab:      tab,
 		Accounts: accounts, Deleted: deleted, Repositories: destinations,
 		Restores:     collectableRows(restores),
 		Account:      r.URL.Query().Get("account"),
@@ -3167,7 +3182,7 @@ type recoverRepository struct {
 }
 
 func (s *Server) handleRecover(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, "recover.html", "Recover a server", "recover",
+	s.render(w, r, "recover.html", "Restore", "restore",
 		s.recoverContents(r.Context(), ""))
 }
 
@@ -3233,7 +3248,7 @@ func (s *Server) handleAttach(w http.ResponseWriter, r *http.Request) {
 	case destination.TypeLocal:
 		config["root"] = strings.TrimSpace(r.PostFormValue("root"))
 	default:
-		s.render(w, r, "recover.html", "Recover a server", "recover",
+		s.render(w, r, "recover.html", "Restore", "restore",
 			s.recoverContents(r.Context(), "Choose where the old backups are."))
 		return
 	}
@@ -3251,12 +3266,12 @@ func (s *Server) handleAttach(w http.ResponseWriter, r *http.Request) {
 		Password:       r.PostFormValue("recovery_key"),
 	})
 	if err != nil {
-		s.render(w, r, "recover.html", "Recover a server", "recover",
+		s.render(w, r, "recover.html", "Restore", "restore",
 			s.recoverContents(r.Context(), err.Error()))
 		return
 	}
 
-	s.redirect(w, r, "/recover", "ok", fmt.Sprintf(
+	s.redirect(w, r, "/restore?tab=server", "ok", fmt.Sprintf(
 		"Attached. %d backups are readable from here, covering %d account%s.",
 		contents.Snapshots, len(contents.Accounts), plural(len(contents.Accounts))))
 }
@@ -3276,7 +3291,7 @@ func (s *Server) handleRecoverAccount(w http.ResponseWriter, r *http.Request) {
 	if snapshot == "" {
 		found, err := s.engine.LatestSnapshot(r.Context(), repository, account)
 		if err != nil {
-			s.redirect(w, r, "/recover", "error", err.Error())
+			s.redirect(w, r, "/restore?tab=server", "error", err.Error())
 			return
 		}
 		snapshot = found
@@ -3291,16 +3306,16 @@ func (s *Server) handleRecoverAccount(w http.ResponseWriter, r *http.Request) {
 		Unrestricted: r.PostFormValue("unrestricted") != "",
 	})
 	if err != nil {
-		s.redirect(w, r, "/recover", "error", err.Error())
+		s.redirect(w, r, "/restore?tab=server", "error", err.Error())
 		return
 	}
 	if queued.Apply {
-		s.redirect(w, r, "/recover", "ok", fmt.Sprintf(
+		s.redirect(w, r, "/restore?tab=server", "ok", fmt.Sprintf(
 			"Restoring %s onto this server. It will be handed to cPanel's own restore when the "+
 				"archive is rebuilt.", account))
 		return
 	}
-	s.redirect(w, r, "/recover", "ok", fmt.Sprintf(
+	s.redirect(w, r, "/restore?tab=server", "ok", fmt.Sprintf(
 		"Rebuilding %s. The archive will be left on this server to inspect; nothing is "+
 			"created until you ask for that.", account))
 }

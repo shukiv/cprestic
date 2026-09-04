@@ -1,8 +1,17 @@
 {{define "content"}}
 {{$data := .Data}}
 <div>
-  <h1>Recover a server</h1>
-  <p class="cpr-sub">Point this server at backups another one made, and put them back.</p>
+  <h1>Restore</h1>
+  <p class="cpr-sub">Recover a whole account, or single files, from a backup.</p>
+</div>
+{{template "restoretabs" "server"}}
+
+<div class="cpr-card">
+  <div class="cpr-pad">
+    <p class="cpr-hint" style="margin:0">Point this server at backups another one made, and put
+    them back. This is also where an account this server never held — one belonging to a host
+    that is gone — can be found.</p>
+  </div>
 </div>
 
 {{with $data.Error}}

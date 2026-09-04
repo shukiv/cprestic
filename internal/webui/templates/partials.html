@@ -53,3 +53,16 @@
   <div class="cpr-sublabel">{{percent .Percent}}{{if .TotalBytes}} · {{bytes .BytesDone}} of {{bytes .TotalBytes}}{{end}}</div>
   {{end}}
 {{end}}
+
+{{/* The three ways into a restore. They are one page with three views
+     rather than three places in the rail, because an operator whose
+     account has just been deleted should not have to know that the thing
+     they need lives under a different heading. Links, not a scripted tab
+     widget: each view is server-rendered and survives a reload. */}}
+{{define "restoretabs"}}
+<nav class="cpr-tabs" aria-label="Restore views">
+  <a href="?p=restore" {{if eq . "account"}}aria-current="page"{{end}}>One account</a>
+  <a href="?p=restore&amp;tab=deleted" {{if eq . "deleted"}}aria-current="page"{{end}}>Deleted accounts</a>
+  <a href="?p=restore&amp;tab=server" {{if eq . "server"}}aria-current="page"{{end}}>Whole server</a>
+</nav>
+{{end}}
