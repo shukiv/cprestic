@@ -8,9 +8,10 @@
 
 <div class="cpr-card">
   <div class="cpr-pad">
-    <p class="cpr-hint" style="margin:0">Point this server at backups another one made, and put
-    them back. This is also where an account this server never held — one belonging to a host
-    that is gone — can be found.</p>
+    <p class="cpr-hint" style="margin:0">The machine is gone and this one is taking its place.
+    Point it at the backups the old server made — the destination it wrote to, and its recovery
+    key — and its accounts become restorable here. Restore the server's own settings first: an
+    account put back on a machine that has not been set up lands somewhere that cannot serve it.</p>
   </div>
 </div>
 
@@ -159,44 +160,10 @@
   {{end}}
 
   {{if .Contents.Accounts}}
-  {{$repo := .ID}}
-  <form method="post" action="?p=recover/accounts" data-bulk>
-  <input type="hidden" name="csrf" value="{{$.CSRF}}">
-  <input type="hidden" name="repository" value="{{$repo}}">
-  <div class="cpr-tablewrap"><table data-sortable>
-    <thead><tr>
-      <th style="width:32px" data-nosort><input type="checkbox" data-check-all
-        aria-label="Choose every account here"></th>
-      <th>Account</th><th>Backups</th><th>Most recent</th></tr></thead>
-    <tbody>
-      {{range .Contents.Accounts}}
-      <tr>
-        <td><input type="checkbox" name="account" value="{{.Account}}"
-          aria-label="Choose {{.Account}}"></td>
-        <td class="cpr-acct">{{.Account}}</td>
-        <td class="cpr-num">{{.Snapshots}}</td>
-        <td>{{stamp .Latest}}<div class="cpr-sublabel">{{ago .Latest}}</div></td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table></div>
-  <div class="cpr-pad cpr-bulkbar" style="border-top:1px solid var(--line)">
-    <span class="cpr-hint" style="margin:0" data-bulk-count>Nothing chosen</span>
-    <span style="flex:1"></span>
-    <label class="cpr-check" style="margin:0" title="cprest asks cPanel for a restricted restore, because the archive holds each account's own home directory and cPanel's restore runs as root.">
-      <input type="checkbox" name="unrestricted" value="1"><span>unrestricted</span></label>
-    <button class="cpr-btn" type="submit" data-bulk-submit disabled>Rebuild chosen</button>
-    <button class="cpr-btn cpr-danger" type="submit" name="apply" value="1"
-            data-bulk-submit disabled
-            data-confirm="Hand every chosen account to cPanel's own restore? An account of the same name on this server would be replaced. There is no undo.">Restore chosen onto this server</button>
-  </div>
-  </form>
-  <div class="cpr-pad" style="border-top:1px solid var(--line)">
-    <p class="cpr-hint" style="margin:0"><b>Rebuild the archive</b> puts the account back together
-    and leaves it here to inspect. <b>Restore onto this server</b> hands that archive to cPanel's
-    own restore, which creates the account. Choosing several queues them: they still run one
-    after another, because staging rebuilds an account in full and a volume with room for one
-    is not a volume with room for nineteen at once.</p>
+  <div class="cpr-pad">
+    <p class="cpr-hint" style="margin:0">{{len .Contents.Accounts}} account(s) in this
+    destination. Choose and restore them under
+    <a class="cpr-link" href="?p=restore">Restore account(s)</a>.</p>
   </div>
   {{else}}
   <div class="cpr-empty"><p>No account backups in this repository.</p></div>

@@ -2177,12 +2177,17 @@ type restoreView struct {
 	// AccountDeleted says the chosen account is one of those, which
 	// changes what a restore of it means: cPanel creates the account.
 	AccountDeleted bool
-	Repositories   []destinationView
-	Account        string
-	RepositoryID   string
-	Snapshots      []resticrun.Snapshot
-	Restores       []restoreRow
-	LookupError    string
+	// Contents is every account the chosen destination holds, which is
+	// not the same list as the accounts on this server: it includes ones
+	// deleted here and ones that were never here at all.
+	Contents     []node.AccountBackups
+	ContentsErr  string
+	Repositories []destinationView
+	Account      string
+	RepositoryID string
+	Snapshots    []resticrun.Snapshot
+	Restores     []restoreRow
+	LookupError  string
 
 	// The file picker for a whole-account restore: what the chosen
 	// snapshot holds at the path being looked at, so files are picked
@@ -2352,6 +2357,17 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 				view.RepositoryID = dest.Repository.ID
 				break
 			}
+		}
+	}
+	// What the chosen destination holds, so several accounts can be picked
+	// off one list. It is read from the repository rather than from this
+	// server's records, because the whole point of restoring is that this
+	// server's records may be what was lost.
+	if tab == "account" && view.RepositoryID != "" {
+		if contents, err := s.engine.Contents(r.Context(), view.RepositoryID); err != nil {
+			view.ContentsErr = err.Error()
+		} else {
+			view.Contents = contents.Accounts
 		}
 	}
 	if view.Account != "" && view.RepositoryID != "" {
@@ -3401,11 +3417,23 @@ func (s *Server) handleRecoverAccount(w http.ResponseWriter, r *http.Request) {
 // full, and a machine with room for one is not a machine with room for
 // nineteen at once. What this changes is the asking, not the doing.
 func (s *Server) handleRecoverAccounts(w http.ResponseWriter, r *http.Request) {
-	back := "/restore?tab=server"
+	repository := r.PostFormValue("repository")
+
+	// Back to the tab the choosing was done on, still pointed at the same
+	// destination: an operator who has just queued five accounts out of
+	// nineteen wants to see the same list again, not a reset page.
+	back := "/restore"
 	if r.PostFormValue("from") == "deleted" {
 		back = "/restore?tab=deleted"
 	}
-	repository := r.PostFormValue("repository")
+	if repository != "" {
+		if strings.Contains(back, "?") {
+			back += "&"
+		} else {
+			back += "?"
+		}
+		back += "repository=" + url.QueryEscape(repository)
+	}
 	accounts := r.PostForm["account"]
 	apply := r.PostFormValue("apply") != ""
 	unrestricted := r.PostFormValue("unrestricted") != ""

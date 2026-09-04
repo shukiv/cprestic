@@ -234,6 +234,19 @@ func TestStandaloneBackupAndRestoreThroughTheInterface(t *testing.T) {
 		t.Fatalf("the restore page does not list the snapshot just taken")
 	}
 
+	// The same page lists what the destination itself holds, read from the
+	// backups rather than from cPanel, so an account this server no longer
+	// has can still be chosen. Several can be ticked and restored at once.
+	for _, want := range []string{
+		"Accounts in this destination",
+		`<input type="checkbox" name="account" value="customer1"`,
+		`action="?p=recover/accounts"`,
+	} {
+		if !strings.Contains(restorePage, want) {
+			t.Errorf("the restore page is missing %q", want)
+		}
+	}
+
 	// 5. Restore the whole account. Nothing is applied unless asked.
 	original := readTree(t, filepath.Join(s.provider.Root, "home", "customer1"))
 	s.post(t, "/restore?account=customer1&repository="+repositoryID, "/restore/start",
@@ -270,8 +283,8 @@ func TestStandaloneBackupAndRestoreThroughTheInterface(t *testing.T) {
 		t.Errorf("the restored dump does not look like SQL: %q", dump)
 	}
 
-	// 7. The history page shows both, and what the backup actually cost.
-	history := s.page(t, "/jobs")
+	// 7. The logs show both, and what the backup actually cost.
+	history := s.page(t, "/logs")
 	for _, want := range []string{"customer1", "success", "new of"} {
 		if !strings.Contains(history, want) {
 			t.Errorf("the history page is missing %q", want)

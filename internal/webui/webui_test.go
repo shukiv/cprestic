@@ -2344,6 +2344,10 @@ func TestRestoreCarriesItsThreeViewsAsTabs(t *testing.T) {
 		`href="?p=restore" aria-current="page"`,
 		`href="?p=restore&amp;tab=deleted"`,
 		`href="?p=restore&amp;tab=server"`,
+		// The page restores accounts, one or several, and the third tab
+		// is for the day the machine is gone.
+		"Restore account(s)",
+		"Disaster recovery",
 	} {
 		if !strings.Contains(account, want) {
 			t.Errorf("the restore page is missing %q", want)
@@ -2371,8 +2375,16 @@ func TestRestoreCarriesItsThreeViewsAsTabs(t *testing.T) {
 		`href="?p=restore&amp;tab=server" aria-current="page"`,
 	} {
 		if !strings.Contains(server, want) {
-			t.Errorf("the whole-server view is missing %q", want)
+			t.Errorf("the disaster recovery view is missing %q", want)
 		}
+	}
+	// Restores that have run belong in the logs. Keeping a copy here made
+	// the page that starts a restore mostly a list of old ones.
+	if strings.Contains(account, "Recent restores") {
+		t.Error("the restore page still carries its own history")
+	}
+	if !strings.Contains(account, `href="?p=logs&amp;tab=restores"`) {
+		t.Error("the restore page does not say where that history went")
 	}
 	// The rail no longer carries it separately, so the tab is the only
 	// way in and has to work.
