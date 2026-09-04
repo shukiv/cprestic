@@ -56,7 +56,7 @@ func TestCPanelTileUsesTheRasterIcon(t *testing.T) {
 		t.Fatalf("Jupiter metadata icon = %q, want cprest.png", links[0].Icon)
 	}
 
-	icon, err := os.Open("../branding/cprestic-icon.png")
+	icon, err := os.Open("../branding/png/cpr-badge-48.png")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestCPanelTileUsesTheRasterIcon(t *testing.T) {
 	}
 	script := string(scriptBytes)
 	for _, required := range []string{
-		`install -m 0644 "$SOURCE_DIR/branding/cprestic-icon.png" "$PLUGIN_META/cprest.png"`,
+		`install -m 0644 "$SOURCE_DIR/branding/cpr-badge-48.png" "$PLUGIN_META/cprest.png"`,
 		`rm -f "$FRONTEND/assets/application_icons/cprest.svg"`,
 	} {
 		if !strings.Contains(script, required) {

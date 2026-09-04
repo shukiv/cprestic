@@ -11,8 +11,12 @@ paths and the Go module.
 | `cpr-mark-white.svg` | the same in white, for a dark or coloured ground |
 | `png/cpr-badge-{16,32,48,64,128,256,512}.png` | the badge, rasterised |
 | `png/cpr-mark-{256,512}.png` | the letters, rasterised, transparent |
-| `cprestic-icon.svg` / `.png` | the stacked WHM tile: mark over the word *Backup* |
 | `cprestic-logo.svg` | the wordmark, *cP:Restic* in full |
+
+`cpr-badge.svg` is the plugin's icon: WHM draws it in the sidebar from
+`addon_plugins/cprest.svg`, and cPanel draws the account tile from the 48px
+PNG, because cPanel's SVG installer rewrites geometry attributes in custom
+artwork.
 
 ## Colours
 
@@ -24,10 +28,10 @@ paths and the Go module.
 
 ## Why the letters are paths
 
-`cprestic-icon.svg` and `cprestic-logo.svg` set `<text>` and pin it with
-`textLength`, which is what you do when the artwork has to hold its shape on a
-machine that has none of your fonts. It holds; it is not identical — the
-fallback face still decides the letterforms.
+`cprestic-logo.svg` sets `<text>` and pins it with `textLength`, which is what
+you do when the artwork has to hold its shape on a machine that has none of
+your fonts. It holds; it is not identical — the fallback face still decides
+the letterforms.
 
 The `cpr-*` files are outlines of Fira Sans Bold, the face the interface
 already ships, so the badge is the same shape everywhere and a PNG made here

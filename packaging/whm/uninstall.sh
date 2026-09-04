@@ -50,11 +50,11 @@ rmdir /var/cpanel/perl/Cpanel/Admin/Modules/Cprest 2>/dev/null || true
 FRONTEND=/usr/local/cpanel/base/frontend/jupiter
 if [ -x /usr/local/cpanel/scripts/uninstall_plugin ] &&
    [ -f "$SOURCE_DIR/cpanel/install.json" ] &&
-   [ -f "$SOURCE_DIR/branding/cprestic-icon.svg" ]; then
+   [ -f "$SOURCE_DIR/branding/cpr-badge.svg" ]; then
     PLUGIN_META=$(mktemp -d /var/tmp/cprest-cpanel.XXXXXX)
     trap 'if [ -n "${PLUGIN_META:-}" ]; then rm -rf -- "$PLUGIN_META"; fi' 0 1 2 15
     install -m 0644 "$SOURCE_DIR/cpanel/install.json" "$PLUGIN_META/install.json"
-    install -m 0644 "$SOURCE_DIR/branding/cprestic-icon.svg" "$PLUGIN_META/cprest.svg"
+    install -m 0644 "$SOURCE_DIR/branding/cpr-badge.svg" "$PLUGIN_META/cprest.svg"
     /usr/local/cpanel/scripts/uninstall_plugin "$PLUGIN_META" --theme=jupiter || true
     rm -rf -- "$PLUGIN_META"
     PLUGIN_META=

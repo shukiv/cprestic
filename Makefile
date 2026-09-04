@@ -31,8 +31,9 @@ plugin:
 	cp packaging/cpanel/*.php packaging/cpanel/install.json $(BIN)/cprest-plugin/cpanel/
 	cp packaging/cpanel/uapi/Cprest.pm $(BIN)/cprest-plugin/cpanel/uapi/
 	cp packaging/cpanel/admin/Cprest/Session.pm $(BIN)/cprest-plugin/cpanel/admin/Cprest/
-	cp packaging/branding/cprestic-icon.svg packaging/branding/cprestic-icon.png \
-		packaging/branding/cprestic-logo.svg $(BIN)/cprest-plugin/branding/
+	cp packaging/branding/cpr-badge.svg packaging/branding/cprestic-logo.svg \
+		$(BIN)/cprest-plugin/branding/
+	cp packaging/branding/png/cpr-badge-48.png $(BIN)/cprest-plugin/branding/
 	chmod +x $(BIN)/cprest-plugin/install.sh $(BIN)/cprest-plugin/uninstall.sh $(BIN)/cprest-plugin/cprest.cgi
 	tar -C $(BIN) -czf $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz cprest-plugin
 	@echo

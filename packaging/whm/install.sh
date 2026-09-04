@@ -31,7 +31,7 @@ SOURCE_DIR=$(cd "$(dirname "$0")" && pwd)
 [ -f "$SOURCE_DIR/cpanel/install.json" ] || die "cpanel/install.json is missing from the package"
 [ -f "$SOURCE_DIR/cpanel/uapi/Cprest.pm" ] || die "the cPanel UAPI bridge is missing from the package"
 [ -f "$SOURCE_DIR/cpanel/admin/Cprest/Session.pm" ] || die "the cPanel AdminBin bridge is missing from the package"
-[ -f "$SOURCE_DIR/branding/cprestic-icon.svg" ] || die "the cPanel plugin icon is missing from the package"
+[ -f "$SOURCE_DIR/branding/cpr-badge.svg" ] || die "the cPanel plugin icon is missing from the package"
 [ -d /var/cpanel/sessions/raw ] || die "cPanel's session store is missing (/var/cpanel/sessions/raw)"
 [ -x /usr/local/cpanel/bin/uapi ] || die "cPanel's uapi command is missing"
 
@@ -171,8 +171,8 @@ chmod 0644 "$APPCONFIG_DIR/cprest.conf"
 
 # The icon has to be in place before the registration that names it.
 ICON_DIR=/usr/local/cpanel/whostmgr/docroot/addon_plugins
-if [ -d "$ICON_DIR" ] && [ -f "$SOURCE_DIR/branding/cprestic-icon.svg" ]; then
-    install -m 644 "$SOURCE_DIR/branding/cprestic-icon.svg" "$ICON_DIR/cprest.svg"
+if [ -d "$ICON_DIR" ] && [ -f "$SOURCE_DIR/branding/cpr-badge.svg" ]; then
+    install -m 644 "$SOURCE_DIR/branding/cpr-badge.svg" "$ICON_DIR/cprest.svg"
 fi
 
 /usr/local/cpanel/bin/register_appconfig "$APPCONFIG_DIR/cprest.conf"
@@ -225,8 +225,8 @@ if [ -d "$FRONTEND" ]; then
     # cPanel draws a plugin's tile from assets/application_icons/<file>.png,
     # where <file> is what the menu entry below calls itself.
     if [ -d "$FRONTEND/assets/application_icons" ] &&
-       [ -f "$SOURCE_DIR/branding/cprestic-icon.png" ]; then
-        install -m 644 "$SOURCE_DIR/branding/cprestic-icon.png" \
+       [ -f "$SOURCE_DIR/branding/cpr-badge-48.png" ]; then
+        install -m 644 "$SOURCE_DIR/branding/cpr-badge-48.png" \
             "$FRONTEND/assets/application_icons/cprest.png"
     fi
 
@@ -239,7 +239,7 @@ if [ -d "$FRONTEND" ]; then
     PLUGIN_META=$(mktemp -d /var/tmp/cprest-cpanel.XXXXXX)
     trap 'if [ -n "${PLUGIN_META:-}" ]; then rm -rf -- "$PLUGIN_META"; fi' 0 1 2 15
     install -m 0644 "$SOURCE_DIR/cpanel/install.json" "$PLUGIN_META/install.json"
-    install -m 0644 "$SOURCE_DIR/branding/cprestic-icon.png" "$PLUGIN_META/cprest.png"
+    install -m 0644 "$SOURCE_DIR/branding/cpr-badge-48.png" "$PLUGIN_META/cprest.png"
     # Remove the entry written by older releases; if left behind it can
     # override the Feature Manager-aware entry generated below.
     DYNAMICUI="$FRONTEND/dynamicui/dynamicui_cprest.conf"

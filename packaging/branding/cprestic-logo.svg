@@ -2,7 +2,7 @@
 <!--
   cP:Restic, as a wordmark.
 
-  The stacked mark in cprestic-icon.svg is for a 48x48 tile; this is the
+  The badge in cpr-badge.svg is for a 48x48 tile; this is the
   name in full, for a README or a page heading. Same rules apply: an
   <img> inherits neither font nor colour from the page around it, so the
   face is pinned with textLength and the ink follows the reader's theme.
