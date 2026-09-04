@@ -2617,6 +2617,11 @@ func (s *Server) handleRestoreItems(w http.ResponseWriter, r *http.Request) {
 		SnapshotID:   r.PostFormValue("snapshot"),
 		Kind:         protocol.RestoreItems,
 		ItemKind:     r.PostFormValue("item"),
+		// Whether this goes back into the account or is left to collect.
+		// The node refuses it for the kinds that cannot be written back,
+		// so an operator who ticks the box on a DNS restore is told so
+		// rather than quietly handed a download.
+		Apply: r.PostFormValue("apply") != "",
 	}
 	for _, name := range r.PostForm["name"] {
 		if trimmed := strings.TrimSpace(name); trimmed != "" {
@@ -2626,6 +2631,11 @@ func (s *Server) handleRestoreItems(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := s.engine.QueueRestore(restore); err != nil {
 		s.redirect(w, r, back, "error", err.Error())
+		return
+	}
+	if restore.Apply {
+		s.redirect(w, r, back, "ok",
+			"Queued. It WILL replace this part of the live account when it runs.")
 		return
 	}
 	s.redirect(w, r, back, "ok",
