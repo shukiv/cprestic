@@ -176,8 +176,15 @@ function cprest_page(string $path): void {
         http_response_code((int) $status[1]);
     }
     // A redirect and a download have to reach the browser as themselves.
+    $chunked = false;
     foreach (array_slice($head, 1) as $line) {
         $name = strtolower(trim(explode(':', $line, 2)[0] ?? ''));
+        if ($name === 'transfer-encoding') {
+            $chunked = stripos($line, 'chunked') !== false;
+            // Deliberately not forwarded: this describes the connection to
+            // the service, not the one to the browser.
+            continue;
+        }
         // cache-control travels too: these pages carry the account's own
         // backups, and a proxy or a shared browser keeping a copy of one
         // outlives the session that was allowed to see it.
@@ -187,11 +194,53 @@ function cprest_page(string $path): void {
         }
     }
 
-    while (!feof($socket)) {
-        $chunk = fread($socket, 65536);
-        if ($chunk === false || $chunk === '') { break; }
-        echo $chunk;
-        flush();
+    // The service answers with chunked transfer encoding whenever it does
+    // not know the length in advance, which is every page it renders. That
+    // framing belongs to the connection and not to the content: passing it
+    // through put the chunk sizes and the terminating "0" into the page, so
+    // every account page ended with a stray 0 below the footer. PHP sends
+    // its own framing to the browser, so the framing is read here and only
+    // the body is echoed.
+    if ($chunked) {
+        cprest_pipe_chunked($socket);
+    } else {
+        while (!feof($socket)) {
+            $chunk = fread($socket, 65536);
+            if ($chunk === false || $chunk === '') { break; }
+            echo $chunk;
+            flush();
+        }
     }
     fclose($socket);
+}
+
+/**
+ * Read a chunked body and echo only what it carries.
+ *
+ * A restore archive is gigabytes, so this stays a stream: one chunk header
+ * at a time, then that chunk's bytes straight out. A truncated answer ends
+ * the loop rather than looping on a socket that will never fill.
+ */
+function cprest_pipe_chunked($socket): void {
+    while (true) {
+        $header = fgets($socket);
+        if ($header === false) { return; }
+        $header = trim($header);
+        if ($header === '') { continue; }
+        // A chunk extension after a semicolon is legal and carries nothing
+        // this needs.
+        $size = strtok($header, ';');
+        if ($size === false || !ctype_xdigit($size)) { return; }
+        $remaining = hexdec($size);
+        if ($remaining === 0) { return; }
+        while ($remaining > 0) {
+            $piece = fread($socket, min($remaining, 65536));
+            if ($piece === false || $piece === '') { return; }
+            echo $piece;
+            flush();
+            $remaining -= strlen($piece);
+        }
+        // The CRLF that closes the chunk.
+        fread($socket, 2);
+    }
 }
