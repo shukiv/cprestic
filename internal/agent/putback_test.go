@@ -373,3 +373,110 @@ func TestABackupWithoutTheUsersSaysSoRatherThanSucceeding(t *testing.T) {
 		t.Error("the customer was given no explanation")
 	}
 }
+
+// A basket restores its parts in the order the account needs them and says
+// what each one did. The database has to be loaded before its user is given
+// access to it, or the grant lands on a database that is not there yet.
+func TestABasketRestoresTheDatabaseAndItsUsersTogether(t *testing.T) {
+	out := restoredTree(t)
+	stagedUsers(t, out, shopUserAuth,
+		"GRANT ALL PRIVILEGES ON `c1\\_shop`.* TO 'c1_shop'@'localhost';\n")
+	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {"c1_shop"}}}
+	agent := quietAgent(fake)
+
+	written, _, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			Items: []protocol.RestoreSelection{
+				{Kind: string(granular.KindDBUsers)},
+				{Kind: string(granular.KindDatabase), Names: []string{"c1_shop"}},
+			},
+		}, out)
+	if err != nil {
+		t.Fatalf("applyItems: %v", err)
+	}
+	if len(fake.LoadedDatabases) != 1 || fake.LoadedDatabases[0].Database != "c1_shop" {
+		t.Fatalf("loaded %+v", fake.LoadedDatabases)
+	}
+	if len(fake.RestoredDBUsers) != 1 {
+		t.Fatalf("restored %+v", fake.RestoredDBUsers)
+	}
+	// Named in the order the account was changed, so an operator reading
+	// it back knows what happened first.
+	if written != "loaded into c1_shop; recreated c1_shop" {
+		t.Errorf("reported %q", written)
+	}
+}
+
+// Everything a basket asks for is checked before any of it is written. A
+// basket whose users cannot be restored must not leave the database
+// replaced and its users missing: the account would come out of the restore
+// worse off than it went in.
+func TestABasketWritesNothingWhenOnePartWouldBeRefused(t *testing.T) {
+	out := restoredTree(t)
+	// The users had access to a database the account no longer has, which
+	// is the one thing a restore cannot make for them.
+	stagedUsers(t, out, shopUserAuth,
+		"GRANT ALL PRIVILEGES ON `c1\\_gone`.* TO 'c1_shop'@'localhost';\n")
+	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {"c1_shop"}}}
+	agent := quietAgent(fake)
+
+	_, hint, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			Items: []protocol.RestoreSelection{
+				{Kind: string(granular.KindDatabase), Names: []string{"c1_shop"}},
+				{Kind: string(granular.KindDBUsers)},
+			},
+		}, out)
+	if err == nil {
+		t.Fatal("a basket with a grant on a missing database was applied")
+	}
+	if len(fake.LoadedDatabases) != 0 {
+		t.Errorf("the database was replaced anyway: %+v", fake.LoadedDatabases)
+	}
+	if !strings.Contains(hint, "c1_gone") {
+		t.Errorf("hint %q does not say which database is missing", hint)
+	}
+}
+
+// A basket may not be applied at all if any one part of it cannot be
+// written back, rather than applying the parts that can and quietly
+// leaving out the rest.
+func TestABasketCarryingSomethingUnappliableIsRefused(t *testing.T) {
+	out := restoredTree(t)
+	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {"c1_shop"}}}
+	agent := quietAgent(fake)
+
+	if _, _, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			Items: []protocol.RestoreSelection{
+				{Kind: string(granular.KindDatabase), Names: []string{"c1_shop"}},
+				{Kind: string(granular.KindDNS)},
+			},
+		}, out); err == nil {
+		t.Fatal("a basket carrying DNS was applied")
+	}
+	if len(fake.LoadedDatabases) != 0 {
+		t.Errorf("the database was loaded anyway: %+v", fake.LoadedDatabases)
+	}
+}
+
+// Records written before baskets existed name one part of an account in
+// their own two fields, and are read the same way as one written after.
+func TestARestoreRecordedBeforeBasketsStillNamesItsPart(t *testing.T) {
+	assignment := protocol.RestoreAssignment{
+		CPanelUser: "c1",
+		ItemKind:   string(granular.KindDatabase),
+		ItemNames:  []string{"c1_shop"},
+	}
+	selections := assignment.Selections()
+	if len(selections) != 1 || selections[0].Kind != "database" ||
+		len(selections[0].Names) != 1 || selections[0].Names[0] != "c1_shop" {
+		t.Fatalf("selections = %+v", selections)
+	}
+	if (protocol.RestoreAssignment{}).Selections() != nil {
+		t.Error("a whole-account restore names a part of one")
+	}
+}

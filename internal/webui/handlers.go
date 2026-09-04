@@ -2146,6 +2146,20 @@ type restoreRow struct {
 	Collectable bool
 }
 
+// Parts names what a restore asked for, in the operator's own vocabulary.
+// A basket names each of its parts; a whole-account restore names itself.
+func (r restoreRow) Parts() string {
+	selections := r.Selections()
+	if len(selections) == 0 {
+		return r.Kind
+	}
+	kinds := make([]string, 0, len(selections))
+	for _, selection := range selections {
+		kinds = append(kinds, selection.Kind)
+	}
+	return strings.Join(kinds, ", ")
+}
+
 // collectableRows pairs each restore with the state of what it left behind.
 func collectableRows(restores []nodestore.Restore) []restoreRow {
 	rows := make([]restoreRow, 0, len(restores))

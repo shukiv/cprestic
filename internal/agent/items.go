@@ -51,11 +51,7 @@ func (a *Agent) restoreItems(ctx context.Context, log *slog.Logger,
 		report.Error = err.Error()
 		return report, false
 	}
-	plan, err := granular.Build(parts, granular.Request{
-		Kind:    granular.Kind(assignment.ItemKind),
-		Account: assignment.CPanelUser,
-		Names:   assignment.ItemNames,
-	})
+	plan, err := granular.BuildAll(parts, itemRequests(assignment))
 	if err != nil {
 		report.Error = err.Error()
 		return report, false
@@ -153,13 +149,13 @@ func (a *Agent) restoreItems(ctx context.Context, log *slog.Logger,
 		report.Applied = true
 		report.Detail = written
 		log.Warn("granular restore written into the live account",
-			"account", assignment.CPanelUser, "kind", assignment.ItemKind,
+			"account", assignment.CPanelUser, "parts", itemsLabel(assignment),
 			"files", files, "wrote", written)
 		return report, false
 	}
 
 	archivePath := filepath.Join(dir.Path, fmt.Sprintf("items-%s-%s.tar",
-		assignment.CPanelUser, assignment.ItemKind))
+		assignment.CPanelUser, itemsLabel(assignment)))
 	if err := reassemble.PackDir(out, archivePath); err != nil {
 		report.Error = err.Error()
 		return report, false
@@ -184,7 +180,7 @@ func (a *Agent) restoreItems(ctx context.Context, log *slog.Logger,
 	report.RestoredTo = filepath.Join(retained.Path, "items")
 	report.Detail = fmt.Sprintf("%d files of %s", files, plan.Description)
 	log.Info("granular restore ready to collect",
-		"kind", assignment.ItemKind, "files", files, "archive", report.ArchivePath)
+		"parts", itemsLabel(assignment), "files", files, "archive", report.ArchivePath)
 	return report, true
 }
 
@@ -283,6 +279,35 @@ func measure(dir string) (files int, bytes uint64, err error) {
 	return files, bytes, nil
 }
 
+// itemRequests is what this restore asks for, as granular reads it.
+func itemRequests(assignment protocol.RestoreAssignment) []granular.Request {
+	selections := assignment.Selections()
+	requests := make([]granular.Request, 0, len(selections))
+	for _, selection := range selections {
+		requests = append(requests, granular.Request{
+			Kind:    granular.Kind(selection.Kind),
+			Account: assignment.CPanelUser,
+			Names:   selection.Names,
+		})
+	}
+	return requests
+}
+
+// itemsLabel names this restore in a log line and in the archive left to
+// collect. One part of an account is named; several are counted, because
+// the parts of a basket spelt out in a filename would run past what a
+// filename can hold.
+func itemsLabel(assignment protocol.RestoreAssignment) string {
+	selections := assignment.Selections()
+	switch len(selections) {
+	case 0:
+		return "nothing"
+	case 1:
+		return selections[0].Kind
+	}
+	return fmt.Sprintf("%dparts", len(selections))
+}
+
 // applyItems writes what came out of the backup into the live account, and
 // says what it wrote.
 //
@@ -290,126 +315,182 @@ func measure(dir string) (files int, bytes uint64, err error) {
 // the others before a job exists. The check is made again because this runs
 // as root on a live account, and a second reading of the same rule costs
 // nothing next to what getting it wrong costs.
+//
+// Everything is checked before anything is written. A basket holding a
+// database and its users, where the users would be refused, must not leave
+// the database replaced and its users missing -- the account would come out
+// of the restore worse off than it went in.
 func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 	assignment protocol.RestoreAssignment, out string) (written, hint string, err error) {
 
-	kind := granular.Kind(assignment.ItemKind)
-	if !kind.CanApply() {
-		return "", "", fmt.Errorf(
-			"agent: a %s restore cannot be written into the live account", kind)
+	selections := assignment.Selections()
+	if len(selections) == 0 {
+		return "", "", errors.New(
+			"agent: this restore names no part of the account to write back")
 	}
 
-	if kind == granular.KindDatabase {
-		return a.loadDatabases(ctx, log, assignment, filepath.Join(out, "databases"))
-	}
-	if kind == granular.KindDBUsers {
-		return a.restoreDatabaseUsers(ctx, log, assignment, filepath.Join(out, "databases"))
+	var (
+		databaseNames                     []string
+		wantDumps, wantUsers, wantHomedir bool
+	)
+	for _, selection := range selections {
+		kind := granular.Kind(selection.Kind)
+		if !kind.CanApply() {
+			return "", "", fmt.Errorf(
+				"agent: a %s restore cannot be written into the live account", kind)
+		}
+		switch kind {
+		case granular.KindDatabase:
+			wantDumps = true
+			databaseNames = append(databaseNames, selection.Names...)
+		case granular.KindDBUsers:
+			wantUsers = true
+		default:
+			// Files, the website and mail are all the home directory,
+			// restored where they were. A basket asking for two of them
+			// asks for one tree, and writes it once.
+			wantHomedir = true
+		}
 	}
 
-	// Files, the website and mail are all the home directory, restored
-	// where they were.
+	databases := filepath.Join(out, "databases")
 	homedir := filepath.Join(out, "homedir")
-	if _, err := os.Stat(homedir); err != nil {
-		return "", "This backup does not contain the account's files.", errors.New(
-			"agent: this backup holds none of the account's files")
+
+	// Which databases the account has now. A dump has to load into a
+	// database that is there, and a grant has to be given on one, so both
+	// checks read the same list.
+	var present map[string]bool
+	if wantDumps || wantUsers {
+		account, err := a.provider.Account(ctx, assignment.CPanelUser)
+		if err != nil {
+			return "", "", err
+		}
+		present = make(map[string]bool, len(account.Databases))
+		for _, name := range account.Databases {
+			present[name] = true
+		}
 	}
-	if err := a.provider.PutHomeDir(ctx, assignment.CPanelUser, homedir); err != nil {
-		return "", "", err
+
+	var dumps []string
+	if wantDumps {
+		if dumps, hint, err = checkDatabaseDumps(
+			assignment.CPanelUser, databaseNames, present, databases); err != nil {
+			return "", hint, err
+		}
 	}
-	return "written into the home directory of " + assignment.CPanelUser, "", nil
+	var users []cpanel.DatabaseUser
+	if wantUsers {
+		if users, hint, err = checkDatabaseUsers(
+			assignment.CPanelUser, present, databases); err != nil {
+			return "", hint, err
+		}
+	}
+	if wantHomedir {
+		if _, err := os.Stat(homedir); err != nil {
+			return "", "This backup does not contain the account's files.", errors.New(
+				"agent: this backup holds none of the account's files")
+		}
+	}
+
+	// Written in the order the account needs: a dump goes into a database,
+	// and a grant is given on a database that is already there.
+	var wrote []string
+	for i, name := range databaseNames {
+		if err := a.provider.LoadDatabase(ctx, assignment.CPanelUser, name, dumps[i]); err != nil {
+			return "", "", err
+		}
+		log.Warn("database loaded from a backup",
+			"account", assignment.CPanelUser, "database", name)
+	}
+	if wantDumps {
+		wrote = append(wrote, "loaded into "+strings.Join(databaseNames, ", "))
+	}
+	if wantUsers {
+		if err := a.provider.PutDatabaseUsers(ctx, assignment.CPanelUser, users); err != nil {
+			return "", "", err
+		}
+		names := distinctUserNames(users)
+		log.Warn("database users recreated from a backup",
+			"account", assignment.CPanelUser, "users", strings.Join(names, ","))
+		wrote = append(wrote, "recreated "+strings.Join(names, ", "))
+	}
+	if wantHomedir {
+		if err := a.provider.PutHomeDir(ctx, assignment.CPanelUser, homedir); err != nil {
+			return "", "", err
+		}
+		wrote = append(wrote, "written into the home directory of "+assignment.CPanelUser)
+	}
+	return strings.Join(wrote, "; "), "", nil
 }
 
-// loadDatabases puts the named database dumps back into the databases they
-// came out of.
+// checkDatabaseDumps makes sure every named database is still on the
+// account and has a dump in this backup, and returns where those dumps are.
 //
-// The account's databases are read first, and a name that is no longer one
-// of them is reported as itself rather than as a failure. Restoring a
-// database somebody dropped is the reason this exists, and being told "ask
-// your host" when the answer is "create it again first" would make the one
-// case it was built for the one case it cannot explain.
-func (a *Agent) loadDatabases(ctx context.Context, log *slog.Logger,
-	assignment protocol.RestoreAssignment, databases string) (written, hint string, err error) {
+// A name that is no longer one of the account's databases is reported as
+// itself rather than as a failure. Restoring a database somebody dropped is
+// the reason this exists, and being told "ask your host" when the answer is
+// "create it again first" would make the one case it was built for the one
+// case it cannot explain.
+func checkDatabaseDumps(account string, names []string, present map[string]bool,
+	databases string) (dumps []string, hint string, err error) {
 
-	if len(assignment.ItemNames) == 0 {
-		return "", "", errors.New("agent: no database was named to restore")
-	}
-	account, err := a.provider.Account(ctx, assignment.CPanelUser)
-	if err != nil {
-		return "", "", err
-	}
-	present := make(map[string]bool, len(account.Databases))
-	for _, name := range account.Databases {
-		present[name] = true
+	if len(names) == 0 {
+		return nil, "", errors.New("agent: no database was named to restore")
 	}
 	var missing []string
-	for _, name := range assignment.ItemNames {
+	for _, name := range names {
 		if !present[name] {
 			missing = append(missing, name)
 		}
 	}
 	if len(missing) > 0 {
-		return "", fmt.Sprintf(
+		return nil, fmt.Sprintf(
 				"The database %s is not on the account any more. Create it again first, "+
 					"then restore into it: a backup can fill a database but cannot make one.",
-				strings.Join(missing, " and ")), fmt.Errorf(
+				granular.JoinAnd(missing)), fmt.Errorf(
 				"agent: %s no longer has the database(s) %s",
-				assignment.CPanelUser, strings.Join(missing, ", "))
+				account, strings.Join(missing, ", "))
 	}
-
-	var loaded []string
-	for _, name := range assignment.ItemNames {
+	for _, name := range names {
 		dump := filepath.Join(databases, name+".sql")
 		if _, err := os.Stat(dump); err != nil {
-			return "", fmt.Sprintf(
+			return nil, fmt.Sprintf(
 					"This backup holds no copy of the database %s. Try an earlier "+
 						"restore point.", name),
 				fmt.Errorf("agent: this backup holds no dump of the database %s", name)
 		}
-		if err := a.provider.LoadDatabase(ctx, assignment.CPanelUser, name, dump); err != nil {
-			return "", "", err
-		}
-		log.Warn("database loaded from a backup",
-			"account", assignment.CPanelUser, "database", name)
-		loaded = append(loaded, name)
+		dumps = append(dumps, dump)
 	}
-	return "loaded into " + strings.Join(loaded, ", "), "", nil
+	return dumps, "", nil
 }
 
-// restoreDatabaseUsers recreates the account's database users from what the
-// backup recorded of them.
+// checkDatabaseUsers reads the account's database users out of the backup
+// and makes sure every database they were granted access to is still there.
 //
 // The users are read out of the staged files here rather than in the
 // privileged provider: what runs there runs as root against the server's
 // MySQL, and it takes checked values rather than a file whose contents
 // nobody has looked at.
-func (a *Agent) restoreDatabaseUsers(ctx context.Context, log *slog.Logger,
-	assignment protocol.RestoreAssignment, databases string) (written, hint string, err error) {
+func checkDatabaseUsers(account string, present map[string]bool,
+	databases string) (users []cpanel.DatabaseUser, hint string, err error) {
 
-	users, err := readStagedDatabaseUsers(databases)
+	users, err = readStagedDatabaseUsers(databases)
 	if err != nil {
-		// A more recent one, not an earlier one. What a backup can be
-		// missing here is the file that carries the stored passwords,
-		// which cprest has not always written -- so going further back
-		// is going further from having it.
-		return "", "This backup does not hold the account's database users. Try a " +
+		// A more recent restore point, not an earlier one. What a backup
+		// can be missing here is the file that carries the stored
+		// passwords, which cprest has not always written -- so going
+		// further back is going further from having it.
+		return nil, "This backup does not hold the account's database users. Try a " +
 			"more recent restore point, or download this one and ask your host.", err
 	}
 	if len(users) == 0 {
-		return "", "This backup holds no database users for the account.", errors.New(
+		return nil, "This backup holds no database users for the account.", errors.New(
 			"agent: this backup holds no database users")
 	}
 
-	// Which databases the account has now. A grant on one it no longer
-	// has is the same situation as restoring into a dropped database, and
-	// deserves the same answer rather than "ask your host".
-	account, err := a.provider.Account(ctx, assignment.CPanelUser)
-	if err != nil {
-		return "", "", err
-	}
-	present := make(map[string]bool, len(account.Databases))
-	for _, name := range account.Databases {
-		present[name] = true
-	}
+	// A grant on a database the account no longer has is the same
+	// situation as restoring into a dropped database, and deserves the
+	// same answer rather than "ask your host".
 	var missing []string
 	for _, user := range users {
 		for _, grant := range user.Grants {
@@ -420,21 +501,21 @@ func (a *Agent) restoreDatabaseUsers(ctx context.Context, log *slog.Logger,
 	}
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		return "", fmt.Sprintf(
+		return nil, fmt.Sprintf(
 				"These users had access to %s, which the account does not have any "+
 					"more. Restore or create those databases first, then restore the "+
 					"users: a grant cannot be given on a database that is not there.",
-				strings.Join(missing, " and ")), fmt.Errorf(
+				granular.JoinAnd(missing)), fmt.Errorf(
 				"agent: %s no longer has the database(s) %s",
-				assignment.CPanelUser, strings.Join(missing, ", "))
+				account, strings.Join(missing, ", "))
 	}
+	return users, "", nil
+}
 
-	if err := a.provider.PutDatabaseUsers(ctx, assignment.CPanelUser, users); err != nil {
-		return "", "", err
-	}
-	// One name, however many hosts it exists on. Naming it once per host
-	// is what the operator's log and the customer's page would otherwise
-	// both say.
+// distinctUserNames names each user once, however many hosts it exists on.
+// Naming it once per host is what the operator's log and the customer's
+// page would otherwise both say.
+func distinctUserNames(users []cpanel.DatabaseUser) []string {
 	var names []string
 	seen := map[string]bool{}
 	for _, user := range users {
@@ -444,9 +525,7 @@ func (a *Agent) restoreDatabaseUsers(ctx context.Context, log *slog.Logger,
 		}
 	}
 	sort.Strings(names)
-	log.Warn("database users recreated from a backup",
-		"account", assignment.CPanelUser, "users", strings.Join(names, ","))
-	return "recreated " + strings.Join(names, ", "), "", nil
+	return names
 }
 
 func contains(values []string, want string) bool {

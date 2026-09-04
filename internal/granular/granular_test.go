@@ -219,3 +219,72 @@ func TestADatabaseNameHasToBeOne(t *testing.T) {
 		}
 	}
 }
+
+// A restore of a database and the users that open it is one restore. The
+// paths of both come out of the snapshot together, so the account cannot
+// end up with one and not the other.
+func TestABasketAsksForEveryPartOnce(t *testing.T) {
+	plan, err := BuildAll(split, []Request{
+		{Kind: KindDatabase, Account: "studio", Names: []string{"studio_kpeh1"}},
+		{Kind: KindDBUsers, Account: "studio"},
+		{Kind: KindDNS, Account: "studio"},
+		{Kind: KindSSL, Account: "studio"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// DNS and SSL both come out of the metadata archive, and asking restic
+	// for it twice is asking twice for the same 20 megabytes.
+	seen := map[string]int{}
+	for _, include := range plan.Include {
+		seen[include]++
+	}
+	for path, count := range seen {
+		if count > 1 {
+			t.Errorf("%s asked for %d times", path, count)
+		}
+	}
+	if seen[split.Metadata] != 1 {
+		t.Errorf("include = %v, want the metadata part once", plan.Include)
+	}
+	if seen[split.Databases+"/studio_kpeh1.sql"] != 1 {
+		t.Errorf("include = %v, want the database dump", plan.Include)
+	}
+	if plan.Metadata != split.Metadata {
+		t.Errorf("metadata = %q", plan.Metadata)
+	}
+	// Both kinds' members travel, or the archive gives up only half of
+	// what was asked for.
+	for _, want := range []string{"dnszones/", "apache_tls/"} {
+		found := false
+		for _, member := range plan.Members {
+			if member == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("members = %v, want %q", plan.Members, want)
+		}
+	}
+	for _, want := range []string{"database", "users", "DNS", "SSL"} {
+		if !strings.Contains(plan.Description, want) {
+			t.Errorf("description %q does not mention %s", plan.Description, want)
+		}
+	}
+}
+
+// A basket is restored so that its parts arrive together. One part this
+// cannot do has to fail the request, not quietly restore the rest: an
+// account left with a database and no user for it is the failure the
+// basket exists to prevent.
+func TestABasketWithOneImpossiblePartFailsWhole(t *testing.T) {
+	if _, err := BuildAll(split, []Request{
+		{Kind: KindDatabase, Account: "studio", Names: []string{"studio_kpeh1"}},
+		{Kind: KindFiles, Account: "studio", Names: []string{"/etc/shadow"}},
+	}); err == nil {
+		t.Error("a basket carrying a path outside the account was accepted")
+	}
+	if _, err := BuildAll(split, nil); err == nil {
+		t.Error("an empty basket was accepted")
+	}
+}

@@ -159,10 +159,16 @@ func (e *Engine) QueueRestore(restore nodestore.Restore) (nodestore.Restore, err
 		switch restore.Kind {
 		case protocol.RestoreAccount:
 		case protocol.RestoreItems:
-			if !granular.Kind(restore.ItemKind).CanApply() {
-				return nodestore.Restore{}, fmt.Errorf(
-					"node: a %s restore cannot be written into the live account",
-					restore.ItemKind)
+			// Every part of a basket, not merely the first. One item
+			// that cannot be written back makes the whole request a
+			// copy to download, because applying the rest and leaving
+			// that one out is not what was asked for.
+			for _, selection := range restore.Selections() {
+				if !granular.Kind(selection.Kind).CanApply() {
+					return nodestore.Restore{}, fmt.Errorf(
+						"node: a %s restore cannot be written into the live account",
+						selection.Kind)
+				}
 			}
 		default:
 			return nodestore.Restore{}, errors.New(
@@ -440,6 +446,7 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 		TargetDir:    stored.TargetDir,
 		ItemKind:     stored.ItemKind,
 		ItemNames:    stored.ItemNames,
+		Items:        restoreSelections(stored),
 		Apply:        stored.Apply,
 		Unrestricted: stored.Unrestricted,
 		Source:       target,
@@ -1249,3 +1256,17 @@ const (
 	// destination that is down is down for hours, not seconds.
 	probeEvery = time.Hour
 )
+
+// restoreSelections carries a stored restore's parts onto the wire.
+func restoreSelections(stored nodestore.Restore) []protocol.RestoreSelection {
+	if len(stored.Items) == 0 {
+		return nil
+	}
+	selections := make([]protocol.RestoreSelection, 0, len(stored.Items))
+	for _, item := range stored.Items {
+		selections = append(selections, protocol.RestoreSelection{
+			Kind: item.Kind, Names: item.Names,
+		})
+	}
+	return selections
+}

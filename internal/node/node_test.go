@@ -272,6 +272,19 @@ func TestQueueRestoreValidates(t *testing.T) {
 			t.Errorf("applying a %s restore should be refused", kind)
 		}
 	}
+	// Every part of a basket is checked, not merely the first. Applying
+	// the database and quietly leaving out the DNS is not what was asked
+	// for, so the whole request is refused.
+	if _, err := engine.QueueRestore(nodestore.Restore{
+		Account: "c1", SnapshotID: "abc", Kind: protocol.RestoreItems,
+		Items: []nodestore.RestoreSelection{
+			{Kind: string(granular.KindDatabase), Names: []string{"c1_shop"}},
+			{Kind: string(granular.KindDNS)},
+		},
+		Apply: true,
+	}); err == nil {
+		t.Error("applying a basket carrying DNS should be refused")
+	}
 	// A different account, because one account only ever has one piece of
 	// work queued and c1's is asserted on below.
 	applied, err := engine.QueueRestore(nodestore.Restore{

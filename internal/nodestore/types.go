@@ -323,6 +323,13 @@ type JobTarget struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+// RestoreSelection is one part of an account inside a restore, with the
+// mailboxes, databases or paths asked for of it.
+type RestoreSelection struct {
+	Kind  string   `json:"kind"`
+	Names []string `json:"names,omitempty"`
+}
+
 // Restore is one restore run.
 type Restore struct {
 	ID           string   `json:"id"`
@@ -332,10 +339,13 @@ type Restore struct {
 	Kind         string   `json:"kind"`
 	IncludePaths []string `json:"include_paths,omitempty"`
 	TargetDir    string   `json:"target_dir,omitempty"`
-	// ItemKind and ItemNames record a granular restore: the part of the
-	// account asked for, and which one.
-	ItemKind  string   `json:"item_kind,omitempty"`
-	ItemNames []string `json:"item_names,omitempty"`
+	// ItemKind and ItemNames record a granular restore of one part of the
+	// account; Items records one of several parts at once. Read them
+	// through Selections rather than directly, so a record written before
+	// baskets existed is read the same way as one written after.
+	ItemKind  string             `json:"item_kind,omitempty"`
+	ItemNames []string           `json:"item_names,omitempty"`
+	Items     []RestoreSelection `json:"items,omitempty"`
 	// Apply writes the restore into the live account rather than leaving a
 	// copy to collect. A whole account goes to restorepkg; a part of one
 	// is written back where it belongs. Off unless explicitly asked for.
@@ -360,6 +370,18 @@ type Restore struct {
 	QueuedAt   time.Time  `json:"queued_at"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
+}
+
+// Selections is what this restore asks for, whether it was recorded as one
+// part of an account or as several.
+func (r Restore) Selections() []RestoreSelection {
+	if len(r.Items) > 0 {
+		return r.Items
+	}
+	if r.ItemKind == "" {
+		return nil
+	}
+	return []RestoreSelection{{Kind: r.ItemKind, Names: r.ItemNames}}
 }
 
 // Channel is somewhere this server tells someone what happened.

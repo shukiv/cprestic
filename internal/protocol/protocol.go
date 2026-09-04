@@ -49,6 +49,16 @@ const (
 	RestoreItems = "items"
 )
 
+// RestoreSelection is one part of an account inside a restore, together
+// with the mailboxes, databases or paths asked for of it. A restore can
+// carry several: a database is of little use without the users that open
+// it, and asking for them separately means two jobs and two chances for
+// one to fail after the other has already been written.
+type RestoreSelection struct {
+	Kind  string   `json:"kind"`
+	Names []string `json:"names,omitempty"`
+}
+
 // RestoreAssignment is one account, or part of one, to bring back.
 type RestoreAssignment struct {
 	JobID      string `json:"job_id"`
@@ -61,12 +71,13 @@ type RestoreAssignment struct {
 	// keep their original paths under TargetDir.
 	IncludePaths []string `json:"include_paths,omitempty"`
 	TargetDir    string   `json:"target_dir,omitempty"`
-	// ItemKind and ItemNames describe a RestoreItems job: which part of
-	// the account to take out, and which mailbox, database or path. The
-	// agent maps them onto snapshot paths itself, from the snapshot it
-	// was told to read.
-	ItemKind  string   `json:"item_kind,omitempty"`
-	ItemNames []string `json:"item_names,omitempty"`
+	// ItemKind and ItemNames describe a RestoreItems job asking for one
+	// part of the account. Items describes one asking for several at
+	// once. Read them through Selections rather than directly: a record
+	// written before baskets existed carries only the first pair.
+	ItemKind  string             `json:"item_kind,omitempty"`
+	ItemNames []string           `json:"item_names,omitempty"`
+	Items     []RestoreSelection `json:"items,omitempty"`
 	// Apply writes the restore into the live account instead of leaving a
 	// copy to collect: a whole account goes to cPanel's restorepkg, and
 	// the parts of one that can be written back are written back. Off
@@ -85,6 +96,18 @@ type RestoreAssignment struct {
 	// snapshot's recorded size.
 	SizeEstimate   uint64    `json:"size_estimate"`
 	LeaseExpiresAt time.Time `json:"lease_expires_at"`
+}
+
+// Selections is what this restore asks for, whether it was recorded as one
+// part of an account or as several.
+func (a RestoreAssignment) Selections() []RestoreSelection {
+	if len(a.Items) > 0 {
+		return a.Items
+	}
+	if a.ItemKind == "" {
+		return nil
+	}
+	return []RestoreSelection{{Kind: a.ItemKind, Names: a.ItemNames}}
 }
 
 // RestoreReport closes out a restore.

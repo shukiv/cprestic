@@ -412,8 +412,12 @@ func (v userView) PutBackNote() string {
 
 func (v userView) NeedsNames() bool { return v.Kind.NeedsNames() }
 func (v userView) RestoreTitle(row restoreRow) string {
-	if row.ItemKind != "" {
-		return v.KindTitle(granular.Kind(row.ItemKind))
+	if selections := row.Selections(); len(selections) > 0 {
+		titles := make([]string, 0, len(selections))
+		for _, selection := range selections {
+			titles = append(titles, v.KindTitle(granular.Kind(selection.Kind)))
+		}
+		return granular.JoinAnd(titles)
 	}
 	if row.Kind == protocol.RestoreAccount {
 		return v.KindTitle(userKindAccount)

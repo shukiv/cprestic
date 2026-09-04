@@ -214,6 +214,76 @@ func Build(parts reassemble.Parts, req Request) (Plan, error) {
 	}
 }
 
+// BuildAll turns several requests into the one set of paths that satisfies
+// all of them.
+//
+// The parts of an account depend on each other: a database nothing can
+// open, or a database user with no database to open, is what two separate
+// restores produce when the second one fails after the first has been
+// written. Restoring them together makes that impossible. Every request is
+// built before any of it is used, so a basket holding one thing this cannot
+// do fails whole rather than half way through.
+func BuildAll(parts reassemble.Parts, reqs []Request) (Plan, error) {
+	if len(reqs) == 0 {
+		return Plan{}, fmt.Errorf("granular: nothing was asked for")
+	}
+	if len(reqs) == 1 {
+		return Build(parts, reqs[0])
+	}
+
+	var (
+		merged       Plan
+		descriptions []string
+	)
+	for _, req := range reqs {
+		plan, err := Build(parts, req)
+		if err != nil {
+			return Plan{}, err
+		}
+		merged.Include = addNew(merged.Include, plan.Include)
+		merged.Members = addNew(merged.Members, plan.Members)
+		if plan.Metadata != "" {
+			merged.Metadata = plan.Metadata
+		}
+		descriptions = append(descriptions, plan.Description)
+	}
+	merged.Description = JoinAnd(descriptions)
+	return merged, nil
+}
+
+// addNew appends the values not already there, keeping the order they were
+// first asked for. restic and the archive extraction both take the same
+// path twice without complaint, but a plan that says a thing twice is read
+// by a person too.
+func addNew(have, more []string) []string {
+	for _, value := range more {
+		found := false
+		for _, existing := range have {
+			if existing == value {
+				found = true
+				break
+			}
+		}
+		if !found {
+			have = append(have, value)
+		}
+	}
+	return have
+}
+
+// JoinAnd lists things the way somebody reading the result would say them.
+func JoinAnd(values []string) string {
+	switch len(values) {
+	case 0:
+		return ""
+	case 1:
+		return values[0]
+	case 2:
+		return values[0] + " and " + values[1]
+	}
+	return strings.Join(values[:len(values)-1], ", ") + " and " + values[len(values)-1]
+}
+
 func buildFiles(parts reassemble.Parts, req Request) (Plan, error) {
 	if parts.Homedir == "" {
 		return Plan{}, fmt.Errorf("granular: this snapshot has no home directory in it")
