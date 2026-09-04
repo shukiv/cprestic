@@ -107,13 +107,25 @@ quietly do.
 
 Two checks are made before anything runs, and either one fails the whole
 request rather than skipping an entry: no other account may currently hold the
-user name, and every database granted must be one the account has now. A
-restore that quietly left out the grant an application connects with is a
-restore that reports success and leaves the site down.
+user name, and every database granted must be one the account has, or one this
+same restore is about to put back. A restore that quietly left out the grant an
+application connects with is a restore that reports success and leaves the site
+down.
 
 Restoring the users before the database they read is the order a customer will
-try, and it is answered with "restore or create those databases first" rather
-than with a failure they cannot act on.
+try, and it is answered with "add that database to this restore, or create it
+first" rather than with a failure they cannot act on.
+
+## A database that is no longer there
+
+Dropping a database and wanting it back is the case this was built for, so a
+database the account no longer has is made again before the backup's copy goes
+into it. It is created as the account, which means cPanel applies the plan's
+limit on how many databases the account may have, applies the account's name
+prefix, and records the new database as theirs — one made any other way would
+be a database MySQL has and the panel does not, which the customer could
+neither see nor delete. An account already at its limit is told so, and nothing
+is written.
 
 ## Who is let in
 

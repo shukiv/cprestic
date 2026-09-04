@@ -129,13 +129,22 @@ type Provider interface {
 	// in the account's own public_html.
 	PutHomeDir(ctx context.Context, user, from string) error
 
+	// CreateDatabase makes a database the account does not have, so a
+	// dump has somewhere to go.
+	//
+	// Somebody who dropped a database and wants it back is the reason
+	// granular restores exist, and "create it again first, then come
+	// back" is a step this can take for them. It runs as the account, so
+	// cPanel applies the account's own database quota and name prefix,
+	// and writes the panel's record of it -- a database made behind
+	// cPanel's back is one the customer cannot see or delete.
+	CreateDatabase(ctx context.Context, user, database string) error
+
 	// LoadDatabase replaces the contents of one of the account's databases
 	// with a dump taken from a backup.
 	//
-	// The database must already exist and must belong to the account. It
-	// is not created here: creating one is a cPanel operation, with a
-	// quota and a database map behind it, and a restore that quietly made
-	// one would leave the panel not knowing about it.
+	// The database must already exist and must belong to the account:
+	// either it survived, or CreateDatabase made it a moment ago.
 	LoadDatabase(ctx context.Context, user, database, dumpPath string) error
 
 	// PutDatabaseUsers recreates the account's database users, with the

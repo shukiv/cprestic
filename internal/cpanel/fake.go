@@ -43,19 +43,29 @@ type Fake struct {
 	// PutBackHome and LoadedDatabases record what was written back into
 	// live accounts, for a test that needs to know a restore did more than
 	// leave a copy behind.
-	PutBackHome     []PutBackHome
-	LoadedDatabases []LoadedDatabase
-	RestoredDBUsers []RestoredDBUsers
+	PutBackHome      []PutBackHome
+	CreatedDatabases []CreatedDatabase
+	LoadedDatabases  []LoadedDatabase
+	RestoredDBUsers  []RestoredDBUsers
 	// DBUserOwners is which account each database user belongs to on this
 	// synthetic server. A user nobody claims is one this account may
 	// recreate, which is the case a restore of a deleted user is.
 	DBUserOwners map[string]string
+	// RefuseCreate makes CreateDatabase fail with this reason, the way
+	// cPanel refuses one when the account's database quota is reached.
+	RefuseCreate string
 }
 
 // PutBackHome is one home-directory tree written back into an account.
 type PutBackHome struct {
 	User string
 	From string
+}
+
+// CreatedDatabase is one database made for a restore to load into.
+type CreatedDatabase struct {
+	User     string
+	Database string
 }
 
 // LoadedDatabase is one dump loaded into a live database.
@@ -219,6 +229,25 @@ func (f *Fake) PutHomeDir(_ context.Context, user, from string) error {
 		return fmt.Errorf("cpanel: %s is not a directory", from)
 	}
 	f.PutBackHome = append(f.PutBackHome, PutBackHome{User: user, From: from})
+	return nil
+}
+
+// CreateDatabase records that a database would have been made, and adds it
+// to what the account owns, so a load that follows finds it there.
+func (f *Fake) CreateDatabase(_ context.Context, user, database string) error {
+	if f.RefuseCreate != "" {
+		return fmt.Errorf("cpanel: create the database %s: %s", database, f.RefuseCreate)
+	}
+	if f.owns(user, database) {
+		return fmt.Errorf("cpanel: %s already has the database %s", user, database)
+	}
+	if f.Databases == nil {
+		f.Databases = map[string][]string{}
+	}
+	f.Databases[user] = append(f.Databases[user], database)
+	f.CreatedDatabases = append(f.CreatedDatabases, CreatedDatabase{
+		User: user, Database: database,
+	})
 	return nil
 }
 

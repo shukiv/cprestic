@@ -371,11 +371,18 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 		}
 	}
 
-	var dumps []string
+	var dumps, create []string
 	if wantDumps {
-		if dumps, hint, err = checkDatabaseDumps(
-			assignment.CPanelUser, databaseNames, present, databases); err != nil {
+		if dumps, create, hint, err = checkDatabaseDumps(
+			databaseNames, present, databases); err != nil {
 			return "", hint, err
+		}
+		// A database this restore is about to make counts as the
+		// account's for what follows: a user granted access to it is
+		// asking for the database beside it in the same basket, not for
+		// one nobody is restoring.
+		for _, name := range create {
+			present[name] = true
 		}
 	}
 	var users []cpanel.DatabaseUser
@@ -392,9 +399,23 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 		}
 	}
 
-	// Written in the order the account needs: a dump goes into a database,
-	// and a grant is given on a database that is already there.
+	// Written in the order the account needs: a database exists before a
+	// dump goes into it, and a grant is given on a database that is
+	// already there.
 	var wrote []string
+	for _, name := range create {
+		if err := a.provider.CreateDatabase(ctx, assignment.CPanelUser, name); err != nil {
+			return "", fmt.Sprintf(
+				"The database %s is not on the account any more, and it could not "+
+					"be made again. Your host can say why: it may be that the "+
+					"account has as many databases as its plan allows.", name), err
+		}
+		log.Warn("database created for a restore",
+			"account", assignment.CPanelUser, "database", name)
+	}
+	if len(create) > 0 {
+		wrote = append(wrote, "created "+strings.Join(create, ", "))
+	}
 	for i, name := range databaseNames {
 		if err := a.provider.LoadDatabase(ctx, assignment.CPanelUser, name, dumps[i]); err != nil {
 			return "", "", err
@@ -423,59 +444,34 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 	return strings.Join(wrote, "; "), "", nil
 }
 
-// checkDatabaseDumps makes sure every named database is still on the
-// account and has a dump in this backup, and returns where those dumps are.
+// checkDatabaseDumps finds the dump for each named database, and says which
+// of them the account does not have.
 //
-// A name that is no longer one of the account's databases is reported as
-// itself rather than as a failure. Restoring a database somebody dropped is
-// the reason this exists, and being told "ask your host" when the answer is
-// "create it again first" would make the one case it was built for the one
-// case it cannot explain.
-func checkDatabaseDumps(account string, names []string, present map[string]bool,
-	databases string) (dumps []string, hint string, err error) {
+// A database somebody dropped is the case this feature exists for, so a
+// name the account no longer has is not a failure: it is one to make before
+// the dump goes into it. Whether the account may have it is cPanel's
+// answer, given when the database is created as the account -- its quota
+// and its name prefix, applied by the panel that owns those rules.
+func checkDatabaseDumps(names []string, present map[string]bool,
+	databases string) (dumps, create []string, hint string, err error) {
 
 	if len(names) == 0 {
-		return nil, "", errors.New("agent: no database was named to restore")
-	}
-	var missing []string
-	for _, name := range names {
-		if !present[name] {
-			missing = append(missing, name)
-		}
-	}
-	if len(missing) > 0 {
-		return nil, missingDatabaseHint(missing), fmt.Errorf(
-			"agent: %s no longer has the database(s) %s",
-			account, strings.Join(missing, ", "))
+		return nil, nil, "", errors.New("agent: no database was named to restore")
 	}
 	for _, name := range names {
 		dump := filepath.Join(databases, name+".sql")
 		if _, err := os.Stat(dump); err != nil {
-			return nil, fmt.Sprintf(
+			return nil, nil, fmt.Sprintf(
 					"This backup holds no copy of the database %s. Try an earlier "+
 						"restore point.", name),
 				fmt.Errorf("agent: this backup holds no dump of the database %s", name)
 		}
 		dumps = append(dumps, dump)
+		if !present[name] {
+			create = append(create, name)
+		}
 	}
-	return dumps, "", nil
-}
-
-// missingDatabaseHint says which databases have to exist before a dump can
-// go into them. One or several: a basket can name several databases, and
-// "The database a and b is not on the account" reads as one name somebody
-// has to go and look for.
-func missingDatabaseHint(missing []string) string {
-	if len(missing) == 1 {
-		return fmt.Sprintf(
-			"The database %s is not on the account any more. Create it again "+
-				"first, then restore into it: a backup can fill a database but "+
-				"cannot make one.", missing[0])
-	}
-	return fmt.Sprintf(
-		"The databases %s are not on the account any more. Create them again "+
-			"first, then restore into them: a backup can fill a database but "+
-			"cannot make one.", granular.JoinAnd(missing))
+	return dumps, create, "", nil
 }
 
 // checkDatabaseUsers reads the account's database users out of the backup
@@ -533,9 +529,11 @@ func checkDatabaseUsers(account string, wanted []string, present map[string]bool
 		users = chosen
 	}
 
-	// A grant on a database the account no longer has is the same
-	// situation as restoring into a dropped database, and deserves the
-	// same answer rather than "ask your host".
+	// A grant on a database that is neither on the account nor in this
+	// restore. The database beside it in a basket is made before this
+	// runs, so what is left here is a grant on something nobody is
+	// restoring -- and an empty database made to hold a grant would be a
+	// database the customer did not ask for.
 	var missing []string
 	for _, user := range users {
 		for _, grant := range user.Grants {
@@ -547,12 +545,12 @@ func checkDatabaseUsers(account string, wanted []string, present map[string]bool
 	if len(missing) > 0 {
 		sort.Strings(missing)
 		had := "These users had access to %s, which the account does not have " +
-			"any more. Restore or create that database first, then restore the " +
-			"users: a grant cannot be given on a database that is not there."
+			"any more. Add that database to this restore, or create it first: a " +
+			"grant cannot be given on a database that is not there."
 		if len(missing) > 1 {
 			had = "These users had access to %s, which the account does not have " +
-				"any more. Restore or create those databases first, then restore " +
-				"the users: a grant cannot be given on a database that is not there."
+				"any more. Add those databases to this restore, or create them " +
+				"first: a grant cannot be given on a database that is not there."
 		}
 		return nil, fmt.Sprintf(had, granular.JoinAnd(missing)), fmt.Errorf(
 			"agent: %s no longer has the database(s) %s",

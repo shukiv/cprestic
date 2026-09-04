@@ -99,12 +99,69 @@ func TestApplyingADatabaseTheAccountDoesNotOwnIsRefused(t *testing.T) {
 }
 
 // The case this feature exists for: somebody dropped their database this
-// morning and wants it back. cPanel no longer lists it, so the load cannot
-// go ahead -- and the answer they need is "make it again first", not the
-// generic failure a customer is otherwise shown.
-func TestARestoreIntoADroppedDatabaseSaysWhatToDoAboutIt(t *testing.T) {
+// morning and wants it back. cPanel no longer lists it, so it is made
+// again -- as the account, so the panel applies the account's own quota and
+// prefix and records it -- and then the dump goes into it.
+func TestARestoreIntoADroppedDatabaseMakesItAgain(t *testing.T) {
 	out := restoredTree(t)
 	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {"c1_wp"}}}
+	agent := quietAgent(fake)
+
+	wrote, hint, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			ItemKind:   string(granular.KindDatabase),
+			ItemNames:  []string{"c1_shop"},
+		}, out)
+	if err != nil {
+		t.Fatalf("applyItems: %v (%s)", err, hint)
+	}
+	if len(fake.CreatedDatabases) != 1 || fake.CreatedDatabases[0].Database != "c1_shop" {
+		t.Fatalf("created %+v", fake.CreatedDatabases)
+	}
+	if len(fake.LoadedDatabases) != 1 || fake.LoadedDatabases[0].Database != "c1_shop" {
+		t.Fatalf("loaded %+v", fake.LoadedDatabases)
+	}
+	// A database that was already there is not made again.
+	if !strings.Contains(wrote, "created c1_shop") ||
+		!strings.Contains(wrote, "loaded into c1_shop") {
+		t.Errorf("wrote = %q", wrote)
+	}
+}
+
+// A database the account still has is loaded into, not made again: making
+// it would fail, and a restore that reported a database it did not make
+// would be saying something untrue about the account.
+func TestARestoreIntoADatabaseThatIsStillThereMakesNothing(t *testing.T) {
+	out := restoredTree(t)
+	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {"c1_shop"}}}
+	agent := quietAgent(fake)
+
+	if _, hint, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			ItemKind:   string(granular.KindDatabase),
+			ItemNames:  []string{"c1_shop"},
+		}, out); err != nil {
+		t.Fatalf("applyItems: %v (%s)", err, hint)
+	}
+	if len(fake.CreatedDatabases) != 0 {
+		t.Errorf("created %+v", fake.CreatedDatabases)
+	}
+	if len(fake.LoadedDatabases) != 1 {
+		t.Errorf("loaded %+v", fake.LoadedDatabases)
+	}
+}
+
+// An account with as many databases as its plan allows cannot be given
+// another one. cPanel refuses, and nothing is loaded: the restore stops
+// where it is rather than filling some of what was asked for.
+func TestADatabaseThatCannotBeMadeStopsTheRestore(t *testing.T) {
+	out := restoredTree(t)
+	fake := &cpanel.Fake{
+		Databases:    map[string][]string{"c1": {}},
+		RefuseCreate: "the account has reached its database limit",
+	}
 	agent := quietAgent(fake)
 
 	_, hint, err := agent.applyItems(context.Background(), agent.log,
@@ -114,10 +171,13 @@ func TestARestoreIntoADroppedDatabaseSaysWhatToDoAboutIt(t *testing.T) {
 			ItemNames:  []string{"c1_shop"},
 		}, out)
 	if err == nil {
-		t.Fatal("a database that is not on the account was loaded")
+		t.Fatal("a database cPanel refused to make was loaded into")
 	}
-	if !strings.Contains(hint, "c1_shop") || !strings.Contains(hint, "Create it again") {
-		t.Fatalf("hint = %q", hint)
+	if len(fake.LoadedDatabases) != 0 {
+		t.Errorf("loaded %+v", fake.LoadedDatabases)
+	}
+	if !strings.Contains(hint, "c1_shop") || !strings.Contains(hint, "could not") {
+		t.Errorf("hint = %q", hint)
 	}
 	// What a customer is shown must not name a path or a repository.
 	if strings.Contains(hint, "/") {
@@ -125,28 +185,66 @@ func TestARestoreIntoADroppedDatabaseSaysWhatToDoAboutIt(t *testing.T) {
 	}
 }
 
-// A basket can name several databases, and a sentence built for one of
-// them tells the customer to go and find a database called "a and b".
-func TestSeveralDroppedDatabasesAreNamedAsSeveral(t *testing.T) {
+// A basket holding a database and the users that open it: the database is
+// made, filled, and only then are the grants given. A grant on a database
+// that is not there is refused by MySQL, so the order is the point.
+func TestADroppedDatabaseAndItsUsersComeBackTogether(t *testing.T) {
 	out := restoredTree(t)
+	stagedUsers(t, out,
+		`{"c1_wp":{"localhost":{"pass_hash":"2A4636","auth_plugin":"mysql_native_password"}}}`,
+		"GRANT ALL PRIVILEGES ON `c1\\_shop`.* TO 'c1_wp'@'localhost';\n")
+	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {}}}
+	agent := quietAgent(fake)
+
+	wrote, hint, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			Items: []protocol.RestoreSelection{
+				{Kind: string(granular.KindDatabase), Names: []string{"c1_shop"}},
+				{Kind: string(granular.KindDBUsers), Names: []string{"c1_wp"}},
+			},
+		}, out)
+	if err != nil {
+		t.Fatalf("applyItems: %v (%s)", err, hint)
+	}
+	if len(fake.CreatedDatabases) != 1 || len(fake.LoadedDatabases) != 1 ||
+		len(fake.RestoredDBUsers) != 1 {
+		t.Fatalf("created %+v loaded %+v users %+v",
+			fake.CreatedDatabases, fake.LoadedDatabases, fake.RestoredDBUsers)
+	}
+	if !strings.Contains(wrote, "created c1_shop") ||
+		!strings.Contains(wrote, "recreated c1_wp") {
+		t.Errorf("wrote = %q", wrote)
+	}
+}
+
+// A grant on a database that is neither on the account nor in this restore
+// is still refused. What a basket is about to make is one thing; making an
+// empty database nobody asked for, to hold a grant, is another.
+func TestAGrantOnADatabaseNobodyIsRestoringIsStillRefused(t *testing.T) {
+	out := restoredTree(t)
+	stagedUsers(t, out,
+		`{"c1_wp":{"localhost":{"pass_hash":"2A4636","auth_plugin":"mysql_native_password"}}}`,
+		"GRANT ALL PRIVILEGES ON `c1\\_gone`.* TO 'c1_wp'@'localhost';\n")
 	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {}}}
 	agent := quietAgent(fake)
 
 	_, hint, err := agent.applyItems(context.Background(), agent.log,
 		protocol.RestoreAssignment{
 			CPanelUser: "c1",
-			ItemKind:   string(granular.KindDatabase),
-			ItemNames:  []string{"c1_shop", "c1_wp"},
+			Items: []protocol.RestoreSelection{
+				{Kind: string(granular.KindDatabase), Names: []string{"c1_shop"}},
+				{Kind: string(granular.KindDBUsers), Names: []string{"c1_wp"}},
+			},
 		}, out)
 	if err == nil {
-		t.Fatal("databases that are not on the account were loaded")
+		t.Fatal("a grant on a database nobody has was given")
 	}
-	for _, want := range []string{
-		"The databases c1_shop and c1_wp are not", "Create them again", "into them",
-	} {
-		if !strings.Contains(hint, want) {
-			t.Errorf("hint = %q, wanted %q in it", hint, want)
-		}
+	if len(fake.CreatedDatabases) != 0 || len(fake.LoadedDatabases) != 0 {
+		t.Errorf("created %+v loaded %+v", fake.CreatedDatabases, fake.LoadedDatabases)
+	}
+	if !strings.Contains(hint, "c1_gone") || !strings.Contains(hint, "Add that database") {
+		t.Errorf("hint = %q", hint)
 	}
 }
 

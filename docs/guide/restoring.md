@@ -38,6 +38,11 @@ Choose an account and a destination. The page then shows:
   ticked one at a time; cron jobs and FTP logins are listed to be read, since
   each is lines inside a single file.
 
+- **A dropped database** comes back whole: the database is made again before
+  the dump goes into it, created as the account so cPanel applies the plan's
+  database limit and the account's name prefix and records it as theirs. An
+  account already at its limit is told so, and nothing is written.
+
 - **The basket** — *Add to basket* on any part collects what was ticked, and
   the basket at the top runs all of it as one restore. The parts of an account
   depend on each other: a database restored without the users that open it is

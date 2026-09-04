@@ -157,6 +157,40 @@ func dropSetIDBits(root string) error {
 	})
 }
 
+// CreateDatabase makes a database for the account so a dump has somewhere
+// to go.
+//
+// Run as the account rather than as root: cPanel then applies the account's
+// database quota and its name prefix, refuses a name another account holds,
+// and records the new database as this account's. Made any other way it
+// would be a database MySQL has and the panel does not, which the customer
+// can neither see nor delete.
+func (r *Real) CreateDatabase(ctx context.Context, user, database string) error {
+	if !plainAccountName(user) {
+		return fmt.Errorf("cpanel: %q is not a cPanel account name", user)
+	}
+	if err := granular.UsableDatabaseName(database); err != nil {
+		return err
+	}
+	create := exec.CommandContext(ctx, r.uapi(),
+		"--user="+user, "--output=jsonpretty", "Mysql", "create_database",
+		"name="+database)
+	var stderr bytes.Buffer
+	create.Stderr = &stderr
+	output, err := create.Output()
+	if err != nil {
+		return fmt.Errorf("cpanel: create the database %s: %s: %w",
+			database, lastLine(stderr.Bytes()), err)
+	}
+	// uapi reports a refusal in its answer and still exits zero, so the
+	// exit status is not the check. A quota reached and a name somebody
+	// else holds both arrive this way.
+	if err := uapiRefusal(output); err != nil {
+		return fmt.Errorf("cpanel: create the database %s: %w", database, err)
+	}
+	return nil
+}
+
 // LoadDatabase replaces the contents of one of the account's databases with
 // a dump taken from a backup.
 func (r *Real) LoadDatabase(ctx context.Context, user, database, dumpPath string) error {
