@@ -2009,6 +2009,38 @@ func TestTheRestorePageExplainsHowToPickFiles(t *testing.T) {
 	}
 }
 
+// WHM already draws a breadcrumb above the plugin, and the plugin drew a
+// second one under it — 62px of every page spent saying where you are
+// twice. The theme switch was the only working control up there, so it
+// moved into the rail with the rest of the chrome.
+func TestThePluginDoesNotDrawWHMsBreadcrumbAgain(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	_, page := get(t, client, "/")
+	for _, gone := range []string{"cpr-topbar", "cpr-breadcrumb", "WHM / Plugins / cP:Restic"} {
+		if strings.Contains(page, gone) {
+			t.Errorf("the page still carries %s", gone)
+		}
+	}
+
+	rail := strings.Index(page, `class="cpr-rail-foot"`)
+	theme := strings.Index(page, `id="theme"`)
+	aside := strings.Index(page, "</aside>")
+	if rail < 0 || theme < 0 || aside < 0 {
+		t.Fatalf("rail=%d theme=%d aside=%d", rail, theme, aside)
+	}
+	if theme < rail || theme > aside {
+		t.Error("the theme switch is not in the rail's foot")
+	}
+	// The rail said "cPanel integration" beside a green dot that was a
+	// literal, not a check, and named a role the plugin only ever serves.
+	for _, gone := range []string{"cPanel integration", "WHM administrator"} {
+		if strings.Contains(page, gone) {
+			t.Errorf("the rail still claims %q", gone)
+		}
+	}
+}
+
 // A plugin nobody can read the source or the manual of is a plugin an
 // operator has to guess at. Both live one click away, in the rail's foot.
 func TestTheRailPointsAtTheSourceAndTheManual(t *testing.T) {

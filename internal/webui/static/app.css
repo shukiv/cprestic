@@ -638,8 +638,7 @@
 }
 .cprest .cpr-nav a:hover { background:#1D3049; color:#FFFFFF; }
 .cprest .cpr-nav a[aria-current="page"] { background:#27466A; color:#FFFFFF; font-weight:700; }
-.cprest .cpr-nav svg,
-.cprest .cpr-topbar svg {
+.cprest .cpr-nav svg {
   width:20px; height:20px; flex:none; fill:none; stroke:currentColor;
   stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;
 }
@@ -649,9 +648,18 @@
   display:grid; gap:7px; margin-top:auto; padding:14px 10px 0;
   border-top:1px solid #2C4058; color:#A9BBCF; font-size:12px;
 }
-.cprest .cpr-rail-state { display:flex; align-items:center; gap:7px; color:#C8D7E7; font-weight:600; }
-.cprest .cpr-rail-state i { width:7px; height:7px; border-radius:50%; background:#64C894; }
 .cprest .cpr-rail-foot-row { display:flex; align-items:center; gap:10px; }
+/* The switch used to sit in a bar across the top of the workspace, which
+   spent 62px of every page on a breadcrumb WHM already draws. It lives in
+   the rail now, on navy: its own tokens are for a light surface. */
+.cprest .cpr-rail-foot .cpr-theme {
+  align-self:start; margin:0 0 2px; background:#1B2A3D; border-color:#2C4058;
+}
+.cprest .cpr-rail-foot .cpr-theme button { width:34px; min-height:30px; color:#A9BBCF; }
+.cprest .cpr-rail-foot .cpr-theme button:hover { color:#FFFFFF; }
+.cprest .cpr-rail-foot .cpr-theme button[aria-pressed="true"] {
+  background:#2C4058; color:#FFFFFF; box-shadow:none;
+}
 .cprest .cpr-rail-links { display:flex; margin-left:auto; gap:2px; }
 .cprest .cpr-rail-links a {
   display:flex; align-items:center; justify-content:center;
@@ -670,13 +678,6 @@
   min-width:0; border:1px solid var(--line); border-left:0;
   border-radius:0; background:var(--ground);
 }
-.cprest .cpr-topbar {
-  display:flex; min-height:62px; align-items:center; justify-content:space-between;
-  gap:16px; padding:8px 28px; border-bottom:1px solid var(--line);
-  background:color-mix(in srgb, var(--surface) 94%, transparent);
-}
-.cprest .cpr-breadcrumb { color:var(--muted); font-size:13px; }
-.cprest .cpr-theme { margin-left:auto; }
 .cprest .cpr-theme button { display:grid; width:36px; min-height:36px; padding:0; place-items:center; }
 .cprest .cpr-theme svg { width:17px; height:17px; }
 .cprest main {
@@ -697,12 +698,12 @@
   .cprest .cpr-brand-name,
   .cprest .cpr-server,
   .cprest .cpr-nav-text,
-  .cprest .cpr-nav-label,
-  .cprest .cpr-rail-state,
-  .cprest .cpr-rail-meta { display:none; }
+  .cprest .cpr-nav-label { display:none; }
   .cprest .cpr-nav a { justify-content:center; padding-inline:8px; }
-  /* The narrow rail drops the footer's words. The two links are icons
-     already, so they stay, centred. */
+  /* A 76px rail has no room for three buttons and two links side by side,
+     so the footer stacks instead of scrolling sideways. */
+  .cprest .cpr-rail-foot { justify-items:center; }
+  .cprest .cpr-rail-foot .cpr-theme { align-self:center; flex-direction:column; }
   .cprest .cpr-rail-links { margin:0 auto; }
 }
 
@@ -718,7 +719,6 @@
   .cprest .cpr-nav { display:flex; min-width:0; flex:1; gap:4px; overflow-x:auto; }
   .cprest .cpr-nav a { min-width:44px; flex:0 0 44px; }
   .cprest .cpr-workspace { border-left:1px solid var(--line); border-radius:0; }
-  .cprest .cpr-topbar { min-height:52px; padding:8px 16px; }
   .cprest main { padding:22px 16px 80px; }
   .cprest .cpr-btn,
   .cprest .cpr-chip,
@@ -729,9 +729,6 @@
 
 @media (max-width:480px) {
   .cprest .cpr-brand-name { display:none; }
-  .cprest .cpr-breadcrumb { font-size:12px; }
-  .cprest .cpr-topbar { align-items:flex-start; flex-direction:column; gap:6px; }
-  .cprest .cpr-theme { margin-left:0; }
 }
 
 /* --- cPanel account recovery -----------------------------------------
