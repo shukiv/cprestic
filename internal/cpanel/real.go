@@ -66,6 +66,9 @@ type Real struct {
 	// UapiPath calls cPanel's user API as a named account. Empty means
 	// the standard cPanel script.
 	UapiPath string
+	// Crontab writes an account's cron jobs. Empty means "crontab" on
+	// PATH.
+	Crontab string
 }
 
 var _ Provider = (*Real)(nil)

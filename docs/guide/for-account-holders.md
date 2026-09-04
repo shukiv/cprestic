@@ -17,16 +17,22 @@ categories into one restore. The categories are:
 - mail
 - FTP settings
 
-Each of them can be downloaded as a **private package**. Five of them can also
+Each of them can be downloaded as a **private package**. Six of them can also
 be **put back into the live account**: the home directory, the website, mail,
-a database and the database users. Those are the ones where the backup holds
-everything needed to make the account whole again, and the customer is told
-plainly, and has to tick a box, before the live copy is replaced.
+a database, the database users and the cron jobs. Those are the ones where the
+backup holds everything needed to make the account whole again, and the
+customer is told plainly, and has to tick a box, before the live copy is
+replaced.
+
+Cron is replaced whole, because an account's jobs are lines in a single file
+and that file is what cron reads. A job added since the backup was taken goes
+with the rest; the jobs being replaced are kept beside the restored ones, so a
+host can put one back.
 
 The rest stay download-only. Not because putting them back is impossible, but
 because each needs a change the control panel makes rather than a file copied
 over another — a DNS zone, an installed certificate, an FTP login, the
-account's own settings — and none of that is built yet. So does the full
+account's own settings — and that is not built yet. So does the full
 account archive, whatever else is selected: that one goes to cPanel's
 `restorepkg`, which runs as root over a home directory the customer controls,
 and it remains an operator's decision.

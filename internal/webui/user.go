@@ -462,6 +462,12 @@ func (v userView) ItemsNote() string {
 	if v.Kind.PicksItems() {
 		return "Tick the ones you want. Leave every box empty to recover all of them."
 	}
+	if v.Kind == granular.KindCron {
+		return "This is what the backup holds. Putting them back replaces your " +
+			"scheduled jobs with these: they are lines in a single file, so a job " +
+			"you added since this backup was taken would go. The jobs being " +
+			"replaced are kept, so your host can put one back."
+	}
 	return "This is what the backup holds. They come back together: a crontab and " +
 		"the FTP logins are each one file, and handing back part of one would hand " +
 		"back a file that is not the one in the backup."

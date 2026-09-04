@@ -94,17 +94,18 @@ func (k Kind) Title() string {
 // CanApply reports whether a restore of this kind can be written back into
 // a live account, rather than only handed over as a copy.
 //
-// The five that can are the ones where the backup holds everything needed
-// to make the account whole again: files land in the home directory, a dump
-// loads into the database it came from, a database user is recreated from
-// the hash the backup carries. The rest are not refused because putting
-// them back is impossible -- it is that each needs the control panel to
-// make a change of its own, and none of that is built yet. A DNS zone, an
-// installed certificate, an FTP login and the account's own configuration
-// are all a copy their host puts back until it is.
+// The ones that can are where the backup holds everything needed to make
+// the account whole again: files land in the home directory, a dump loads
+// into the database it came from, a database user is recreated from the
+// hash the backup carries, an account's cron jobs are the file cron reads.
+// The rest are not refused because putting them back is impossible -- it is
+// that each needs the control panel to make a change of its own, and that
+// is not built yet. A DNS zone, an installed certificate, an FTP login and
+// the account's own configuration are all a copy their host puts back
+// until it is.
 func (k Kind) CanApply() bool {
 	switch k {
-	case KindFiles, KindWebsite, KindMailbox, KindDatabase, KindDBUsers:
+	case KindFiles, KindWebsite, KindMailbox, KindDatabase, KindDBUsers, KindCron:
 		return true
 	}
 	return false

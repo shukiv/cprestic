@@ -244,6 +244,67 @@ func (r *Real) LoadDatabase(ctx context.Context, user, database, dumpPath string
 	return nil
 }
 
+// maxCrontab is as large as a crontab is allowed to be. A cPanel account's
+// is a few lines; anything approaching this is not one.
+const maxCrontab = 1 << 20
+
+// PutCrontab replaces an account's cron jobs with the ones in a backup.
+//
+// Through crontab(1) rather than by writing /var/spool/cron directly: it
+// checks the syntax, writes the file with the ownership and mode cron
+// insists on, and tells the daemon. A file copied into place with a line
+// cron cannot read is a crontab cron ignores in full, which is an account
+// whose jobs all stopped without anything failing.
+//
+// The whole crontab is replaced, because that is what the backup holds and
+// what cron reads. A job added since the backup was taken is gone -- so the
+// crontab as it was is written beside the restored one first, and the
+// staging directory a restore keeps is where it stays.
+func (r *Real) PutCrontab(ctx context.Context, user, from string) error {
+	if !plainAccountName(user) {
+		return fmt.Errorf("cpanel: %q is not a cPanel account name", user)
+	}
+	restored, err := os.ReadFile(from)
+	if err != nil {
+		return fmt.Errorf("cpanel: cron jobs from the backup: %w", err)
+	}
+	if len(restored) > maxCrontab {
+		return fmt.Errorf(
+			"cpanel: the cron jobs in this backup are %d bytes, which is not a crontab",
+			len(restored))
+	}
+	if bytes.IndexByte(restored, 0) >= 0 {
+		return fmt.Errorf("cpanel: the cron jobs in this backup are not text")
+	}
+
+	// What is running now, kept where the restore's own files are. This
+	// is the only copy of it once crontab has written.
+	previous := exec.CommandContext(ctx, r.crontab(), "-u", user, "-l")
+	if current, err := previous.Output(); err == nil {
+		if err := os.WriteFile(from+".replaced", current, 0o600); err != nil {
+			return fmt.Errorf("cpanel: keep the crontab being replaced: %w", err)
+		}
+	}
+	// An account with no crontab at all makes that command fail, and
+	// there is nothing to keep. Not a reason to refuse the restore.
+
+	install := exec.CommandContext(ctx, r.crontab(), "-u", user, from)
+	var stderr bytes.Buffer
+	install.Stderr = &stderr
+	if err := install.Run(); err != nil {
+		return fmt.Errorf("cpanel: put back %s's cron jobs: %s: %w",
+			user, lastLine(stderr.Bytes()), err)
+	}
+	return nil
+}
+
+func (r *Real) crontab() string {
+	if r.Crontab != "" {
+		return r.Crontab
+	}
+	return "crontab"
+}
+
 // PutDatabaseUsers recreates an account's database users from a backup and
 // grants them what they had.
 //

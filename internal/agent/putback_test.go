@@ -274,6 +274,69 @@ func TestABasketThatCannotRestoreItsUsersMakesNothing(t *testing.T) {
 	}
 }
 
+// An account's cron jobs are lines in one file, so the file is what comes
+// back -- through the provider, which puts it where cron reads it.
+func TestApplyingCronPutsTheWholeCrontabBack(t *testing.T) {
+	out := restoredTree(t)
+	crontab := "SHELL=\"/usr/local/cpanel/bin/jailshell\"\nMAILTO=\"\"\n" +
+		"*/15 * * * * /usr/local/bin/ea-php83 /home/c1/public_html/wp-cron.php\n"
+	stagedCron(t, out, "c1", crontab)
+	fake := &cpanel.Fake{}
+	agent := quietAgent(fake)
+
+	wrote, hint, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			ItemKind:   string(granular.KindCron),
+		}, out)
+	if err != nil {
+		t.Fatalf("applyItems: %v (%s)", err, hint)
+	}
+	if len(fake.PutBackCrontabs) != 1 || fake.PutBackCrontabs[0].Body != crontab {
+		t.Fatalf("put back %+v", fake.PutBackCrontabs)
+	}
+	if !strings.Contains(wrote, "cron jobs of c1") {
+		t.Errorf("wrote = %q", wrote)
+	}
+}
+
+// An account that had no cron jobs has no file in its archive. Writing an
+// empty crontab would read as a restore and be a deletion of whatever is
+// running now.
+func TestApplyingCronFromABackupWithNoneChangesNothing(t *testing.T) {
+	out := restoredTree(t)
+	fake := &cpanel.Fake{}
+	agent := quietAgent(fake)
+
+	_, hint, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			ItemKind:   string(granular.KindCron),
+		}, out)
+	if err == nil {
+		t.Fatal("an empty crontab was written over the account's jobs")
+	}
+	if len(fake.PutBackCrontabs) != 0 {
+		t.Errorf("put back %+v", fake.PutBackCrontabs)
+	}
+	if !strings.Contains(hint, "no cron jobs") {
+		t.Errorf("hint = %q", hint)
+	}
+}
+
+// stagedCron writes an account's cron jobs where a restore leaves them:
+// inside the archive's own top-level directory, under the metadata tree.
+func stagedCron(t *testing.T, out, user, body string) {
+	t.Helper()
+	dir := filepath.Join(out, "metadata", "cpmove-"+user, "cron")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, user), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestApplyingFilesWritesTheHomeDirectory(t *testing.T) {
 	out := restoredTree(t)
 	fake := &cpanel.Fake{}

@@ -147,6 +147,16 @@ type Provider interface {
 	// either it survived, or CreateDatabase made it a moment ago.
 	LoadDatabase(ctx context.Context, user, database, dumpPath string) error
 
+	// PutCrontab replaces the account's cron jobs with the ones a backup
+	// holds.
+	//
+	// The whole crontab at once, because that is what the backup holds
+	// and what cron reads: an account's jobs are lines in one file, and
+	// putting back some of them would leave a file that is neither what
+	// is running now nor what was backed up. A job added since the backup
+	// was taken goes; the copy replaced is kept beside the restored one.
+	PutCrontab(ctx context.Context, user, from string) error
+
 	// PutDatabaseUsers recreates the account's database users, with the
 	// passwords they had, and grants them what the backup says they had.
 	//

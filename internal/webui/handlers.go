@@ -2323,6 +2323,12 @@ func (v restoreView) ItemsNote() string {
 	if v.Kind.PicksItems() {
 		return "Tick what you want. Leave every box empty to take all of them."
 	}
+	if v.Kind == granular.KindCron {
+		return "What this backup holds. Putting them back replaces the account's " +
+			"crontab with this one: an account's jobs are lines in a single file, " +
+			"so a job added since this backup was taken goes. The crontab being " +
+			"replaced is kept beside the restored one."
+	}
 	return "What this backup holds. They come out together: a crontab and the FTP " +
 		"logins are each one file, and handing back part of one would hand back a " +
 		"file that is not the one in the backup."

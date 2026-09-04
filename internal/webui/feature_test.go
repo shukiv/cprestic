@@ -188,6 +188,7 @@ func TestAnAccountCanApplyOnlyWhatCanBeWrittenBack(t *testing.T) {
 		granular.KindMailbox:  true,
 		granular.KindDatabase: true,
 		granular.KindDBUsers:  true,
+		granular.KindCron:     true,
 	}
 	for _, kind := range userKinds {
 		names := []string{"something"}

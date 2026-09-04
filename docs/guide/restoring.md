@@ -45,6 +45,13 @@ Choose an account and a destination. The page then shows:
   only for a name cPanel no longer has. Nothing here brings any of it back; the
   space comes back at the next prune.
 
+- **Cron jobs** can go back into the account. The whole crontab is replaced,
+  because that is what the backup holds and what cron reads, so a job added
+  since the backup was taken goes with it — the crontab being replaced is
+  written beside the restored one in the staging directory the restore keeps.
+  It goes in through `crontab`, which checks the syntax: a file copied into
+  place with a line cron cannot read is a crontab cron ignores in full.
+
 - **A dropped database** comes back whole: the database is made again before
   the dump goes into it, created as the account so cPanel applies the plan's
   database limit and the account's name prefix and records it as theirs. An

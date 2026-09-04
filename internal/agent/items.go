@@ -329,8 +329,8 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 	}
 
 	var (
-		databaseNames, userNames          []string
-		wantDumps, wantUsers, wantHomedir bool
+		databaseNames, userNames                    []string
+		wantDumps, wantUsers, wantHomedir, wantCron bool
 	)
 	for _, selection := range selections {
 		kind := granular.Kind(selection.Kind)
@@ -345,6 +345,10 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 		case granular.KindDBUsers:
 			wantUsers = true
 			userNames = append(userNames, selection.Names...)
+		case granular.KindCron:
+			// Never by name. The account's jobs are lines in one file,
+			// and the page says so: what comes back is the file.
+			wantCron = true
 		default:
 			// Files, the website and mail are all the home directory,
 			// restored where they were. A basket asking for two of them
@@ -398,6 +402,16 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 				"agent: this backup holds none of the account's files")
 		}
 	}
+	crontab := ""
+	if wantCron {
+		if crontab, err = stagedCrontab(out, assignment.CPanelUser); err != nil {
+			// An account with no cron jobs has no file in its archive.
+			// Writing an empty crontab here would read as a restore and
+			// be a deletion: whatever is running now would stop.
+			return "", "This backup holds no cron jobs for the account. Nothing " +
+				"has been changed.", err
+		}
+	}
 
 	// Written in the order the account needs: a database exists before a
 	// dump goes into it, and a grant is given on a database that is
@@ -438,7 +452,39 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 		}
 		wrote = append(wrote, "written into the home directory of "+assignment.CPanelUser)
 	}
+	if wantCron {
+		if err := a.provider.PutCrontab(ctx, assignment.CPanelUser, crontab); err != nil {
+			return "", "", err
+		}
+		log.Warn("cron jobs put back from a backup", "account", assignment.CPanelUser)
+		wrote = append(wrote, "cron jobs of "+assignment.CPanelUser)
+	}
 	return strings.Join(wrote, "; "), "", nil
+}
+
+// stagedCrontab finds the account's cron jobs in a restored tree.
+//
+// They come out of the account's own archive, which keeps its own top-level
+// directory when members are taken out of it -- cpmove-<account>, usually,
+// but that is the archive's name for itself and not something to depend on.
+func stagedCrontab(out, user string) (string, error) {
+	root := filepath.Join(out, "metadata")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return "", fmt.Errorf("agent: this backup holds no cron jobs for %s", user)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		path := filepath.Join(root, entry.Name(), "cron", user)
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		return path, nil
+	}
+	return "", fmt.Errorf("agent: this backup holds no cron jobs for %s", user)
 }
 
 // createFailureHint says why a database could not be made, in cPanel's own

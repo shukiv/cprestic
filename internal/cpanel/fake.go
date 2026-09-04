@@ -47,6 +47,8 @@ type Fake struct {
 	CreatedDatabases []CreatedDatabase
 	LoadedDatabases  []LoadedDatabase
 	RestoredDBUsers  []RestoredDBUsers
+	// PutBackCrontabs records the cron jobs written into live accounts.
+	PutBackCrontabs []PutBackCrontab
 	// DBUserOwners is which account each database user belongs to on this
 	// synthetic server. A user nobody claims is one this account may
 	// recreate, which is the case a restore of a deleted user is.
@@ -73,6 +75,12 @@ type LoadedDatabase struct {
 	User     string
 	Database string
 	DumpPath string
+}
+
+// PutBackCrontab is one account's cron jobs written back.
+type PutBackCrontab struct {
+	User string
+	Body string
 }
 
 // RestoredDBUsers is one set of database users written back into an account.
@@ -268,6 +276,20 @@ func (f *Fake) LoadDatabase(_ context.Context, user, database, dumpPath string) 
 	}
 	f.LoadedDatabases = append(f.LoadedDatabases, LoadedDatabase{
 		User: user, Database: database, DumpPath: dumpPath,
+	})
+	return nil
+}
+
+// PutCrontab records that an account's cron jobs would have been replaced,
+// and keeps what the file said, so a test can check the whole crontab went
+// rather than a line of it.
+func (f *Fake) PutCrontab(_ context.Context, user, from string) error {
+	body, err := os.ReadFile(from)
+	if err != nil {
+		return fmt.Errorf("cpanel: cron jobs from the backup: %w", err)
+	}
+	f.PutBackCrontabs = append(f.PutBackCrontabs, PutBackCrontab{
+		User: user, Body: string(body),
 	})
 	return nil
 }
