@@ -502,15 +502,19 @@
 .cprest .cpr-brand,
 .cprest .cpr-brand:link,
 .cprest .cpr-brand:visited {
-  display:flex; min-height:44px; align-items:center; gap:10px;
-  margin:0; padding:0; color:#F4F8FC; font-size:18px; font-weight:700;
+  display:flex; min-height:44px; align-items:center; gap:12px;
+  margin:0; padding:0; color:#F4F8FC; font-size:22px; font-weight:700;
 }
+/* The mark keeps its own rounding. Everything else on the page is 3px,
+ * but this is the product's badge rather than a box on the page, and it
+ * is the same shape as the icon WHM shows in its plugin list — a square
+ * one here and a rounded one there would read as two products. */
 .cprest .cpr-brand-mark {
-  display:grid; width:34px; height:34px; flex:none; place-items:center;
-  border-radius:3px; background:#E35E30; color:#FFFFFF;
-  font-size:12px; font-weight:700; letter-spacing:-.03em;
+  display:grid; width:42px; height:42px; flex:none; place-items:center;
+  border-radius:9px; background:#E35E30; color:#FFFFFF;
+  font-size:15px; font-weight:700; letter-spacing:-.03em;
 }
-.cprest .cpr-brand-name { white-space:nowrap; }
+.cprest .cpr-brand-name { white-space:nowrap; letter-spacing:-.01em; }
 /* The restore views. A row of links, not a scripted tab widget: each view
  * is its own address, so a reload, a bookmark and the back button all land
  * where the operator was. */
@@ -569,7 +573,7 @@
   border-bottom-color:var(--accent); color:var(--ink);
 }
 
-.cprest .cpr-server { margin:8px 0 17px 44px; color:#9FB2C9; font-size:12px; }
+.cprest .cpr-server { margin:2px 0 18px 54px; color:#9FB2C9; font-size:13px; }
 .cprest .cpr-nav { display:grid; gap:4px; overflow:visible; }
 .cprest .cpr-nav-label {
   padding:7px 10px 5px; color:#8298B2; font-size:10px; font-weight:700;
@@ -684,6 +688,9 @@
   display:flex; align-items:center; gap:10px; flex:none;
   color:var(--ink); font-size:17px; font-weight:700;
 }
+/* The customer's header is a 66px bar, not a rail: the mark keeps the
+ * rail's shape at the size that fits a single line. */
+.cprest.cpr-user .cpr-brand-mark { width:34px; height:34px; border-radius:7px; font-size:12px; }
 .cprest.cpr-user .cpr-userbrand:focus-visible,
 .cprest.cpr-user .cpr-usernav a:focus-visible,
 .cprest.cpr-user .cpr-kind-card:focus-visible {
