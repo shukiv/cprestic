@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 )
@@ -296,4 +297,33 @@ func validateSnapshotID(id string) error {
 		}
 	}
 	return nil
+}
+
+// Dump writes one file out of a snapshot, without restoring anything to
+// disk.
+//
+// It exists so a page can say what a backup holds. The parts of an account
+// that are not files -- its DNS zones, its certificates, its cron jobs, its
+// database users -- are inside a single archive or a single SQL file in the
+// snapshot, so "restic ls" can see the container and nothing in it. Reading
+// that container is the only way to list what it holds, and restoring it to
+// disk first would mean a restore to answer a question.
+//
+// The output is streamed rather than captured: a metadata archive runs to
+// tens of megabytes, and the caller reads names out of it as it arrives.
+func (r *Runner) Dump(ctx context.Context, repo Repository, snapshotID, path string, out io.Writer) error {
+	if err := validateSnapshotID(snapshotID); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(path, "/") || strings.Contains(path, "..") {
+		return fmt.Errorf("resticrun: %q is not a path inside a snapshot", path)
+	}
+	if out == nil {
+		return fmt.Errorf("resticrun: dump has nowhere to write")
+	}
+	result, err := r.run(ctx, repo, []string{"dump", snapshotID, path}, secondary{}, nil, out)
+	if err != nil {
+		return err
+	}
+	return classifyExit(result.ExitCode, result.Stderr, false)
 }

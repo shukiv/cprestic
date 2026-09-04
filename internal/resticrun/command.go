@@ -28,6 +28,12 @@ type Command struct {
 	// and an operator watching a five-minute upload should not have to
 	// wait for the summary to know it is moving.
 	OnLine func(line []byte)
+	// Stdout, when set, receives the process's standard output instead of
+	// it being captured in the result. What comes out of "restic dump" is
+	// as large as the file it dumps, which for an account's metadata
+	// archive is tens of megabytes -- more than the capture cap holds, and
+	// more than belongs in memory to read a list of names out of.
+	Stdout io.Writer
 }
 
 // CommandResult is the outcome of an invocation that actually ran. A
@@ -78,6 +84,9 @@ func (o *OSExec) Exec(ctx context.Context, cmd Command) (CommandResult, error) {
 	var stdout, stderr bytes.Buffer
 	capped := &cappedWriter{buf: &stdout, limit: limit}
 	var out io.Writer = capped
+	if cmd.Stdout != nil {
+		out = cmd.Stdout
+	}
 	if cmd.OnLine != nil {
 		out = io.MultiWriter(out, &lineWriter{emit: cmd.OnLine})
 	}

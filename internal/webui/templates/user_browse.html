@@ -130,6 +130,30 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.6-2.9 8-7 10-4.1-2-7-5.4-7-10V6zM9 12l2 2 4-4"/></svg>
       <div><b>From the backup taken {{stamp $data.SnapshotAt}}</b><p class="cpr-hint">{{$data.PutBackNote}}</p></div>
     </div>
+
+    {{with $data.ItemsErr}}<div class="cpr-pad"><div class="cpr-banner cpr-warn"><div class="cpr-body">{{.}}</div></div></div>{{end}}
+
+    {{if $data.Items}}
+    <div class="cpr-tablewrap"><table class="cpr-picker-table">
+      <thead><tr>
+        {{if $data.PicksItems}}<th class="cpr-check-col"><span class="cpr-visually-hidden">Select</span></th>{{end}}
+        <th>In this restore point</th><th>Detail</th>
+      </tr></thead>
+      <tbody>
+        {{range $data.Items}}
+        <tr>
+          {{if $data.PicksItems}}<td class="cpr-check-col">{{if .Name}}<input type="checkbox" name="name" value="{{.Name}}" aria-label="Select {{.Label}}">{{end}}</td>{{end}}
+          <td class="cpr-acct">{{.Label}}</td>
+          <td class="cpr-sublabel">{{if .Detail}}{{.Detail}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table></div>
+    <div class="cpr-pad"><p class="cpr-hint">{{$data.ItemsNote}}</p></div>
+    {{else if not $data.ItemsErr}}
+    <div class="cpr-empty"><p>{{$data.ItemsEmpty}}</p></div>
+    {{end}}
+
     {{template "recoveryactions" $data}}
   </form>
   {{end}}

@@ -23,10 +23,13 @@ import (
 	"github.com/shuki/cprest/internal/agent"
 	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/destination"
+	"github.com/shuki/cprest/internal/granular"
+	"github.com/shuki/cprest/internal/inventory"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/nodestore"
 	"github.com/shuki/cprest/internal/notify"
 	"github.com/shuki/cprest/internal/protocol"
+	"github.com/shuki/cprest/internal/reassemble"
 	"github.com/shuki/cprest/internal/resticrun"
 	"github.com/shuki/cprest/internal/staging"
 	"github.com/shuki/cprest/internal/vault"
@@ -59,6 +62,11 @@ type Engine struct {
 	lastReconcile time.Time
 	staging       *staging.Manager
 	log           *slog.Logger
+
+	// items remembers what a snapshot holds in the parts of an account
+	// that are not files, so browsing between them does not stream the
+	// same archive out of the repository once per click.
+	items inventory.Cache
 
 	settings nodestore.Settings
 	// accountUID is replaceable in tests; on a cPanel host it resolves the
@@ -476,6 +484,27 @@ func (e *Engine) Browse(ctx context.Context, repositoryID, snapshotID string, su
 		return nil, err
 	}
 	return e.runner.Ls(ctx, repo, snapshotID, subpaths...)
+}
+
+// Items says what one part of an account a snapshot holds: which DNS
+// zones, which certificates, which cron jobs, which database users.
+//
+// The parts of an account that are files are listed by Browse, out of the
+// snapshot's own paths. These are inside a single archive or a single SQL
+// file, so saying what is in them means reading them.
+func (e *Engine) Items(ctx context.Context, repositoryID, snapshotID string,
+	parts reassemble.Parts, kind granular.Kind) ([]inventory.Item, error) {
+
+	repo, err := e.OpenRepository(repositoryID, false)
+	if err != nil {
+		return nil, err
+	}
+	return e.items.Items(ctx, e.runner, inventory.Source{
+		Key:        repositoryID,
+		Repo:       repo,
+		SnapshotID: snapshotID,
+		Parts:      parts,
+	}, kind)
 }
 
 // assignmentFor turns a stored job into the assignment the fleet agent

@@ -3,6 +3,7 @@ package resticrun
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -194,7 +195,8 @@ func (r *Runner) Forget(ctx context.Context, repo Repository, spec ForgetSpec) e
 //
 // extra carries the settings of a second repository opened in the same
 // invocation, as "restic init --from-repo" needs.
-func (r *Runner) run(ctx context.Context, repo Repository, args []string, extra secondary, onLine func([]byte)) (CommandResult, error) {
+func (r *Runner) run(ctx context.Context, repo Repository, args []string, extra secondary,
+	onLine func([]byte), stream ...io.Writer) (CommandResult, error) {
 	if repo.Dest == nil {
 		return CommandResult{}, fmt.Errorf("resticrun: repository has no destination")
 	}
@@ -256,12 +258,16 @@ func (r *Runner) run(ctx context.Context, repo Repository, args []string, extra 
 	if r.cfg.CACertPath != "" {
 		globals = append(globals, "--cacert", r.cfg.CACertPath)
 	}
-	return r.exec.Exec(ctx, Command{
+	command := Command{
 		Path:   r.binary(),
 		Args:   append(globals, args...),
 		Env:    envSlice(env),
 		OnLine: onLine,
-	})
+	}
+	if len(stream) == 1 {
+		command.Stdout = stream[0]
+	}
+	return r.exec.Exec(ctx, command)
 }
 
 // mergeOptions combines two sets of restic extended options. Restic applies

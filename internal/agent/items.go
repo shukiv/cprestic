@@ -2,19 +2,18 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/granular"
+	"github.com/shuki/cprest/internal/inventory"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/protocol"
 	"github.com/shuki/cprest/internal/reassemble"
@@ -330,7 +329,7 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 	}
 
 	var (
-		databaseNames                     []string
+		databaseNames, userNames          []string
 		wantDumps, wantUsers, wantHomedir bool
 	)
 	for _, selection := range selections {
@@ -345,6 +344,7 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 			databaseNames = append(databaseNames, selection.Names...)
 		case granular.KindDBUsers:
 			wantUsers = true
+			userNames = append(userNames, selection.Names...)
 		default:
 			// Files, the website and mail are all the home directory,
 			// restored where they were. A basket asking for two of them
@@ -381,7 +381,7 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 	var users []cpanel.DatabaseUser
 	if wantUsers {
 		if users, hint, err = checkDatabaseUsers(
-			assignment.CPanelUser, present, databases); err != nil {
+			assignment.CPanelUser, userNames, present, databases); err != nil {
 			return "", hint, err
 		}
 	}
@@ -471,7 +471,7 @@ func checkDatabaseDumps(account string, names []string, present map[string]bool,
 // privileged provider: what runs there runs as root against the server's
 // MySQL, and it takes checked values rather than a file whose contents
 // nobody has looked at.
-func checkDatabaseUsers(account string, present map[string]bool,
+func checkDatabaseUsers(account string, wanted []string, present map[string]bool,
 	databases string) (users []cpanel.DatabaseUser, hint string, err error) {
 
 	users, err = readStagedDatabaseUsers(databases)
@@ -486,6 +486,34 @@ func checkDatabaseUsers(account string, present map[string]bool,
 	if len(users) == 0 {
 		return nil, "This backup holds no database users for the account.", errors.New(
 			"agent: this backup holds no database users")
+	}
+
+	// Named users, when some were chosen. A name is one login on several
+	// hosts, and all of its hosts come back: a grant put back against
+	// some of them is an application that connects and is refused.
+	if len(wanted) > 0 {
+		var chosen []cpanel.DatabaseUser
+		for _, user := range users {
+			if contains(wanted, user.Name) {
+				chosen = append(chosen, user)
+			}
+		}
+		var absent []string
+		for _, name := range wanted {
+			if !contains(distinctUserNames(chosen), name) {
+				absent = append(absent, name)
+			}
+		}
+		if len(absent) > 0 {
+			sort.Strings(absent)
+			return nil, fmt.Sprintf(
+					"This backup holds no database user called %s. Choose one of the "+
+						"users it does hold, or try another restore point.",
+					granular.JoinAnd(absent)), fmt.Errorf(
+					"agent: this backup holds no database user(s) %s",
+					strings.Join(absent, ", "))
+		}
+		users = chosen
 	}
 
 	// A grant on a database the account no longer has is the same
@@ -537,15 +565,6 @@ func contains(values []string, want string) bool {
 	return false
 }
 
-// stagedGrant matches the grant lines cprest itself writes into the
-// runnable file: one database, no global privileges and nothing after the
-// grantee. Anything else is refused rather than guessed at, because the
-// two things that could be guessed -- dropping a privilege an application
-// connects with, or widening one past the account -- are both worse than
-// saying so.
-var stagedGrant = regexp.MustCompile(
-	"^GRANT (.+) ON `(.+)`\\.\\* TO '([^']+)'@'([^']+)'$")
-
 // readStagedDatabaseUsers reads the users, their stored passwords and their
 // grants out of a restored databases directory.
 func readStagedDatabaseUsers(databases string) ([]cpanel.DatabaseUser, error) {
@@ -553,16 +572,15 @@ func readStagedDatabaseUsers(databases string) ([]cpanel.DatabaseUser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("agent: read the database users in this backup: %w", err)
 	}
-	// cPanel's shape: user -> host -> what authenticates it.
-	var auth map[string]map[string]struct {
-		PassHash string `json:"pass_hash"`
-		Plugin   string `json:"auth_plugin"`
+	auth, err := inventory.ParseAuth(raw)
+	if err != nil {
+		return nil, err
 	}
-	if err := json.Unmarshal(raw, &auth); err != nil {
-		return nil, fmt.Errorf("agent: read the database users in this backup: %w", err)
+	raw, err = os.ReadFile(filepath.Join(databases, granular.RunnableDatabaseUsersFile))
+	if err != nil {
+		return nil, fmt.Errorf("agent: read the database grants in this backup: %w", err)
 	}
-
-	grants, err := readStagedGrants(filepath.Join(databases, granular.RunnableDatabaseUsersFile))
+	grants, err := inventory.ParseGrants(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -570,13 +588,19 @@ func readStagedDatabaseUsers(databases string) ([]cpanel.DatabaseUser, error) {
 	var users []cpanel.DatabaseUser
 	for name, hosts := range auth {
 		for host, credentials := range hosts {
-			users = append(users, cpanel.DatabaseUser{
+			user := cpanel.DatabaseUser{
 				Name:   name,
 				Host:   host,
 				Plugin: credentials.Plugin,
-				Hash:   credentials.PassHash,
-				Grants: grants[name+"@"+host],
-			})
+				Hash:   credentials.Hash,
+			}
+			for _, grant := range grants[name+"@"+host] {
+				user.Grants = append(user.Grants, cpanel.DatabaseGrant{
+					Database:   grant.Database,
+					Privileges: grant.Privileges,
+				})
+			}
+			users = append(users, user)
 		}
 	}
 	sort.Slice(users, func(i, j int) bool {
@@ -586,81 +610,4 @@ func readStagedDatabaseUsers(databases string) ([]cpanel.DatabaseUser, error) {
 		return users[i].Host < users[j].Host
 	})
 	return users, nil
-}
-
-// readStagedGrants reads the privileges each user had, keyed by user@host.
-func readStagedGrants(path string) (map[string][]cpanel.DatabaseGrant, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("agent: read the database grants in this backup: %w", err)
-	}
-	grants := map[string][]cpanel.DatabaseGrant{}
-	for _, line := range strings.Split(string(raw), "\n") {
-		line = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(line), ";"))
-		if line == "" || strings.HasPrefix(line, "--") ||
-			strings.HasPrefix(line, "CREATE USER ") {
-			continue
-		}
-		if !strings.HasPrefix(line, "GRANT ") {
-			return nil, fmt.Errorf(
-				"agent: the database users in this backup hold a line this cannot read")
-		}
-		parts := stagedGrant.FindStringSubmatch(line)
-		if parts == nil {
-			return nil, fmt.Errorf(
-				"agent: a grant in this backup is not one on a single database, " +
-					"and restoring it is not something this can do")
-		}
-		database, literal := unescapeGrantDatabase(parts[2])
-		if !literal {
-			return nil, fmt.Errorf(
-				"agent: a grant in this backup is on a pattern rather than on one "+
-					"database (%s), and restoring it is not something this can do",
-				parts[2])
-		}
-		var privileges []string
-		for _, privilege := range strings.Split(parts[1], ",") {
-			privilege = strings.TrimSpace(privilege)
-			if privilege != "" {
-				privileges = append(privileges, privilege)
-			}
-		}
-		who := parts[3] + "@" + parts[4]
-		grants[who] = append(grants[who], cpanel.DatabaseGrant{
-			Database:   database,
-			Privileges: privileges,
-		})
-	}
-	return grants, nil
-}
-
-// unescapeGrantDatabase turns the database name in a GRANT back into the
-// name of a database.
-//
-// MySQL stores the database of a grant as a LIKE pattern, so SHOW GRANTS
-// prints "acct\\_shop" for the database "acct_shop" -- the backslash is
-// what makes the underscore mean itself rather than any character. Carrying
-// that name through unchanged would ask cPanel for a database nobody has.
-//
-// An underscore or a per-cent that is not escaped really is a wildcard: the
-// grant covers every database matching it, which is not one database and
-// not something this can put back. Those are reported rather than restored
-// against whichever database the pattern happens to look like.
-func unescapeGrantDatabase(pattern string) (name string, literal bool) {
-	var out strings.Builder
-	for i := 0; i < len(pattern); i++ {
-		switch pattern[i] {
-		case '\\':
-			if i+1 >= len(pattern) {
-				return "", false
-			}
-			i++
-			out.WriteByte(pattern[i])
-		case '_', '%':
-			return "", false
-		default:
-			out.WriteByte(pattern[i])
-		}
-	}
-	return out.String(), true
 }

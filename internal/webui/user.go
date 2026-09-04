@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/shuki/cprest/internal/granular"
+	"github.com/shuki/cprest/internal/inventory"
 	"github.com/shuki/cprest/internal/nodestore"
 	"github.com/shuki/cprest/internal/protocol"
 	"github.com/shuki/cprest/internal/reassemble"
@@ -287,6 +288,10 @@ type userView struct {
 	Up         string
 	Entries    []browseEntry
 	Kind       granular.Kind
+	// Items is what this part of the account holds, for the parts that
+	// are not files and so cannot be listed by browsing the snapshot.
+	Items    []inventory.Item
+	ItemsErr string
 }
 
 // userRepository is one destination as an account sees it: how many
@@ -411,6 +416,41 @@ func (v userView) PutBackNote() string {
 }
 
 func (v userView) NeedsNames() bool { return v.Kind.NeedsNames() }
+
+// PicksItems reports whether the listed items can be chosen between,
+// rather than only read.
+func (v userView) PicksItems() bool { return v.Kind.PicksItems() }
+
+// ItemsNote says what the list under a category means, which differs by
+// whether the choice narrows the restore or only shows what is in it.
+func (v userView) ItemsNote() string {
+	if v.Kind.PicksItems() {
+		return "Tick the ones you want. Leave every box empty to recover all of them."
+	}
+	return "This is what the backup holds. They come back together: a crontab and " +
+		"the FTP logins are each one file, and handing back part of one would hand " +
+		"back a file that is not the one in the backup."
+}
+
+// ItemsEmpty is what to say when a category holds nothing in this restore
+// point, in the words of that category.
+func (v userView) ItemsEmpty() string {
+	switch v.Kind {
+	case granular.KindDNS:
+		return "This restore point holds no DNS zones for your account."
+	case granular.KindSSL:
+		return "This restore point holds no certificates for your account."
+	case granular.KindDomains:
+		return "This restore point holds no domains for your account."
+	case granular.KindCron:
+		return "There were no cron jobs on the account when this backup was taken."
+	case granular.KindFTP:
+		return "There were no FTP logins on the account when this backup was taken."
+	case granular.KindDBUsers:
+		return "This restore point holds no database users for your account."
+	}
+	return "This restore point holds nothing here."
+}
 func (v userView) RestoreTitle(row restoreRow) string {
 	if selections := row.Selections(); len(selections) > 0 {
 		titles := make([]string, 0, len(selections))
@@ -557,8 +597,8 @@ func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
 		s.renderUser(w, r, "user_browse.html", view)
 		return
 	}
-	// Full-account and metadata-only choices have no child item to pick.
-	if view.Kind == userKindAccount || !view.Kind.NeedsNames() {
+	// The whole account is one thing; there is nothing in it to pick.
+	if view.Kind == userKindAccount {
 		s.renderUser(w, r, "user_browse.html", view)
 		return
 	}
@@ -568,6 +608,28 @@ func (s *Server) handleUserBrowse(w http.ResponseWriter, r *http.Request) {
 		s.log.Error("classify account snapshot", "account", view.Account,
 			"repository", view.Repository, "snapshot", snapshot.ID, "error", err)
 		view.Err = "This backup has an unexpected layout. Ask your host to check it."
+		s.renderUser(w, r, "user_browse.html", view)
+		return
+	}
+
+	// The parts of an account that are not files -- its DNS zones, its
+	// certificates, its cron jobs, its FTP logins, its database users --
+	// are inside one archive or one file in the backup, so they are read
+	// rather than browsed. A page that named the category and nothing in
+	// it could not answer the question somebody actually has, which is
+	// whether the thing they lost is in this restore point.
+	if !view.Kind.NeedsNames() {
+		if view.Kind.ListsItems() {
+			items, err := s.engine.Items(r.Context(), view.Repository, snapshot.ID, parts, view.Kind)
+			if err != nil {
+				s.log.Error("list what a backup holds", "account", view.Account,
+					"repository", view.Repository, "snapshot", snapshot.ID,
+					"kind", view.Kind, "error", err)
+				view.ItemsErr = "What this restore point holds here could not be read. " +
+					"You can still recover this part of your account, or ask your host to check the backup."
+			}
+			view.Items = items
+		}
 		s.renderUser(w, r, "user_browse.html", view)
 		return
 	}
@@ -774,14 +836,28 @@ func userRestoreRequest(account, repository, snapshot string, asked granular.Kin
 	if asked.NeedsNames() && len(restore.ItemNames) == 0 {
 		return nodestore.Restore{}, errUserRestoreNeedsNames
 	}
-	// A database name reaches a command line and a file name further down.
-	// It is checked there too; it is checked here because this is where it
-	// arrives from a browser.
-	if asked == granular.KindDatabase {
-		for _, name := range restore.ItemNames {
-			if err := granular.UsableDatabaseName(name); err != nil {
-				return nodestore.Restore{}, err
-			}
+	// A kind that lists what it holds without being able to hand back part
+	// of it -- a crontab is one file, and so is the FTP password file --
+	// takes no names. Carrying them would say the choice was honoured.
+	if !asked.PicksItems() {
+		restore.ItemNames = nil
+	}
+	// These names reach a command line, a file name and the list of
+	// members taken out of the account's archive. Each is checked again
+	// further down; they are checked here because this is where they
+	// arrive from a browser.
+	for _, name := range restore.ItemNames {
+		var err error
+		switch asked {
+		case granular.KindDatabase:
+			err = granular.UsableDatabaseName(name)
+		case granular.KindDBUsers:
+			err = granular.UsableDatabaseUserName(name)
+		case granular.KindDNS, granular.KindSSL, granular.KindDomains:
+			err = granular.UsableDomainName(name)
+		}
+		if err != nil {
+			return nodestore.Restore{}, err
 		}
 	}
 	return restore, nil

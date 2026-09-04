@@ -147,22 +147,79 @@ type Plan struct {
 // not carry all of them — a plan asks for what it wants and the extraction
 // reports what it actually found.
 var (
-	dnsMembers = []string{"dnszones/"}
-	sslMembers = []string{
-		"apache_tls/", "ssl/", "sslcerts/", "sslkeys/",
-		"has_sslstorage", "autossl.json",
-	}
 	settingsMembers = []string{
 		"cp/", "meta/", "quota", "shell", "shadow", "digestshadow",
 		"userconfig/", "version", "packaged_in_version",
 	}
-	cronMembers   = []string{"cron/"}
-	ftpMembers    = []string{"proftpdpasswd"}
-	domainMembers = []string{"userdata/", "dnszones/", "ips/", "addons"}
+	cronMembers = []string{"cron/"}
+	ftpMembers  = []string{"proftpdpasswd"}
 	// A mailbox is not only its maildir: forwarders, filters and the
 	// domain's mail configuration live in the metadata archive.
 	mailMembers = []string{"va/", "vad/", "vf/", "meta/mailserver"}
+	// What a per-domain SSL restore carries whichever domain was chosen.
+	// cPanel 136 keeps the certificate and its key in apache_tls, one
+	// file per domain, and these are empty; a server that still uses them
+	// would otherwise hand back a certificate with no key, so they travel
+	// whole rather than being filtered by a name whose shape inside them
+	// is not known here.
+	sslAlways = []string{"ssl/", "sslcerts/", "sslkeys/", "has_sslstorage", "autossl.json"}
+	// What a per-domain restore of the domains carries regardless: which
+	// domain is the main one and which are addons is a property of the
+	// account, not of any one domain, and a domain restored without it
+	// has nowhere to be put back.
+	domainAlways = []string{"userdata/main", "userdata/cache.json", "ips/", "addons"}
 )
+
+// dnsMembers is the account's zone files, or the zones of the domains
+// named.
+func dnsMembers(names []string) ([]string, error) {
+	if len(names) == 0 {
+		return []string{"dnszones/"}, nil
+	}
+	members := make([]string, 0, len(names))
+	for _, name := range names {
+		if err := UsableDomainName(name); err != nil {
+			return nil, err
+		}
+		members = append(members, "dnszones/"+name+".db")
+	}
+	return members, nil
+}
+
+// sslMembers is the account's certificates, or those of the domains named.
+func sslMembers(names []string) ([]string, error) {
+	if len(names) == 0 {
+		return append([]string{"apache_tls/"}, sslAlways...), nil
+	}
+	members := make([]string, 0, len(names)+len(sslAlways))
+	for _, name := range names {
+		if err := UsableDomainName(name); err != nil {
+			return nil, err
+		}
+		members = append(members, "apache_tls/"+name)
+	}
+	return append(members, sslAlways...), nil
+}
+
+// domainMembers is the web server configuration of the account's domains,
+// or of the domains named.
+func domainMembers(names []string) ([]string, error) {
+	if len(names) == 0 {
+		return []string{"userdata/", "dnszones/", "ips/", "addons"}, nil
+	}
+	members := make([]string, 0, 4*len(names)+len(domainAlways))
+	for _, name := range names {
+		if err := UsableDomainName(name); err != nil {
+			return nil, err
+		}
+		members = append(members,
+			"userdata/"+name,
+			"userdata/"+name+"_SSL",
+			"userdata/"+name+".php-fpm.yaml",
+			"dnszones/"+name+".db")
+	}
+	return append(members, domainAlways...), nil
+}
 
 // Build turns a request into the paths that satisfy it.
 //
@@ -187,19 +244,19 @@ func Build(parts reassemble.Parts, req Request) (Plan, error) {
 	case KindDatabase:
 		return buildDatabase(parts, req)
 	case KindDNS:
-		return buildMetadata(parts, dnsMembers, "the DNS records")
+		return buildChosen(parts, req, dnsMembers, "the DNS records")
 	case KindSSL:
-		return buildMetadata(parts, sslMembers, "the SSL certificates and keys")
+		return buildChosen(parts, req, sslMembers, "the SSL certificates and keys")
 	case KindSettings:
 		return buildMetadata(parts, settingsMembers, "the panel configuration")
 	case KindCron:
 		return buildMetadata(parts, cronMembers, "the cron jobs")
 	case KindDomains:
-		return buildMetadata(parts, domainMembers, "the domains")
+		return buildChosen(parts, req, domainMembers, "the domains")
 	case KindFTP:
 		return buildMetadata(parts, ftpMembers, "the FTP accounts")
 	case KindDBUsers:
-		return buildDatabaseUsers(parts)
+		return buildDatabaseUsers(parts, req.Names)
 	case KindSystem:
 		if parts.System == "" {
 			return Plan{}, fmt.Errorf(
@@ -374,10 +431,15 @@ const RunnableDatabaseUsersFile = "_users-runnable.sql"
 // not what authenticates it, which is a user nothing can connect as.
 const DatabaseUsersAuthFile = DatabaseUsersFile + "-auth.json"
 
-func buildDatabaseUsers(parts reassemble.Parts) (Plan, error) {
+func buildDatabaseUsers(parts reassemble.Parts, names []string) (Plan, error) {
 	if parts.Databases == "" {
 		return Plan{}, fmt.Errorf(
 			"granular: this backup holds no databases, so it holds no database users either")
+	}
+	for _, name := range names {
+		if err := UsableDatabaseUserName(name); err != nil {
+			return Plan{}, err
+		}
 	}
 	return Plan{
 		Include: []string{
@@ -385,8 +447,29 @@ func buildDatabaseUsers(parts reassemble.Parts) (Plan, error) {
 			path.Join(parts.Databases, RunnableDatabaseUsersFile),
 			path.Join(parts.Databases, DatabaseUsersAuthFile),
 		},
-		Description: "the database users and their grants",
+		Description: "the database users and their grants" + forNames(names),
 	}, nil
+}
+
+// buildChosen is a metadata restore narrowed to the items chosen, or the
+// whole of that part of the account when none were.
+func buildChosen(parts reassemble.Parts, req Request,
+	members func([]string) ([]string, error), description string) (Plan, error) {
+
+	chosen, err := members(req.Names)
+	if err != nil {
+		return Plan{}, err
+	}
+	return buildMetadata(parts, chosen, description+forNames(req.Names))
+}
+
+// forNames says which items a description covers, when it covers some of
+// them rather than all.
+func forNames(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	return " for " + JoinAnd(names)
 }
 
 func buildMetadata(parts reassemble.Parts, members []string, description string) (Plan, error) {
@@ -461,4 +544,82 @@ func UsableDatabaseName(database string) error {
 		}
 	}
 	return nil
+}
+
+// UsableDomainName refuses anything that is not a domain name.
+//
+// These names come out of a backup and back in from a form, and go on to
+// select members inside the account's archive by name. A name carrying a
+// slash or a pair of dots would reach members belonging to a different part
+// of the account, so what is checked is what a domain may contain rather
+// than what it may not.
+func UsableDomainName(domain string) error {
+	refuse := fmt.Errorf("granular: %q is not a domain name", domain)
+	if domain == "" || len(domain) > 253 {
+		return refuse
+	}
+	labels := strings.Split(domain, ".")
+	if len(labels) < 2 {
+		return refuse
+	}
+	for _, label := range labels {
+		if label == "" || len(label) > 63 ||
+			label[0] == '-' || label[len(label)-1] == '-' {
+			return refuse
+		}
+		for _, char := range label {
+			switch {
+			case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z',
+				char >= '0' && char <= '9', char == '-', char == '_':
+			default:
+				return refuse
+			}
+		}
+	}
+	return nil
+}
+
+// UsableDatabaseUserName refuses anything that is not one.
+//
+// A MySQL user name is not a database name -- it is capped at 32 characters
+// rather than 64 -- but what may be in one is the same, and for the same
+// reason: the name reaches a statement this program writes out itself.
+func UsableDatabaseUserName(user string) error {
+	if user == "" || len(user) > 32 {
+		return fmt.Errorf("granular: %q is not a usable database user name", user)
+	}
+	if err := UsableDatabaseName(user); err != nil {
+		return fmt.Errorf("granular: %q is not a usable database user name", user)
+	}
+	return nil
+}
+
+// ListsItems reports whether a backup can be asked what this part of the
+// account holds, one item at a time.
+//
+// Files, mail and the databases are listed by restic itself: they are files
+// and directories in the snapshot. The rest are inside a single archive or
+// a single SQL file, and listing them means reading that container --
+// which is worth doing, because a page that says only "your DNS records"
+// cannot tell somebody whether the zone they lost is in this backup.
+func (k Kind) ListsItems() bool {
+	switch k {
+	case KindDBUsers, KindDNS, KindSSL, KindDomains, KindCron, KindFTP:
+		return true
+	}
+	return k.NeedsNames()
+}
+
+// PicksItems reports whether a restore of this kind can be narrowed to the
+// items chosen rather than only showing them.
+//
+// Cron jobs and FTP logins are lines inside one file. Taking some lines out
+// of it would hand back a file that is not the one the backup holds, so
+// they are listed to be read and restored together.
+func (k Kind) PicksItems() bool {
+	switch k {
+	case KindCron, KindFTP:
+		return false
+	}
+	return k.ListsItems()
 }
