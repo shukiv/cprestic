@@ -212,6 +212,24 @@
     });
   });
 
+  // Row menus. The details element does the opening on its own; what it
+  // does not do is close when the operator's attention moves elsewhere,
+  // which leaves two panels open over the same table.
+  document.addEventListener("click", function (event) {
+    var inside = event.target.closest(".cpr-menu");
+    Array.prototype.forEach.call(document.querySelectorAll(".cpr-menu[open]"), function (menu) {
+      if (menu !== inside) { menu.open = false; }
+    });
+  });
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape") { return; }
+    Array.prototype.forEach.call(document.querySelectorAll(".cpr-menu[open]"), function (menu) {
+      menu.open = false;
+      var summary = menu.querySelector("summary");
+      if (summary) { summary.focus(); }
+    });
+  });
+
   // Choosing several accounts at once. The count is shown rather than
   // implied, and both buttons stay disabled until something is ticked:
   // a bulk restore that silently did nothing would be read as one that

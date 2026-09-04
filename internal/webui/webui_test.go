@@ -2154,6 +2154,44 @@ func TestTablesCarrySortKeysOnCellsThatNeedThem(t *testing.T) {
 // across four lines. Where the backups are is one question — the
 // repository, the machine it sits on, and whether that machine answered —
 // so it is one column.
+// Five buttons per row read as five equally likely things to do, one of
+// which deletes the destination. Edit stays out; the rest are behind a
+// menu that still works with no JavaScript, because every page here does.
+func TestDestinationRowKeepsOneButtonAndAMenu(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	if _, err := engine.Store().PutDestination(nodestore.Destination{
+		Name: "test", Type: "local", Config: map[string]string{"root": "/mnt/backups"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/destinations")
+	if !strings.Contains(page, `<details class="cpr-menu">`) {
+		t.Error("the row actions are not behind a menu")
+	}
+	if !strings.Contains(page, `aria-label="More actions for test"`) {
+		t.Error("the menu does not say whose actions it holds")
+	}
+	// Edit is the one that stays out, and it is still the dialog link.
+	if !strings.Contains(page, `data-dialog-title="Edit “test”"`) {
+		t.Error("Edit is not on the row")
+	}
+	// The rest are still reachable, and still carry their token.
+	for _, want := range []string{
+		`<button class="cpr-menu-item">Test</button>`,
+		`action="?p=destinations/delete"`,
+		`data-confirm="Remove this destination`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the menu lost %q", want)
+		}
+	}
+	if strings.Contains(page, `<button class="cpr-btn cpr-danger">Remove</button>`) {
+		t.Error("Remove is still a button on the row")
+	}
+}
+
 func TestDestinationsKeepWhereTheBackupsAreInOneColumn(t *testing.T) {
 	client, _, engine := newUI(t)
 

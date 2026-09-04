@@ -134,6 +134,38 @@
 .cprest .cpr-deststate { margin:5px 0 2px; }
 .cprest .cpr-deststate .cpr-sublabel { margin-top:2px; }
 .cprest .cpr-space { white-space:nowrap; }
+
+/* A row's less-used actions. A details element, not a scripted popover:
+ * it opens with the keyboard, survives JavaScript being off, and closes
+ * itself when another one opens. The panel is in normal flow rather than
+ * absolutely positioned, because the table it sits in scrolls sideways
+ * and an absolute panel would be clipped by that scroll container. */
+.cprest .cpr-menu { position:relative; display:inline-block; }
+.cprest .cpr-menu > summary { display:inline-grid; width:36px; padding:0; place-items:center; list-style:none; cursor:pointer; }
+.cprest .cpr-menu > summary::-webkit-details-marker { display:none; }
+.cprest .cpr-menu > summary svg {
+  width:17px; height:17px; fill:none; stroke:currentColor;
+  stroke-width:1.8; stroke-linecap:round;
+}
+.cprest .cpr-menu[open] > summary { background:var(--surface-2); border-color:var(--line-strong); }
+.cprest .cpr-menu-body {
+  display:flex; flex-direction:column; align-items:stretch; gap:2px;
+  margin-top:6px; padding:4px; border:1px solid var(--line);
+  border-radius:var(--r); background:var(--surface); box-shadow:var(--shadow);
+  text-align:left;
+}
+.cprest .cpr-menu-body form { margin:0; }
+.cprest .cpr-menu-item,
+.cprest .cpr-menu-item:link,
+.cprest .cpr-menu-item:visited {
+  display:flex; width:100%; min-height:36px; align-items:center;
+  padding:0 10px; border:0; border-radius:var(--r);
+  background:transparent; color:var(--ink);
+  font:inherit; font-size:14px; text-align:left; white-space:nowrap; cursor:pointer;
+}
+.cprest .cpr-menu-item:hover { background:var(--surface-2); }
+.cprest .cpr-menu-urgent { color:var(--accent); font-weight:600; }
+.cprest .cpr-menu-danger { color:var(--bad); }
 .cprest .cpr-meter .cpr-ok { background:var(--good); }
 .cprest .cpr-meter .cpr-stale { background:var(--warn); }
 .cprest .cpr-meter .cpr-none { background:var(--bad); }
