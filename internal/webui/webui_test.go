@@ -2016,8 +2016,8 @@ func TestTheRailPointsAtTheSourceAndTheManual(t *testing.T) {
 
 	_, page := get(t, client, "/")
 	for _, want := range []string{
-		`href="https://github.com/shukiv/cprest"`,
-		`href="https://github.com/shukiv/cprest/blob/master/docs/README.md"`,
+		`href="https://github.com/shukiv/cprestic"`,
+		`href="https://github.com/shukiv/cprestic/blob/master/docs/README.md"`,
 		`aria-label="cP:Restic on GitHub"`,
 		`aria-label="Documentation"`,
 		// Opening a new tab from someone else's page hands them
