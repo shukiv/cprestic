@@ -176,7 +176,9 @@ func TestADatabaseThatCannotBeMadeStopsTheRestore(t *testing.T) {
 	if len(fake.LoadedDatabases) != 0 {
 		t.Errorf("loaded %+v", fake.LoadedDatabases)
 	}
-	if !strings.Contains(hint, "c1_shop") || !strings.Contains(hint, "could not") {
+	// cPanel's own words, so the customer knows what to do about it.
+	if !strings.Contains(hint, "c1_shop") ||
+		!strings.Contains(hint, "reached its database limit") {
 		t.Errorf("hint = %q", hint)
 	}
 	// What a customer is shown must not name a path or a repository.
@@ -245,6 +247,30 @@ func TestAGrantOnADatabaseNobodyIsRestoringIsStillRefused(t *testing.T) {
 	}
 	if !strings.Contains(hint, "c1_gone") || !strings.Contains(hint, "Add that database") {
 		t.Errorf("hint = %q", hint)
+	}
+}
+
+// A backup with no stored passwords cannot restore users, and a basket
+// holding a database beside them must not make the database first and fail
+// afterwards: the account would come out of the restore with an empty
+// database it did not have when it went in.
+func TestABasketThatCannotRestoreItsUsersMakesNothing(t *testing.T) {
+	out := restoredTree(t)
+	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {}}}
+	agent := quietAgent(fake)
+
+	if _, _, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			Items: []protocol.RestoreSelection{
+				{Kind: string(granular.KindDatabase), Names: []string{"c1_shop"}},
+				{Kind: string(granular.KindDBUsers), Names: []string{"c1_wp"}},
+			},
+		}, out); err == nil {
+		t.Fatal("users this backup does not hold were restored")
+	}
+	if len(fake.CreatedDatabases) != 0 || len(fake.LoadedDatabases) != 0 {
+		t.Errorf("created %+v loaded %+v", fake.CreatedDatabases, fake.LoadedDatabases)
 	}
 }
 

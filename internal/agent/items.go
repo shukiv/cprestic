@@ -405,10 +405,7 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 	var wrote []string
 	for _, name := range create {
 		if err := a.provider.CreateDatabase(ctx, assignment.CPanelUser, name); err != nil {
-			return "", fmt.Sprintf(
-				"The database %s is not on the account any more, and it could not "+
-					"be made again. Your host can say why: it may be that the "+
-					"account has as many databases as its plan allows.", name), err
+			return "", createFailureHint(name, err), err
 		}
 		log.Warn("database created for a restore",
 			"account", assignment.CPanelUser, "database", name)
@@ -442,6 +439,31 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 		wrote = append(wrote, "written into the home directory of "+assignment.CPanelUser)
 	}
 	return strings.Join(wrote, "; "), "", nil
+}
+
+// createFailureHint says why a database could not be made, in cPanel's own
+// words where they can be repeated.
+//
+// cPanel refuses for reasons the customer can act on -- the plan allows no
+// more databases, the name is one somebody else holds -- and repeating what
+// it said beats "ask your host". What comes back from a command that failed
+// rather than refused is a program's diagnostic, so anything carrying a
+// path is left out: a customer is not shown where this server keeps things.
+func createFailureHint(name string, err error) string {
+	reason := ""
+	if err != nil {
+		if at := strings.LastIndex(err.Error(), ": "); at >= 0 {
+			reason = strings.TrimSpace(err.Error()[at+2:])
+		}
+	}
+	if reason == "" || strings.Contains(reason, "/") {
+		return fmt.Sprintf(
+			"The database %s is not on the account any more, and it could not be "+
+				"made again. Your host can say why.", name)
+	}
+	return fmt.Sprintf(
+		"The database %s is not on the account any more, and it could not be "+
+			"made again: %s", name, reason)
 }
 
 // checkDatabaseDumps finds the dump for each named database, and says which
