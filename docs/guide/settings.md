@@ -33,6 +33,12 @@ Channels, each of which can be enabled or disabled without being deleted:
 What gets reported is set per schedule: a run that did not finish in time, an
 account with no backup for too long. See [Schedules](schedules.md#alerting).
 
+Each channel picks the events it wants. **A backup or restore started** is the
+one to be deliberate about: it fires as work begins rather than when it ends,
+so on a server with a nightly schedule it is one message per account per night.
+It is off unless chosen, and it is there for the operator who wants to know the
+moment a restore into a live account begins.
+
 ## Staging
 
 Where an account is rebuilt before upload, and how much room is left there. A

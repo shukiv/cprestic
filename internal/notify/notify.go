@@ -60,12 +60,18 @@ const (
 	EventDestinationDown Event = "destination_down"
 	// EventRestore is a restore finishing, either way.
 	EventRestore Event = "restore"
+	// EventStarted is a backup or a restore beginning. Off unless
+	// somebody asks for it: on a server with a nightly schedule it is one
+	// message per account per night, which is a great deal of mail for
+	// news that nothing has gone wrong. It is here for the operator who
+	// wants to know the moment a customer's restore begins.
+	EventStarted Event = "started"
 )
 
 // Events is every event, in the order the interface offers them.
 var Events = []Event{
 	EventBackupFailed, EventBackupPartial, EventOverdue, EventStuck,
-	EventDestinationDown, EventRestore, EventBackupSucceeded,
+	EventDestinationDown, EventRestore, EventBackupSucceeded, EventStarted,
 }
 
 // Title is the event as an operator would name it.
@@ -85,6 +91,8 @@ func (e Event) Title() string {
 		return "A destination could not be reached"
 	case EventRestore:
 		return "A restore finished"
+	case EventStarted:
+		return "A backup or restore started"
 	}
 	return string(e)
 }

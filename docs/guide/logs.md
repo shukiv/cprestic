@@ -9,6 +9,20 @@ Everything cP:Restic has done on this server, split by the kind of work.
 | **Restores** | restores and rehearsals, with the archive path or the error |
 | **cPanel events** | what cPanel told cP:Restic as accounts were created, renamed, suspended or removed |
 
+## While something is running
+
+Every page carries a strip at the top naming what is happening now — the
+account, whether it is being backed up or restored, and restic's own
+percentage where there is one. It keeps itself up to date, and it is on every
+page because somebody who asks for a restore and sees nothing asks again. A
+customer's own page shows the same strip for their account and nothing else.
+
+Notifications can say it too: **A backup or restore started** is one of the
+events a channel can subscribe to under Settings. It is off unless asked for —
+on a server with a nightly schedule it is one message per account per night —
+and it exists for the operator who wants to know the moment a customer's
+restore begins.
+
 ## Reading a backup row
 
 The size column reads like `6.2 MiB new of 152.5 MiB`: what actually left the

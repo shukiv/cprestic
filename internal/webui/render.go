@@ -17,12 +17,16 @@ import (
 
 // page is the data every template receives.
 type page struct {
-	Title  string
-	Nav    string
-	CSRF   string
-	Flash  *flash
-	Data   any
-	Assets assets
+	Title string
+	Nav   string
+	CSRF  string
+	Flash *flash
+	Data  any
+	// Running is every backup and restore happening now. It is on the
+	// page rather than in one place that lists runs, because somebody
+	// who has just asked for one and sees nothing asks again.
+	Running []runningWork
+	Assets  assets
 }
 
 // flash is a one-shot message shown at the top of a page.
@@ -48,6 +52,20 @@ func (s *Server) renderWithCSRF(
 	view := page{
 		Title: title, Nav: nav, CSRF: csrf,
 		Flash: flashFrom(r), Data: data, Assets: s.assets,
+	}
+	// An account-facing request is confined to the account that opened
+	// the socket, here as everywhere: another customer's restore is not
+	// theirs to see. An operator's request carries no account and sees
+	// the server's work.
+	//
+	// A store that cannot be read is not a reason to fail the page: the
+	// strip is a convenience, and every page still says what it says.
+	if s.engine != nil {
+		if running, err := runningWorkFor(s.engine.Store(), accountOf(r)); err != nil {
+			s.log.Error("read what is running", "error", err)
+		} else {
+			view.Running = running
+		}
 	}
 
 	// Rendered to a buffer first: a template that fails halfway through

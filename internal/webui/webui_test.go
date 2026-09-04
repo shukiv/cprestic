@@ -2549,6 +2549,52 @@ func TestForgettingADeletedAccountAsksFirst(t *testing.T) {
 	}
 }
 
+// A backup takes minutes and a restore can take longer. Until the strip
+// existed, the only way to know one was under way was to be on the page
+// that lists them, so somebody who asked for a restore and saw nothing
+// asked for it again.
+func TestTheStripSaysWhatIsRunningOnEveryPage(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	running, err := engine.Store().PutJob(nodestore.Job{
+		Account: "customer1", Status: job.StatusRunning, QueuedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Store().SetJobProgress(running.ID, nodestore.JobProgress{
+		Percent: 42.5, Repository: "the vault",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{"/", "/destinations", "/restore"} {
+		_, page := get(t, client, path)
+		for _, want := range []string{
+			"Backing up customer1", "the vault", "43%",
+			// The page refreshes itself while it runs, by the same
+			// mechanism the history page uses.
+			`data-running="1"`, `data-live="cpr-running"`,
+		} {
+			if !strings.Contains(page, want) {
+				t.Errorf("%s does not say %q", path, want)
+			}
+		}
+	}
+
+	// Nothing running, nothing said, and no refresh loop either.
+	finished := time.Now()
+	running.Status = job.StatusSuccess
+	running.FinishedAt = &finished
+	if _, err := engine.Store().PutJob(running); err != nil {
+		t.Fatal(err)
+	}
+	_, quiet := get(t, client, "/destinations")
+	if strings.Contains(quiet, "Backing up customer1") {
+		t.Error("a finished backup is still shown as running")
+	}
+}
+
 func TestThePageOpensInLightUnlessToldOtherwise(t *testing.T) {
 	client, _, _ := newUI(t)
 

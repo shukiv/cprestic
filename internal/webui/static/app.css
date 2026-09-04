@@ -454,6 +454,15 @@
   .cprest .cpr-spin { animation:none; opacity:.6; }
 }
 
+/* One line per run in the strip at the top of the page. The spinner sits
+   on the text baseline rather than above it, because each line is a
+   sentence and not a pill. */
+.cprest .cpr-runline {
+  display:flex; align-items:center; gap:var(--s2);
+  font-weight:500;
+}
+.cprest .cpr-runline + .cpr-runline { margin-top:var(--s1); }
+
 /* Named for what it is, not what it looks like: .cpr-bar is already the
    app bar at the top of every page. */
 .cprest .cpr-progress {

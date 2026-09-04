@@ -240,6 +240,11 @@ func (e *Engine) runBackup(ctx context.Context, stored nodestore.Job) error {
 	if _, err := e.store.PutJob(stored); err != nil {
 		return err
 	}
+	e.Notify(ctx, notify.Message{
+		Event: notify.EventStarted, Account: stored.Account,
+		Subject: fmt.Sprintf("Backing up %s", stored.Account),
+		Body:    "The backup has started. Another message follows when it finishes.",
+	})
 
 	report := e.worker.RunJob(ctx, assignment)
 
@@ -435,6 +440,17 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 	if _, err := e.store.PutRestore(stored); err != nil {
 		return err
 	}
+	doing := "The restore has started"
+	if stored.Apply {
+		// The one that replaces live data. An operator who did not
+		// expect this message is the person who most needs it.
+		doing = "A restore that writes into the live account has started"
+	}
+	e.Notify(ctx, notify.Message{
+		Event: notify.EventStarted, Account: stored.Account,
+		Subject: fmt.Sprintf("Restoring %s", stored.Account),
+		Body:    doing + ". Another message follows when it finishes.",
+	})
 
 	report := e.worker.RunRestore(ctx, protocol.RestoreAssignment{
 		JobID:        stored.ID,

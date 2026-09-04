@@ -1,8 +1,11 @@
 package webui
 
 import (
+	"path/filepath"
+
 	"context"
 	"errors"
+	"github.com/shuki/cprest/internal/job"
 	"io"
 	"log/slog"
 	"net/http"
@@ -207,6 +210,63 @@ func TestAnAccountCanApplyOnlyWhatCanBeWrittenBack(t *testing.T) {
 		if !request.Apply {
 			t.Errorf("%s lost the request to write it back: %+v", kind, request)
 		}
+	}
+}
+
+// A customer sees their own account's work and nobody else's: the strip is
+// drawn from the same account the socket confined the request to.
+func TestTheRunningStripIsConfinedToOneAccount(t *testing.T) {
+	store, err := nodestore.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	backup, err := store.PutJob(nodestore.Job{
+		Account: "studio", Status: job.StatusRunning, QueuedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetJobProgress(backup.ID, nodestore.JobProgress{
+		Percent: 42.5, Repository: "the vault",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PutRestore(nodestore.Restore{
+		Account: "other", Status: job.StatusRunning, Kind: protocol.RestoreItems,
+		ItemKind: "database", ItemNames: []string{"other_shop"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// One that has finished says nothing: the strip is what is happening.
+	if _, err := store.PutJob(nodestore.Job{
+		Account: "studio", Status: job.StatusSuccess, QueuedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	theirs, err := runningWorkFor(store, "studio")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(theirs) != 1 {
+		t.Fatalf("the customer is shown %d runs: %+v", len(theirs), theirs)
+	}
+	if label := theirs[0].Label(); !strings.Contains(label, "Backing up studio") ||
+		!strings.Contains(label, "the vault") || !strings.Contains(label, "43%") {
+		t.Errorf("label = %q", label)
+	}
+
+	everything, err := runningWorkFor(store, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(everything) != 2 {
+		t.Fatalf("the operator is shown %d runs: %+v", len(everything), everything)
+	}
+	if label := everything[1].Label(); !strings.Contains(label, "Restoring other") {
+		t.Errorf("label = %q", label)
 	}
 }
 
