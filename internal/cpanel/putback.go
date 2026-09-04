@@ -10,8 +10,9 @@ import (
 	osuser "os/user"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
+
+	"github.com/shuki/cprest/internal/granular"
 )
 
 // PutHomeDir copies a restored tree into an account's home directory.
@@ -144,7 +145,7 @@ func dropSetIDBits(root string) error {
 // LoadDatabase replaces the contents of one of the account's databases with
 // a dump taken from a backup.
 func (r *Real) LoadDatabase(ctx context.Context, user, database, dumpPath string) error {
-	if err := usableDatabaseName(database); err != nil {
+	if err := granular.UsableDatabaseName(database); err != nil {
 		return err
 	}
 	// Whose database this is, asked of the server rather than taken from
@@ -190,28 +191,6 @@ func (r *Real) LoadDatabase(ctx context.Context, user, database, dumpPath string
 	if err := load.Run(); err != nil {
 		return fmt.Errorf("cpanel: load %s from %s: %s: %w",
 			database, filepath.Base(dumpPath), lastLine(stderr.Bytes()), err)
-	}
-	return nil
-}
-
-// usableDatabaseName refuses names that would be read as something other
-// than a database. Nothing here goes through a shell, so the hazard is not
-// a metacharacter: it is a name beginning with a dash, which the MySQL
-// client would take for an option.
-func usableDatabaseName(database string) error {
-	if database == "" {
-		return fmt.Errorf("cpanel: no database named")
-	}
-	if strings.HasPrefix(database, "-") || len(database) > 64 {
-		return fmt.Errorf("cpanel: %q is not a usable database name", database)
-	}
-	for _, char := range database {
-		switch {
-		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z',
-			char >= '0' && char <= '9', char == '_', char == '$':
-		default:
-			return fmt.Errorf("cpanel: %q is not a usable database name", database)
-		}
 	}
 	return nil
 }

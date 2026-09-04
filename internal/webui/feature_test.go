@@ -127,6 +127,20 @@ func TestAccountRestoreHistoryDoesNotExposeRootDiagnostics(t *testing.T) {
 		restore.ArchivePath != "" || restore.RestoredTo != "" {
 		t.Fatalf("account-visible restore still carries root diagnostics: %+v", restore)
 	}
+
+	// A hint is the one part of a failure written for the customer, so it
+	// replaces the generic message rather than being swept away with the
+	// operator's.
+	withHint := accountSafeRestore(nodestore.Restore{
+		Error: "agent: c1 no longer has the database(s) c1_shop",
+		Hint:  "The database c1_shop is not on the account any more. Create it again first.",
+	})
+	if !strings.Contains(withHint.Error, "Create it again first") {
+		t.Fatalf("the customer lost the one thing they could act on: %+v", withHint)
+	}
+	if strings.Contains(withHint.Error, "agent:") {
+		t.Fatalf("the operator's wording reached the customer: %+v", withHint)
+	}
 }
 
 func TestAccountRecoveryRequestsKeepTheirBoundaries(t *testing.T) {

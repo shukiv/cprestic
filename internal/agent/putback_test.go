@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shuki/cprest/internal/cpanel"
@@ -48,7 +49,7 @@ func TestApplyingADatabaseLoadsOnlyWhatWasAskedFor(t *testing.T) {
 	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {"c1_shop", "c1_wp"}}}
 	agent := quietAgent(fake)
 
-	written, err := agent.applyItems(context.Background(), agent.log,
+	written, _, err := agent.applyItems(context.Background(), agent.log,
 		protocol.RestoreAssignment{
 			CPanelUser: "c1",
 			ItemKind:   string(granular.KindDatabase),
@@ -83,7 +84,7 @@ func TestApplyingADatabaseTheAccountDoesNotOwnIsRefused(t *testing.T) {
 	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {"c1_shop"}}}
 	agent := quietAgent(fake)
 
-	_, err := agent.applyItems(context.Background(), agent.log,
+	_, _, err := agent.applyItems(context.Background(), agent.log,
 		protocol.RestoreAssignment{
 			CPanelUser: "c1",
 			ItemKind:   string(granular.KindDatabase),
@@ -97,6 +98,33 @@ func TestApplyingADatabaseTheAccountDoesNotOwnIsRefused(t *testing.T) {
 	}
 }
 
+// The case this feature exists for: somebody dropped their database this
+// morning and wants it back. cPanel no longer lists it, so the load cannot
+// go ahead -- and the answer they need is "make it again first", not the
+// generic failure a customer is otherwise shown.
+func TestARestoreIntoADroppedDatabaseSaysWhatToDoAboutIt(t *testing.T) {
+	out := restoredTree(t)
+	fake := &cpanel.Fake{Databases: map[string][]string{"c1": {"c1_wp"}}}
+	agent := quietAgent(fake)
+
+	_, hint, err := agent.applyItems(context.Background(), agent.log,
+		protocol.RestoreAssignment{
+			CPanelUser: "c1",
+			ItemKind:   string(granular.KindDatabase),
+			ItemNames:  []string{"c1_shop"},
+		}, out)
+	if err == nil {
+		t.Fatal("a database that is not on the account was loaded")
+	}
+	if !strings.Contains(hint, "c1_shop") || !strings.Contains(hint, "Create it again") {
+		t.Fatalf("hint = %q", hint)
+	}
+	// What a customer is shown must not name a path or a repository.
+	if strings.Contains(hint, "/") {
+		t.Errorf("the hint carries a path: %q", hint)
+	}
+}
+
 func TestApplyingFilesWritesTheHomeDirectory(t *testing.T) {
 	out := restoredTree(t)
 	fake := &cpanel.Fake{}
@@ -106,7 +134,7 @@ func TestApplyingFilesWritesTheHomeDirectory(t *testing.T) {
 		granular.KindFiles, granular.KindWebsite, granular.KindMailbox,
 	} {
 		fake.PutBackHome = nil
-		if _, err := agent.applyItems(context.Background(), agent.log,
+		if _, _, err := agent.applyItems(context.Background(), agent.log,
 			protocol.RestoreAssignment{
 				CPanelUser: "c1", ItemKind: string(kind),
 				ItemNames: []string{"public_html"},
@@ -134,7 +162,7 @@ func TestApplyingWhatCannotBeAppliedIsRefusedByTheAgentToo(t *testing.T) {
 		granular.KindFTP, granular.KindCron, granular.KindDomains,
 		granular.KindSettings, granular.KindSystem,
 	} {
-		if _, err := agent.applyItems(context.Background(), agent.log,
+		if _, _, err := agent.applyItems(context.Background(), agent.log,
 			protocol.RestoreAssignment{
 				CPanelUser: "c1", ItemKind: string(kind),
 			}, out); err == nil {

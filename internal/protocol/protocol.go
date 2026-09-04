@@ -100,7 +100,13 @@ type RestoreReport struct {
 	RestoredTo string `json:"restored_to,omitempty"`
 	// Detail says what a granular restore actually produced, so "success"
 	// is not the whole of what an operator is told.
-	Detail  string `json:"detail,omitempty"`
+	Detail string `json:"detail,omitempty"`
+	// Hint is what the person who asked for the restore can do about a
+	// failure, in their own terms. Error is written for whoever runs the
+	// server -- it names repositories, paths and commands -- so it is not
+	// shown to a customer; this is, which is why nothing that goes in here
+	// may carry either.
+	Hint    string `json:"hint,omitempty"`
 	Applied bool   `json:"applied"`
 	Error   string `json:"error,omitempty"`
 }

@@ -66,13 +66,14 @@
       <tr class="cpr-state {{template "runstripe" .Status}}" {{if not .Status.Terminal}}data-running="1"{{end}}>
         <td style="white-space:nowrap">{{stamp .QueuedAt}}<div class="cpr-sublabel">{{agoTime .QueuedAt}}</div></td>
         <td class="cpr-acct">{{$data.RestoreTitle .}}</td>
-        <td>{{if .Apply}}Put back into the account{{else}}Copied out to download{{end}}
+        <td>{{if .Apply}}Restore into the account{{else}}Copy to download{{end}}
           {{if and .Applied .Detail}}<div class="cpr-sublabel">{{.Detail}}</div>{{end}}</td>
         <td>{{template "runstate" .Status}}</td>
         <td class="cpr-right"><div class="cpr-actions">
           {{if .Collectable}}<a class="cpr-btn cpr-primary" href="download.live.php?id={{.ID}}">Download package</a>
           {{else if .Applied}}<span class="cpr-sublabel">Nothing to download: it is in your account.</span>
           {{else if .Error}}<span class="cpr-sublabel">{{.Error}}</span>{{end}}
+
         </div></td>
       </tr>
       {{end}}

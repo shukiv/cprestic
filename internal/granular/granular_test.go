@@ -201,3 +201,19 @@ func TestOnlyWhatCanBeWrittenBackSaysSo(t *testing.T) {
 		}
 	}
 }
+
+func TestADatabaseNameHasToBeOne(t *testing.T) {
+	for _, bad := range []string{
+		"", "-h127.0.0.1", "../../etc/passwd", "shop; DROP", "a/b", "shop.sql",
+		strings.Repeat("a", 65),
+	} {
+		if err := UsableDatabaseName(bad); err == nil {
+			t.Errorf("%q was accepted as a database name", bad)
+		}
+	}
+	for _, good := range []string{"studio_wp", "rtflow_shop", "a$b", "DB1"} {
+		if err := UsableDatabaseName(good); err != nil {
+			t.Errorf("%q was refused: %v", good, err)
+		}
+	}
+}

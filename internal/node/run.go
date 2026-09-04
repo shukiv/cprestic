@@ -453,6 +453,7 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 	if report.Detail != "" {
 		stored.Detail = report.Detail
 	}
+	stored.Hint = report.Hint
 	stored.Applied = report.Applied
 	stored.Error = report.Error
 	finished := time.Now().UTC()

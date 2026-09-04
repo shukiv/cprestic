@@ -355,3 +355,29 @@ func plainName(name string) error {
 	}
 	return nil
 }
+
+// UsableDatabaseName refuses a name that would be read as something other
+// than a database.
+//
+// Nothing that takes one of these goes through a shell, so the hazard is
+// not a metacharacter: it is a name beginning with a dash, which a command
+// line tool reads as an option, or one carrying a path separator, which
+// would take a dump from somewhere other than where the restore put it.
+// Names come from a form and from a backup, so both are checked.
+func UsableDatabaseName(database string) error {
+	if database == "" {
+		return fmt.Errorf("granular: no database named")
+	}
+	if strings.HasPrefix(database, "-") || len(database) > 64 {
+		return fmt.Errorf("granular: %q is not a usable database name", database)
+	}
+	for _, char := range database {
+		switch {
+		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z',
+			char >= '0' && char <= '9', char == '_', char == '$':
+		default:
+			return fmt.Errorf("granular: %q is not a usable database name", database)
+		}
+	}
+	return nil
+}

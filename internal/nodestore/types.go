@@ -349,7 +349,12 @@ type Restore struct {
 	RestoredTo    string     `json:"restored_to,omitempty"`
 	// Detail records what a rehearsal actually checked, so a passing
 	// drill says more than "success".
-	Detail     string     `json:"detail,omitempty"`
+	Detail string `json:"detail,omitempty"`
+	// Hint is what the person who asked for this restore can do about a
+	// failure. Error is written for whoever runs the server and names
+	// repositories, paths and commands; this is what a customer is shown
+	// in its place, so nothing that carries either may go in here.
+	Hint       string     `json:"hint,omitempty"`
 	Applied    bool       `json:"applied"`
 	Error      string     `json:"error,omitempty"`
 	QueuedAt   time.Time  `json:"queued_at"`

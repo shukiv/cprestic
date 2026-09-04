@@ -753,6 +753,16 @@ func userRestoreRequest(account, repository, snapshot string, asked granular.Kin
 	if asked.NeedsNames() && len(restore.ItemNames) == 0 {
 		return nodestore.Restore{}, errUserRestoreNeedsNames
 	}
+	// A database name reaches a command line and a file name further down.
+	// It is checked there too; it is checked here because this is where it
+	// arrives from a browser.
+	if asked == granular.KindDatabase {
+		for _, name := range restore.ItemNames {
+			if err := granular.UsableDatabaseName(name); err != nil {
+				return nodestore.Restore{}, err
+			}
+		}
+	}
 	return restore, nil
 }
 
@@ -766,7 +776,13 @@ func accountSafeRestore(restore nodestore.Restore) nodestore.Restore {
 	if restore.Error == "" {
 		return restore
 	}
+	// Hint is the one thing written for the customer, and it is kept: when
+	// there is something they can do about the failure, telling them to ask
+	// their host instead is the wrong answer.
 	restore.Error = "The restore failed. Ask your host to check the backup service."
+	if restore.Hint != "" {
+		restore.Error = restore.Hint
+	}
 	restore.Detail = ""
 	return restore
 }

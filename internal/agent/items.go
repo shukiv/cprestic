@@ -138,9 +138,10 @@ func (a *Agent) restoreItems(ctx context.Context, log *slog.Logger,
 		if err := os.RemoveAll(raw); err != nil {
 			log.Warn("remove the raw restore tree", "error", err)
 		}
-		written, err := a.applyItems(ctx, log, assignment, out)
+		written, hint, err := a.applyItems(ctx, log, assignment, out)
 		if err != nil {
 			report.Error = err.Error()
+			report.Hint = hint
 			return report, false
 		}
 		report.Status = string(job.StatusSuccess)
@@ -286,45 +287,83 @@ func measure(dir string) (files int, bytes uint64, err error) {
 // as root on a live account, and a second reading of the same rule costs
 // nothing next to what getting it wrong costs.
 func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
-	assignment protocol.RestoreAssignment, out string) (string, error) {
+	assignment protocol.RestoreAssignment, out string) (written, hint string, err error) {
 
 	kind := granular.Kind(assignment.ItemKind)
 	if !kind.CanApply() {
-		return "", fmt.Errorf(
+		return "", "", fmt.Errorf(
 			"agent: a %s restore cannot be written into the live account", kind)
 	}
 
 	if kind == granular.KindDatabase {
-		databases := filepath.Join(out, "databases")
-		var loaded []string
-		for _, name := range assignment.ItemNames {
-			dump := filepath.Join(databases, name+".sql")
-			if _, err := os.Stat(dump); err != nil {
-				return "", fmt.Errorf(
-					"agent: this backup holds no dump of the database %s", name)
-			}
-			if err := a.provider.LoadDatabase(ctx, assignment.CPanelUser, name, dump); err != nil {
-				return "", err
-			}
-			log.Warn("database loaded from a backup",
-				"account", assignment.CPanelUser, "database", name)
-			loaded = append(loaded, name)
-		}
-		if len(loaded) == 0 {
-			return "", errors.New("agent: no database was named to restore")
-		}
-		return "loaded into " + strings.Join(loaded, ", "), nil
+		return a.loadDatabases(ctx, log, assignment, filepath.Join(out, "databases"))
 	}
 
 	// Files, the website and mail are all the home directory, restored
 	// where they were.
 	homedir := filepath.Join(out, "homedir")
 	if _, err := os.Stat(homedir); err != nil {
-		return "", errors.New(
+		return "", "This backup does not contain the account's files.", errors.New(
 			"agent: this backup holds none of the account's files")
 	}
 	if err := a.provider.PutHomeDir(ctx, assignment.CPanelUser, homedir); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return "written into the home directory of " + assignment.CPanelUser, nil
+	return "written into the home directory of " + assignment.CPanelUser, "", nil
+}
+
+// loadDatabases puts the named database dumps back into the databases they
+// came out of.
+//
+// The account's databases are read first, and a name that is no longer one
+// of them is reported as itself rather than as a failure. Restoring a
+// database somebody dropped is the reason this exists, and being told "ask
+// your host" when the answer is "create it again first" would make the one
+// case it was built for the one case it cannot explain.
+func (a *Agent) loadDatabases(ctx context.Context, log *slog.Logger,
+	assignment protocol.RestoreAssignment, databases string) (written, hint string, err error) {
+
+	if len(assignment.ItemNames) == 0 {
+		return "", "", errors.New("agent: no database was named to restore")
+	}
+	account, err := a.provider.Account(ctx, assignment.CPanelUser)
+	if err != nil {
+		return "", "", err
+	}
+	present := make(map[string]bool, len(account.Databases))
+	for _, name := range account.Databases {
+		present[name] = true
+	}
+	var missing []string
+	for _, name := range assignment.ItemNames {
+		if !present[name] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return "", fmt.Sprintf(
+				"The database %s is not on the account any more. Create it again first, "+
+					"then restore into it: a backup can fill a database but cannot make one.",
+				strings.Join(missing, " and ")), fmt.Errorf(
+				"agent: %s no longer has the database(s) %s",
+				assignment.CPanelUser, strings.Join(missing, ", "))
+	}
+
+	var loaded []string
+	for _, name := range assignment.ItemNames {
+		dump := filepath.Join(databases, name+".sql")
+		if _, err := os.Stat(dump); err != nil {
+			return "", fmt.Sprintf(
+					"This backup holds no copy of the database %s. Try an earlier "+
+						"restore point.", name),
+				fmt.Errorf("agent: this backup holds no dump of the database %s", name)
+		}
+		if err := a.provider.LoadDatabase(ctx, assignment.CPanelUser, name, dump); err != nil {
+			return "", "", err
+		}
+		log.Warn("database loaded from a backup",
+			"account", assignment.CPanelUser, "database", name)
+		loaded = append(loaded, name)
+	}
+	return "loaded into " + strings.Join(loaded, ", "), "", nil
 }
