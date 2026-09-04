@@ -2014,7 +2014,7 @@ func TestTheBrandIsOnThePageInItsOwnColour(t *testing.T) {
 	client, _, _ := newUI(t)
 
 	_, page := get(t, client, "/")
-	if !strings.Contains(page, `<span class="cpr-brand-mark">cP</span><span class="cpr-brand-name">cP:Restic</span>`) {
+	if !strings.Contains(page, `<span class="cpr-brand-mark">cP:R</span><span class="cpr-brand-name">cP:Restic</span>`) {
 		t.Error("the interface does not carry the name")
 	}
 	if !strings.Contains(page, "background:#E35E30; color:#FFFFFF;") {

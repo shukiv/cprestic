@@ -508,7 +508,7 @@
 .cprest .cpr-brand-mark {
   display:grid; width:34px; height:34px; flex:none; place-items:center;
   border-radius:9px; background:#E35E30; color:#FFFFFF;
-  font-size:13px; font-weight:700; letter-spacing:-.04em;
+  font-size:12px; font-weight:700; letter-spacing:-.03em;
 }
 .cprest .cpr-brand-name { white-space:nowrap; }
 .cprest .cpr-server { margin:8px 0 17px 44px; color:#9FB2C9; font-size:12px; }
