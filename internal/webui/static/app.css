@@ -344,7 +344,10 @@
 .cprest .cpr-theme button[aria-pressed="true"] {
   background:var(--surface); color:var(--ink); font-weight:500; box-shadow:var(--shadow);
 }
-.cprest .cpr-theme svg { display:block; }
+.cprest .cpr-theme svg {
+  display:block; fill:none; stroke:currentColor;
+  stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;
+}
 
 .cprest .cpr-visually-hidden {
   position:absolute; width:1px; height:1px; padding:0; margin:-1px;
@@ -623,11 +626,6 @@
 
 .cprest .cpr-server { margin:0; color:#9FB2C9; font-size:13px; font-weight:400; line-height:1.2; white-space:nowrap; }
 .cprest .cpr-nav { display:grid; gap:4px; overflow:visible; }
-.cprest .cpr-nav-label {
-  padding:7px 10px 5px; color:#8298B2; font-size:10px; font-weight:700;
-  letter-spacing:.1em; text-transform:uppercase;
-}
-.cprest .cpr-nav-label-secondary { margin-top:8px; padding-top:13px; border-top:1px solid #2C4058; }
 .cprest .cpr-nav a,
 .cprest .cpr-nav a:link,
 .cprest .cpr-nav a:visited {
@@ -653,9 +651,10 @@
    spent 62px of every page on a breadcrumb WHM already draws. It lives in
    the rail now, on navy: its own tokens are for a light surface. */
 .cprest .cpr-rail-foot .cpr-theme {
-  align-self:start; margin:0 0 2px; background:#1B2A3D; border-color:#2C4058;
+  justify-self:start; margin:0; background:#1B2A3D; border-color:#2C4058;
 }
-.cprest .cpr-rail-foot .cpr-theme button { width:34px; min-height:30px; color:#A9BBCF; }
+.cprest .cpr-rail-foot .cpr-theme button { width:30px; min-height:26px; color:#A9BBCF; }
+.cprest .cpr-rail-foot .cpr-theme svg { width:15px; height:15px; }
 .cprest .cpr-rail-foot .cpr-theme button:hover { color:#FFFFFF; }
 .cprest .cpr-rail-foot .cpr-theme button[aria-pressed="true"] {
   background:#2C4058; color:#FFFFFF; box-shadow:none;
@@ -698,12 +697,11 @@
   .cprest .cpr-brand-name,
   .cprest .cpr-server,
   .cprest .cpr-nav-text,
-  .cprest .cpr-nav-label { display:none; }
   .cprest .cpr-nav a { justify-content:center; padding-inline:8px; }
   /* A 76px rail has no room for three buttons and two links side by side,
      so the footer stacks instead of scrolling sideways. */
   .cprest .cpr-rail-foot { justify-items:center; }
-  .cprest .cpr-rail-foot .cpr-theme { align-self:center; flex-direction:column; }
+  .cprest .cpr-rail-foot .cpr-theme { justify-self:center; flex-direction:column; }
   .cprest .cpr-rail-links { margin:0 auto; }
 }
 
