@@ -67,8 +67,11 @@ type Engine struct {
 	// checkingUpdate is set while the daily ask about a newer release is
 	// in flight, so a slow answer does not start a second one.
 	checkingUpdate atomic.Bool
-	staging        *staging.Manager
-	log            *slog.Logger
+	// lastKeySweep is when prepared SFTP keys nobody used were last
+	// looked for.
+	lastKeySweep time.Time
+	staging      *staging.Manager
+	log          *slog.Logger
 
 	// items remembers what a snapshot holds in the parts of an account
 	// that are not files, so browsing between them does not stream the

@@ -814,3 +814,47 @@
     sync();
   });
 })();
+
+// A public key is a line somebody has to get into another server's
+// authorized_keys, and selecting sixty characters of base64 by hand is how
+// a key ends up pasted with half of it missing. The button is added by
+// script and the key is selectable text without it, so nothing is lost
+// where there is no clipboard to write to.
+(function () {
+  function copy(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    // Older browsers, and any page not served over https.
+    return new Promise(function (resolve, reject) {
+      var box = document.createElement("textarea");
+      box.value = text;
+      box.setAttribute("readonly", "");
+      box.style.position = "fixed";
+      box.style.opacity = "0";
+      document.body.appendChild(box);
+      box.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      document.body.removeChild(box);
+      ok ? resolve() : reject(new Error("copy refused"));
+    });
+  }
+
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest ? event.target.closest("[data-copy]") : null;
+    if (!button) { return; }
+    var source = document.querySelector(button.getAttribute("data-copy"));
+    if (!source) { return; }
+
+    var said = button.textContent;
+    copy(source.textContent.trim()).then(function () {
+      button.textContent = "Copied";
+    }, function () {
+      // Say so rather than leaving somebody to paste what they think they
+      // copied. The key is on the page; selecting it still works.
+      button.textContent = "Select it and copy";
+    });
+    window.setTimeout(function () { button.textContent = said; }, 3000);
+  });
+})();

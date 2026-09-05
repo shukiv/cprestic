@@ -506,6 +506,10 @@ type destinationsView struct {
 	// Submitted is what they typed, so a rejected form comes back as they
 	// left it.
 	Submitted map[string]string
+	// Prepared is a key made before the destination exists, so its public
+	// half can be put on the far side by whoever administers that server
+	// before anything here tries to log in.
+	Prepared *node.PreparedKey
 	// Revealed is a repository password an operator has just asked to
 	// see, shown on this render and on no other.
 	Revealed *node.RecoveryCard
@@ -519,6 +523,27 @@ type destinationsView struct {
 
 // Field is what an input should show: what was submitted, else what is
 // stored for the destination being edited.
+// ChosenType is the type the form is showing: what was submitted when a
+// form is coming back, and the first option otherwise.
+//
+// A form that is re-rendered -- a refused destination, a host key to agree
+// to, a key just made -- used to come back with the select on its first
+// option and the section for the chosen type hidden, so the fields
+// somebody had filled in were still there and invisible.
+func (v destinationsView) ChosenType() string {
+	if chosen := v.Field("type"); chosen != "" {
+		return chosen
+	}
+	return string(destination.TypeREST)
+}
+
+// HiddenFor says whether one type's fields start hidden. Without
+// JavaScript this is the only thing that hides them, and with it the
+// select takes over from here.
+func (v destinationsView) HiddenFor(kind string) bool {
+	return v.ChosenType() != kind
+}
+
 func (v destinationsView) Field(name string) string {
 	if value, typed := v.Submitted[name]; typed {
 		return value
@@ -605,6 +630,52 @@ func (s *Server) refuseDestination(w http.ResponseWriter, r *http.Request, cause
 			}
 		}
 	}
+	s.render(w, r, "destinations.html", "Backup destinations", "destinations", view)
+}
+
+// handlePrepareKey makes an SSH key and hands the form back with the public
+// half in it, ready to copy.
+//
+// The key is generated here rather than when the destination is saved
+// because the usual order is the other way round: a backup server is often
+// administered by somebody else, and what they want from you is a public
+// key. Before this, there was nothing to give them until the destination
+// that needed it had already been created.
+func (s *Server) handlePrepareKey(w http.ResponseWriter, r *http.Request) {
+	prepared, err := s.engine.PrepareSFTPKey()
+	if err != nil {
+		s.refuseDestination(w, r, err)
+		return
+	}
+	views, err := s.destinationViews()
+	if err != nil {
+		s.fail(w, r, http.StatusInternalServerError, err)
+		return
+	}
+	view := destinationsView{
+		Destinations: views,
+		Hostname:     s.engine.Settings().Hostname,
+		Adding:       true,
+		Prepared:     &prepared,
+		Submitted:    map[string]string{},
+	}
+	for name, values := range r.PostForm {
+		// Secrets are not handed back, here as everywhere else: they
+		// would then live in a page rather than only in the vault.
+		switch name {
+		case "csrf", "password", "secret_access_key", "admin_password":
+			continue
+		}
+		if len(values) > 0 {
+			view.Submitted[name] = values[0]
+		}
+	}
+	// The form now points at the key that was just made, so saving the
+	// destination uses the one whose public half was copied out of this
+	// page rather than making a second one nobody installed.
+	view.Submitted["identity_file"] = prepared.Path
+	view.Submitted["type"] = string(destination.TypeSFTP)
+
 	s.render(w, r, "destinations.html", "Backup destinations", "destinations", view)
 }
 

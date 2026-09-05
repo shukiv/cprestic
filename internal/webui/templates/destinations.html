@@ -212,7 +212,10 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
         authenticate, add this line to
         <span class="cpr-mono">{{.RemoteTarget}}:~/.ssh/authorized_keys</span> on the remote
         server. cprest holds the matching private key; nothing else can use it.</p>
-        <div class="cpr-log" style="margin-top:var(--s2)">{{.PublicKey}}</div>
+        <div class="cpr-log" id="cpr-key-{{.ID}}" style="margin-top:var(--s2)">{{.PublicKey}}</div>
+        <div class="cpr-row" style="margin-top:var(--s2)">
+          <button type="button" class="cpr-btn" data-copy="#cpr-key-{{.ID}}">Copy</button>
+        </div>
       </details>
     </div>
     {{end}}
@@ -307,17 +310,18 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
         <input type="text" value="{{$editing.Type}}" disabled>
         <small class="cpr-help">A destination's type cannot change. Remove it and add a new one instead.</small>
         {{else}}
+        {{$chosen := $data.ChosenType}}
         <select id="type" name="type" data-type-toggle>
-          <option value="rest">Backup server (restic REST)</option>
-          <option value="sftp">Another Linux server (SFTP)</option>
-          <option value="s3">S3 or S3-compatible</option>
-          <option value="local">Local disk or mounted NAS</option>
+          <option value="rest" {{if eq $chosen "rest"}}selected{{end}}>Backup server (restic REST)</option>
+          <option value="sftp" {{if eq $chosen "sftp"}}selected{{end}}>Another Linux server (SFTP)</option>
+          <option value="s3" {{if eq $chosen "s3"}}selected{{end}}>S3 or S3-compatible</option>
+          <option value="local" {{if eq $chosen "local"}}selected{{end}}>Local disk or mounted NAS</option>
         </select>
         {{end}}
       </div>
     </div>
 
-    <div {{if $editing}}{{if ne $editing.Type "rest"}}hidden{{end}}{{else}}data-for-type="rest"{{end}}>
+    <div {{if $editing}}{{if ne $editing.Type "rest"}}hidden{{end}}{{else}}data-for-type="rest" {{if $data.HiddenFor "rest"}}hidden{{end}}{{end}}>
       <label for="base_url">Server address</label>
       <input type="text" id="base_url" name="base_url" value="{{$data.Field "base_url"}}" placeholder="https://backup.example.com">
       <small class="cpr-help">Must be https. Point it at a rest-server instance.</small>
@@ -352,7 +356,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
       <small class="cpr-help">Only if the backup server uses a private certificate authority.</small>
     </div>
 
-    <div {{if $editing}}{{if ne $editing.Type "sftp"}}hidden{{end}}{{else}}data-for-type="sftp" hidden{{end}}>
+    <div {{if $editing}}{{if ne $editing.Type "sftp"}}hidden{{end}}{{else}}data-for-type="sftp" {{if $data.HiddenFor "sftp"}}hidden{{end}}{{end}}>
       <div class="cpr-grid2">
         <div>
           <label for="host">Host</label>
@@ -383,6 +387,28 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
         ssh-keygen and no known_hosts file to write.</div>
       </div>
 
+      {{with $data.Prepared}}
+      <div class="cpr-banner cpr-ok" style="margin-top:var(--s3)">
+        <div class="cpr-body">
+          <b>Here is the key.</b> Add this line to
+          <span class="cpr-mono">~/.ssh/authorized_keys</span> of the SSH user above, on the
+          backup server, then save this destination. cprest keeps the private half; nothing
+          else can use it.
+          <div class="cpr-log" id="cpr-prepared-key" style="margin-top:var(--s2)">{{.AuthorizedKey}}</div>
+          <div class="cpr-row" style="margin-top:var(--s2)">
+            <button type="button" class="cpr-btn" data-copy="#cpr-prepared-key">Copy</button>
+            <span class="cpr-hint">Fingerprint {{.Fingerprint}}</span>
+          </div>
+        </div>
+      </div>
+      {{else}}
+      <div class="cpr-row" style="margin-top:var(--s3)">
+        <button class="cpr-btn" type="submit" formaction="?p=destinations/key" formnovalidate>Make the key now</button>
+        <span class="cpr-hint">For a server whose password you do not have, or somebody else
+        administers: take the public key first, have it added there, then save this.</span>
+      </div>
+      {{end}}
+
       <details>
         <summary class="cpr-muted">Use a key I already have instead</summary>
         <label for="identity_file">Private key on this server</label>
@@ -392,7 +418,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
       </details>
     </div>
 
-    <div {{if $editing}}{{if ne $editing.Type "s3"}}hidden{{end}}{{else}}data-for-type="s3" hidden{{end}}>
+    <div {{if $editing}}{{if ne $editing.Type "s3"}}hidden{{end}}{{else}}data-for-type="s3" {{if $data.HiddenFor "s3"}}hidden{{end}}{{end}}>
       <div class="cpr-grid2">
         <div>
           <label for="bucket">Bucket</label>
@@ -419,7 +445,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
       </div>
     </div>
 
-    <div {{if $editing}}{{if ne $editing.Type "local"}}hidden{{end}}{{else}}data-for-type="local" hidden{{end}}>
+    <div {{if $editing}}{{if ne $editing.Type "local"}}hidden{{end}}{{else}}data-for-type="local" {{if $data.HiddenFor "local"}}hidden{{end}}{{end}}>
       <label for="local_root">Directory</label>
       <input type="text" id="local_root" name="root" value="{{$data.Field "root"}}" placeholder="/mnt/backups">
       <small class="cpr-help">A disk on this machine protects against a lost file, not a lost

@@ -26,6 +26,33 @@ Then it shows the **recovery key** once. Keep it with your other break-glass
 material. A destination whose key is lost is a destination whose backups are
 noise.
 
+## The SSH key for another Linux server
+
+cP:Restic makes its own key, one per destination, so revoking one does not
+lock it out of the others. There are two ways round:
+
+- **You have the remote password.** Type it into *Remote password* once.
+  cP:Restic installs the public key on that server, checks that logging in
+  with it works, creates the folder, and forgets the password. It is never
+  stored.
+- **You do not, or somebody else administers that server.** Press **Make the
+  key now** in the form. The public key appears with a **Copy** button next to
+  it — before the destination exists, so there is something to hand over.
+  Have that line added to the SSH user's `~/.ssh/authorized_keys` on the
+  backup server, then save the destination. The form keeps the key it made;
+  saving does not generate a second one.
+
+Either way there is no `ssh-keygen`, no `ssh-copy-id`, and no `known_hosts` to
+write: the host key is learnt on the first connection and shown to you to agree
+to, which is the one decision only a person can make.
+
+A key made and never used is removed after a week. One a destination is using
+is left alone however old it is.
+
+Each destination's public key is also on the list, under **Public key for
+…**, with the same Copy button — for the day authentication starts failing and
+you need to know what to put back.
+
 ## The list
 
 Each row carries the name, where the backups actually are — repository path,

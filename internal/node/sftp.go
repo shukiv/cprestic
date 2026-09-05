@@ -99,6 +99,99 @@ func detailOf(output string) string {
 	return ": " + strings.ReplaceAll(output, "\n", " | ")
 }
 
+// PreparedKey is a key cprest made before any destination exists, so its
+// public half can be installed on the far side first.
+//
+// A backup server is often not one this cPanel server has a password for:
+// somebody else administers it, or the password is on a card in a drawer.
+// The way that works is to hand them a public key. Until now the key was
+// made while the destination was being created, so there was nothing to
+// hand over until after the thing that needed it had been set up.
+type PreparedKey struct {
+	// Path is where the private half lives on this server. It goes into
+	// the form as the key to use, so saving the destination uses the same
+	// key whose public half was copied out of the page.
+	Path          string
+	AuthorizedKey string
+	Fingerprint   string
+}
+
+// PrepareSFTPKey makes a key for a destination that does not exist yet.
+//
+// The private half never leaves this server. What comes back is the line
+// for the far side's authorized_keys, and where the private half was put,
+// so the destination that is saved next uses it rather than a second key
+// nobody has installed.
+func (e *Engine) PrepareSFTPKey() (PreparedKey, error) {
+	pair, err := sshkeys.Generate("cprest@" + e.settings.Hostname)
+	if err != nil {
+		return PreparedKey{}, err
+	}
+	// "prepared-" so a key nobody went on to use can be told apart from
+	// one a destination depends on, and swept.
+	path, err := sshkeys.WritePrivateKey(
+		filepath.Join(e.settings.ConfigDir, "keys"), "prepared-"+nodestore.NewID(), pair)
+	if err != nil {
+		return PreparedKey{}, err
+	}
+	e.log.Info("prepared an SFTP key", "path", path, "fingerprint", pair.Fingerprint)
+	return PreparedKey{
+		Path: path, AuthorizedKey: pair.AuthorizedKey, Fingerprint: pair.Fingerprint,
+	}, nil
+}
+
+// preparedKeyLife is how long a key nobody used stays. Long enough to add
+// it to a server somebody else administers and come back tomorrow.
+const preparedKeyLife = 7 * 24 * time.Hour
+
+// sweepPreparedKeys removes prepared keys no destination went on to use.
+//
+// A key made and abandoned is a private key on disk that opens an account
+// somewhere, kept for no reason. One still named by a destination is left
+// alone however old it is.
+func (e *Engine) sweepPreparedKeys(now time.Time) {
+	if !e.lastKeySweep.IsZero() && now.Sub(e.lastKeySweep) < time.Hour {
+		return
+	}
+	e.lastKeySweep = now
+
+	dir := filepath.Join(e.settings.ConfigDir, "keys")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	destinations, err := e.store.Destinations()
+	if err != nil {
+		e.log.Error("read destinations before sweeping prepared keys", "error", err)
+		return
+	}
+	inUse := map[string]bool{}
+	for _, dest := range destinations {
+		if path := dest.Config["identity_file"]; path != "" {
+			inUse[path] = true
+		}
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "prepared-") {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		if inUse[path] {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || now.Sub(info.ModTime()) < preparedKeyLife {
+			continue
+		}
+		if err := os.Remove(path); err != nil {
+			e.log.Error("remove an unused prepared key", "path", path, "error", err)
+			continue
+		}
+		e.log.Info("removed a prepared key nobody used", "path", path)
+	}
+}
+
 // AddSFTPDestination sets up a backup destination on another Linux server.
 //
 // It generates a key, learns the server's host key, and — given the remote

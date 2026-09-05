@@ -189,6 +189,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.handleDashboard)
 	mux.HandleFunc("GET /destinations", s.handleDestinations)
 	mux.HandleFunc("POST /destinations/add", s.guard(s.handleAddDestination))
+	mux.HandleFunc("POST /destinations/key", s.guard(s.handlePrepareKey))
 	mux.HandleFunc("POST /destinations/edit", s.guard(s.handleEditDestination))
 	mux.HandleFunc("POST /destinations/test", s.guard(s.handleTestDestination))
 	mux.HandleFunc("POST /destinations/delete", s.guard(s.handleDeleteDestination))
