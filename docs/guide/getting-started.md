@@ -36,6 +36,11 @@ sh get.sh
 `CPREST_VERSION=v1.2.3` before `sh` installs that release rather than the
 newest.
 
+The checksums are signed and `get.sh` carries the public half of the release
+key, so the check is not "these two files from the same page agree" but "this
+release came from whoever holds the key". A download that fails either check
+installs nothing.
+
 The installer installs restic if this server has none, installs the service,
 registers the plugin with WHM through AppConfig, confirms WHM kept the
 registration, and registers cPanel hooks for account create, modify, suspend,

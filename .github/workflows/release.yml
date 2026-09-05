@@ -24,6 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # git describe stamps the version into the binary, and a shallow
+          # checkout has no tags to describe against.
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
@@ -34,6 +38,25 @@ jobs:
 
       - name: Build the plugin tarball
         run: make plugin
+
+      # Signed with the release key, whose public half is in get.sh and in
+      # the repository. The checksums say a download arrived whole; the
+      # signature over them says the release came from whoever holds that
+      # key, which is what an installer running as root is entitled to ask.
+      - name: Sign the checksums
+        env:
+          SIGNING_KEY: ${{ secrets.CPREST_SIGNING_KEY }}
+        run: |
+          set -eu
+          [ -n "${SIGNING_KEY:-}" ] || { echo "CPREST_SIGNING_KEY is not set; a release has to be signed" >&2; exit 1; }
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$SIGNING_KEY" > "$key"
+          openssl dgst -sha256 -sign "$key" -out bin/SHA256SUMS.sig bin/SHA256SUMS
+          # Verify with the committed public key, so a mismatched secret
+          # fails here rather than on somebody's server.
+          openssl dgst -sha256 -verify packaging/whm/cprest-release.pub \
+            -signature bin/SHA256SUMS.sig bin/SHA256SUMS
 
       # get.sh is published as an asset of its own so that the one-line
       # install fetches it from the release rather than from a branch: what
@@ -51,4 +74,5 @@ jobs:
             --generate-notes \
             bin/cprest-plugin-amd64.tar.gz \
             bin/SHA256SUMS \
+            bin/SHA256SUMS.sig \
             bin/get.sh

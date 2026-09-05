@@ -8,6 +8,10 @@ E2E_TMPDIR := $(CURDIR)/.tmp
 # Most cPanel servers are x86-64; override for an ARM host.
 PLUGIN_ARCH         := amd64
 RESTIC_VERSION      := v0.19.1
+# What the agent reports as its own version, and what an update check
+# compares against the newest release. A working tree that is not exactly a
+# tag says so: "v0.1.0-3-gabc1234-dirty" is not a release.
+VERSION             := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 REST_SERVER_VERSION := v0.14.0
 
 .PHONY: all build plugin test cover e2e vet fmt tools clean
@@ -23,7 +27,8 @@ build:
 # without matching libc versions, and stripped because it ships over ssh.
 plugin:
 	mkdir -p $(BIN)/cprest-plugin
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(PLUGIN_ARCH) go build -trimpath -ldflags="-s -w" \
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(PLUGIN_ARCH) go build -trimpath \
+		-ldflags="-s -w -X github.com/shuki/cprest/internal/agent.Version=$(VERSION)" \
 		-o $(BIN)/cprest-plugin/cprest-agent ./cmd/agent
 	cp packaging/whm/cprest.cgi packaging/whm/install.sh packaging/whm/uninstall.sh $(BIN)/cprest-plugin/
 	mkdir -p $(BIN)/cprest-plugin/cpanel/uapi \

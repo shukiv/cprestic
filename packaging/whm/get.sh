@@ -7,17 +7,35 @@
 # it, unpacks it into a temporary directory and hands over to the installer
 # inside. Nothing is left behind but what that installer puts in place.
 #
-# The checksum proves the download arrived whole. It does not prove who built
-# it: both files come from the same release page, so anyone who could replace
-# one could replace the other. This script is short so that reading it before
-# running it as root is a minute's work rather than an act of faith.
+# The checksums are signed, and the key that signs them is in this script
+# rather than fetched beside them: a checksum file from the same page as the
+# tarball proves only that a download arrived whole, while a signature over
+# it says the release came from whoever holds the release key. Both are
+# checked before anything is unpacked, and a failure of either stops the
+# install.
+#
+# This script is short so that reading it before running it as root is a
+# minute's work rather than an act of faith.
 #
 # CPREST_VERSION=v1.2.3   install that release instead of the newest
-# CPREST_TARBALL=/path    install a tarball already on this machine
+# CPREST_TARBALL=/path    install a tarball already on this machine, which is
+#                         yours to trust: nothing is downloaded, so nothing is
+#                         verified
 set -eu
 
 REPO=shukiv/cprestic
 RELEASES=https://github.com/$REPO/releases
+
+# The public half of the release signing key. Its private half signs
+# SHA256SUMS in the release workflow and exists nowhere on any server.
+release_key() {
+    cat <<'KEY'
+-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2MDPJ3fp3foGtRq84rWhpvKtWvOz
+bQfXxTAfSVvgmMJXAqovklf7eUc3C/nCXsvTEyN1x7uXWbQm6Fnh/Udn3A==
+-----END PUBLIC KEY-----
+KEY
+}
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -41,7 +59,7 @@ main() {
         base=$RELEASES/latest/download
     fi
 
-    for tool in curl tar sha256sum; do
+    for tool in curl tar sha256sum openssl; do
         command -v "$tool" >/dev/null 2>&1 || die "$tool is needed; install it and run this again"
     done
 
@@ -57,6 +75,16 @@ main() {
             || die "could not download $base/$tarball"
         curl -fsSL -o "$work/SHA256SUMS" "$base/SHA256SUMS" \
             || die "could not download $base/SHA256SUMS"
+        curl -fsSL -o "$work/SHA256SUMS.sig" "$base/SHA256SUMS.sig" \
+            || die "could not download $base/SHA256SUMS.sig; releases before v0.2.0 are not signed"
+
+        # The signature first: an unsigned or wrongly signed checksum file is
+        # not worth checking a download against.
+        release_key > "$work/release.pub"
+        openssl dgst -sha256 -verify "$work/release.pub" \
+            -signature "$work/SHA256SUMS.sig" "$work/SHA256SUMS" >/dev/null 2>&1 \
+            || die "the checksums are not signed by the cP:Restic release key; nothing was installed"
+        say "signature ok"
 
         # Only the line for the file actually downloaded: the rest of that
         # file names things this machine did not fetch.

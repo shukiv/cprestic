@@ -18,8 +18,11 @@ import (
 	"github.com/shuki/cprest/internal/staging"
 )
 
-// Version identifies the agent build to the controller.
-const Version = "0.1.0"
+// Version identifies the agent build to the controller, and is what an
+// update check compares against a published release. It is set at build time
+// from the git tag; a build from a working tree says so rather than claiming
+// a version it is not.
+var Version = "dev"
 
 // Agent executes backup jobs on one cPanel server.
 type Agent struct {

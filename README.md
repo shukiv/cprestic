@@ -53,9 +53,14 @@ less get.sh
 sh get.sh
 ```
 
-The checksum says the download arrived whole. It does not say who built it:
-both files come from the same release page, so it is not a defence against
-that page being wrong. It is short enough to read, which is the defence.
+The checksums are signed, and `get.sh` carries the public half of the release
+key rather than fetching it beside them. A checksum from the same page as the
+tarball only says a download arrived whole; the signature over it says the
+release came from whoever holds the release key. Both are checked before
+anything is unpacked, and either failing stops the install.
+
+`CPREST_TARBALL=/path` installs a tarball already on the machine. Nothing is
+downloaded, so nothing is verified: that one is yours to trust.
 
 Then open WHM and look for **cP:Restic Backups** in the left sidebar's
 **Plugins** group.
