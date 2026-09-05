@@ -189,3 +189,61 @@ func TestUpgradeStatusReadsWhatTheInstallerLeft(t *testing.T) {
 		})
 	}
 }
+
+// TestTheDistChannelIsOrderedByCommit: builds of a branch have no version
+// numbers that mean anything, so what says one is later than another is
+// the commit each was made from.
+func TestTheDistChannelIsOrderedByCommit(t *testing.T) {
+	root := t.TempDir()
+	store, err := nodestore.Open(filepath.Join(root, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	settings := nodestore.DefaultSettings()
+	settings.StagingRoot = filepath.Join(root, "staging")
+	settings.ResticCache = filepath.Join(root, "cache")
+	settings.ConfigDir = filepath.Join(root, "config")
+	settings.UpdateChannel = "dist"
+	if err := store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	engine := newEngine(t, store, root)
+
+	wasVersion, wasBuilt := agent.Version, agent.BuiltAt
+	agent.Version = "v0.1.0-18-gabc1234"
+	agent.BuiltAt = "2026-09-06T10:00:00Z"
+	t.Cleanup(func() { agent.Version, agent.BuiltAt = wasVersion, wasBuilt })
+	running, _ := agent.Built()
+
+	later := nodestore.UpdateState{
+		Channel: "dist", Version: "v0.1.0-19-gdef5678",
+		BuiltAt: running.Add(time.Hour), CheckedAt: time.Now().UTC(),
+	}
+	if !engine.UpdateOffered(later) {
+		t.Error("a build from a later commit was not offered")
+	}
+	// The same commit is not an update, and an earlier one is a way back
+	// to a program this server has already left behind.
+	for what, state := range map[string]nodestore.UpdateState{
+		"the same commit": {Channel: "dist", Version: "v0.1.0-18-gabc1234", BuiltAt: running},
+		"an earlier one":  {Channel: "dist", Version: "v0.1.0-9-g0000000", BuiltAt: running.Add(-time.Hour)},
+		"one that says nothing about when it was built": {
+			Channel: "dist", Version: "v0.1.0-99-gfffffff"},
+	} {
+		if engine.UpdateOffered(state) {
+			t.Errorf("%s was offered as an update", what)
+		}
+	}
+
+	// A release found before the channel was changed is not installable
+	// on this channel: it was read from somewhere else.
+	if err := store.SaveUpdateState(nodestore.UpdateState{
+		Channel: "releases", Version: "v9.9.9", CheckedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.StartUpgrade("v9.9.9"); err == nil {
+		t.Error("a release was installed while following the branch")
+	}
+}

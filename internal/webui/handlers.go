@@ -3310,11 +3310,16 @@ func (s *Server) settingsPage() (settingsView, error) {
 		checkError = state.Error
 		panel.Latest, panel.ReleaseURL = state.Version, state.URL
 		panel.Checked = lastChecked
+		panel.Channel = string(node.Channel(settings))
+		panel.Dist = node.Channel(settings) == update.ChannelDist
+		if !state.BuiltAt.IsZero() {
+			panel.BuiltAt = humanAgo(&state.BuiltAt)
+		}
 		// Whether to ask every day is a setting; whether there is
 		// something to install is a fact. Turning the daily ask off takes
 		// the banner off every page, and leaves this card saying what was
 		// last found, next to a button that asks again.
-		panel.Newer = update.Newer(agent.Version, state.Version)
+		panel.Newer = s.engine.UpdateOffered(state)
 	}
 	// Reading this is also what notices an upgrade that has finished,
 	// since the process that started one is not the process that reports

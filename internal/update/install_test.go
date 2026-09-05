@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // release is a published release as a test can serve one: the three files,
@@ -365,5 +366,73 @@ func TestFetchReadsOnlyOverHTTP(t *testing.T) {
 		if err == nil {
 			t.Errorf("%q was read from", base)
 		}
+	}
+}
+
+// TestDistChannelReadsTheBranch: a branch has one copy of each file and no
+// version in its path, so what says which build it is is the manifest --
+// and the manifest is only worth reading because the release key signed it.
+func TestDistChannelReadsTheBranch(t *testing.T) {
+	body := plugin(t)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	built := time.Now().UTC().Truncate(time.Second)
+	sign := func(version string, at time.Time, tarball []byte) map[string][]byte {
+		sum := sha256.Sum256(tarball)
+		sums := []byte("# cprest " + version + " " + at.Format(time.RFC3339) + "\n" +
+			hex.EncodeToString(sum[:]) + "  " + TarballName + "\n")
+		digest := sha256.Sum256(sums)
+		signature, err := ecdsa.SignASN1(rand.Reader, key, digest[:])
+		if err != nil {
+			t.Fatal(err)
+		}
+		return map[string][]byte{TarballName: tarball, SumsName: sums, SigName: signature}
+	}
+
+	files := sign("v0.1.0-18-gabc1234", built, body)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// A branch is flat: the request must not carry a version.
+		if strings.Count(strings.Trim(req.URL.Path, "/"), "/") != 0 {
+			t.Errorf("the dist channel asked for %s", req.URL.Path)
+		}
+		found, ok := files[filepath.Base(req.URL.Path)]
+		if !ok {
+			http.NotFound(w, req)
+			return
+		}
+		_, _ = w.Write(found)
+	}))
+	t.Cleanup(server.Close)
+	source := Source{Client: server.Client(), Base: server.URL, Key: &key.PublicKey, Flat: true}
+
+	published, err := source.Published(context.Background(), "")
+	if err != nil {
+		t.Fatalf("Published: %v", err)
+	}
+	if published.Version != "v0.1.0-18-gabc1234" {
+		t.Errorf("version = %q", published.Version)
+	}
+	if !published.BuiltAt.Equal(built) {
+		t.Errorf("built at %s, want %s", published.BuiltAt, built)
+	}
+
+	if _, err := source.Fetch(context.Background(), published.Version, t.TempDir()); err != nil {
+		t.Fatalf("Fetch from the branch: %v", err)
+	}
+
+	// What the operator agreed to is what gets installed. A branch moves:
+	// if a different build is published between the page and the button,
+	// the install stops rather than fetching something else.
+	files = sign("v0.1.0-19-gdef5678", built.Add(time.Minute), plugin(t))
+	if _, err := source.Fetch(context.Background(), "v0.1.0-18-gabc1234", t.TempDir()); err == nil {
+		t.Error("a build nobody agreed to was installed")
+	}
+
+	// An unsigned manifest is refused here as everywhere.
+	files[SigName] = []byte("not a signature")
+	if _, err := source.Published(context.Background(), ""); err == nil {
+		t.Error("an unsigned branch build was believed")
 	}
 }

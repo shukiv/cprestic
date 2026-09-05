@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/shuki/cprest/internal/agent"
+	"github.com/shuki/cprest/internal/node"
 	"github.com/shuki/cprest/internal/nodestore"
 	"github.com/shuki/cprest/internal/update"
 )
@@ -21,9 +22,17 @@ type updatePanel struct {
 	ReleaseURL string
 	// Checked is how long ago the last ask was, in words.
 	Checked string
-	// Newer says a release later than this build has been published, and
-	// so whether there is anything to install.
+	// Newer says a build later than this one has been published, and so
+	// whether there is anything to install.
 	Newer bool
+	// Channel is where updates are read from, and Dist says that is the
+	// branch rather than the published releases.
+	Channel string
+	Dist    bool
+	// BuiltAt is the commit the published build was made from, in words.
+	// It is what orders two builds of a branch; a release has a version
+	// number instead.
+	BuiltAt string
 	// Installing says an upgrade is in flight now. The card refreshes
 	// itself while it is, including across the restart that finishes it.
 	Installing bool
@@ -76,6 +85,45 @@ func (s *Server) handleCheckUpdate(w http.ResponseWriter, r *http.Request) {
 		s.redirect(w, r, "/settings", "ok",
 			"This server runs "+agent.Version+", and the newest release is "+state.Version+".")
 	}
+}
+
+// handleChooseChannel sets where this server reads updates from.
+//
+// It is a form of its own rather than a field in the settings form,
+// because that form is the whole of the settings: a field missing from it
+// is a setting being cleared, and this one lives on a different card.
+func (s *Server) handleChooseChannel(w http.ResponseWriter, r *http.Request) {
+	settings, err := s.engine.Store().Settings()
+	if err != nil {
+		s.redirect(w, r, "/settings", "error", "Could not read the settings: "+err.Error())
+		return
+	}
+	chosen := update.ChannelReleases
+	if update.Channel(r.PostFormValue("update_channel")) == update.ChannelDist {
+		chosen = update.ChannelDist
+	}
+	if node.Channel(settings) == chosen {
+		s.redirect(w, r, "/settings", "ok", "That is already where updates come from.")
+		return
+	}
+	settings.UpdateChannel = string(chosen)
+	if err := s.engine.Store().SaveSettings(settings); err != nil {
+		s.redirect(w, r, "/settings", "error", "Could not save that: "+err.Error())
+		return
+	}
+	// What was found on the old channel says nothing about the new one,
+	// and leaving it there would offer a release to a server now
+	// following the branch.
+	if err := s.engine.Store().SaveUpdateState(nodestore.UpdateState{}); err != nil {
+		s.log.Error("clear what the last check found", "error", err)
+	}
+	if chosen == update.ChannelDist {
+		s.redirect(w, r, "/settings", "ok",
+			"Updates now come from the dist branch. Press Check now to see what is on it.")
+		return
+	}
+	s.redirect(w, r, "/settings", "ok",
+		"Updates now come from published releases. Press Check now to see the newest.")
 }
 
 // handleUninstall removes cP:Restic from this server.

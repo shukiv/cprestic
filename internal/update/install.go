@@ -50,6 +50,34 @@ const (
 	maxText    = 64 << 10
 )
 
+// Channel is where a server takes its updates from.
+//
+// Releases are the default and the safer one: a version number, notes, and
+// a tag somebody decided to make. The dist branch is for a server that
+// follows the work rather than the releases -- what is published there is
+// signed with the same key, so it is not less checked, only less
+// deliberate.
+type Channel string
+
+const (
+	ChannelReleases Channel = "releases"
+	ChannelDist     Channel = "dist"
+)
+
+// DistBranch is the branch a dist build is published on.
+const DistBranch = "dist"
+
+// Manifest is what a published build says about itself, out of the file
+// the release key signed.
+type Manifest struct {
+	// Version is a release like v1.2.3 on the releases channel, and
+	// whatever git describe said on the dist branch.
+	Version string
+	// BuiltAt is the commit the build was made from. Empty on releases
+	// published before this existed.
+	BuiltAt time.Time
+}
+
 // Source is where releases are fetched from.
 type Source struct {
 	// Client is left nil in production, where a client with a timeout
@@ -65,6 +93,33 @@ type Source struct {
 	// Key is the public key signatures are checked against. Nil means the
 	// release key, which is what production uses.
 	Key *ecdsa.PublicKey
+	// Flat says the files sit directly under Base rather than under a
+	// directory named after the version. A git branch has one copy of
+	// each file and no version in its path; a releases page has one
+	// directory per tag.
+	Flat bool
+}
+
+// DistSource reads whatever build is currently published on the dist
+// branch. It is the raw file service rather than the API: three files, no
+// token, and the same signature check as a release.
+func DistSource(repo string) Source {
+	if repo == "" {
+		repo = Repo
+	}
+	base := strings.TrimSpace(os.Getenv("CPREST_DIST_BASE"))
+	if base == "" {
+		base = "https://raw.githubusercontent.com/" + repo + "/" + DistBranch
+	}
+	return Source{Base: base, Flat: true}
+}
+
+// SourceFor is where a channel reads from.
+func SourceFor(channel Channel, repo string) Source {
+	if channel == ChannelDist {
+		return DistSource(repo)
+	}
+	return DefaultSource(repo)
 }
 
 // DefaultSource reads releases from GitHub, or from wherever
@@ -106,48 +161,26 @@ func parseKey(body []byte) (*ecdsa.PublicKey, error) {
 // Nothing is unpacked here and nothing is run. What comes back is a file
 // this server has decided it can believe.
 func (s Source) Fetch(ctx context.Context, version, dir string) (string, error) {
-	if !IsRelease(version) {
+	if !s.Flat && !IsRelease(version) {
 		return "", fmt.Errorf("update: %q is not a release version", version)
 	}
-	key := s.Key
-	if key == nil {
-		release, err := ReleaseKey()
-		if err != nil {
-			return "", err
-		}
-		key = release
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
-	}
-
-	sums, err := s.get(ctx, version, SumsName, maxText)
+	sums, manifest, err := s.signedSums(ctx, version)
 	if err != nil {
 		return "", err
 	}
-	signature, err := s.get(ctx, version, SigName, maxText)
-	if err != nil {
-		return "", err
-	}
-	digest := sha256.Sum256(sums)
-	if !ecdsa.VerifyASN1(key, digest[:], signature) {
-		// Everything after this point is a file this server runs as root,
-		// so this is the end of the road rather than a warning.
-		return "", fmt.Errorf(
-			"update: the checksums of %s are not signed by the cP:Restic release key", version)
-	}
-	// The signature says these checksums were published by whoever holds
-	// the release key. The version inside them says which release they
-	// were published for. Without that second check, anybody who can make
-	// a tag -- which is not the same as holding the key -- could publish
-	// last year's signed release again under this year's number, and this
-	// server would install it believing it had gone forward.
-	if signedFor := versionIn(sums); signedFor != version {
-		return "", fmt.Errorf(
-			"update: those checksums are signed for %s, not %s", describe(signedFor), version)
+	// What was agreed to is what gets installed. On a branch the files
+	// move under the operator's feet -- a build published between the
+	// page being read and the button being pressed is a different program
+	// from the one they were shown.
+	if manifest.Version != version {
+		return "", fmt.Errorf("update: what is published is %s, not the %s that was asked for",
+			describe(manifest.Version), version)
 	}
 	want, err := sumFor(sums, TarballName)
 	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 
@@ -163,6 +196,75 @@ func (s Source) Fetch(ctx context.Context, version, dir string) (string, error) 
 	return tarball, nil
 }
 
+// Published is what this source is offering now: the version, and the
+// commit it was built from.
+//
+// Nothing is downloaded but the manifest, and the manifest is not believed
+// until the release key has signed it.
+func (s Source) Published(ctx context.Context, version string) (Manifest, error) {
+	_, manifest, err := s.signedSums(ctx, version)
+	return manifest, err
+}
+
+// signedSums reads the checksums and proves they were published by
+// whoever holds the release key.
+//
+// version names the directory to read from on a releases page, and is
+// what the manifest is checked against there. A branch has one copy of
+// each file and no version in its path, so it is read with an empty
+// version and the manifest says what it is.
+func (s Source) signedSums(ctx context.Context, version string) ([]byte, Manifest, error) {
+	key := s.Key
+	if key == nil {
+		release, err := ReleaseKey()
+		if err != nil {
+			return nil, Manifest{}, err
+		}
+		key = release
+	}
+	sums, err := s.get(ctx, version, SumsName, maxText)
+	if err != nil {
+		return nil, Manifest{}, err
+	}
+	signature, err := s.get(ctx, version, SigName, maxText)
+	if err != nil {
+		return nil, Manifest{}, err
+	}
+	digest := sha256.Sum256(sums)
+	if !ecdsa.VerifyASN1(key, digest[:], signature) {
+		// Everything after this point is a file this server runs as root,
+		// so this is the end of the road rather than a warning.
+		return nil, Manifest{}, fmt.Errorf(
+			"update: what is published %s is not signed by the cP:Restic release key", at(version))
+	}
+	manifest := manifestIn(sums)
+	if manifest.Version == "" {
+		return nil, Manifest{}, fmt.Errorf(
+			"update: the signed checksums %s do not say which build they are for", at(version))
+	}
+	// The signature says these checksums were published by whoever holds
+	// the release key. The version inside them says which build they were
+	// published for. Without that second check, anybody who can make a
+	// tag or push a branch -- which is not the same as holding the key --
+	// could publish an old signed build again under a new name, and this
+	// server would install it believing it had gone forward.
+	if !s.Flat && manifest.Version != version {
+		return nil, Manifest{}, fmt.Errorf(
+			"update: those checksums are signed for %s, not %s",
+			describe(manifest.Version), version)
+	}
+	return sums, manifest, nil
+}
+
+// at names where something was published, for an error that has to say so
+// whether or not there was a version in the path.
+func at(version string) string {
+	if version == "" {
+		return "on the dist branch"
+	}
+	return "for " + version
+}
+
 // IsRelease says whether a version is a published release rather than a
 // build of somebody's own. Only these are ever fetched, so a version
 // number can never put anything of its own in a URL, and nothing with
@@ -173,19 +275,25 @@ func IsRelease(version string) bool {
 	return ok && strings.HasPrefix(version, "v") && version == strings.TrimSpace(version)
 }
 
-// versionIn reads the release a set of checksums was published for, which
-// the build writes as its first line: "# cprest v1.2.3".
-func versionIn(sums []byte) string {
+// manifestIn reads what a set of checksums says about itself, which the
+// build writes as its first line: "# cprest v1.2.3" for a release, and
+// "# cprest v1.2.3-18-gabc1234 2026-09-06T10:11:12Z" for a branch build,
+// where the commit time is the only thing that puts two of them in order.
+func manifestIn(sums []byte) Manifest {
 	for _, line := range strings.Split(string(sums), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) == 0 || fields[0] != "#" {
+		if len(fields) < 3 || fields[0] != "#" || fields[1] != "cprest" {
 			continue
 		}
-		if len(fields) == 3 && fields[1] == "cprest" {
-			return fields[2]
+		manifest := Manifest{Version: fields[2]}
+		if len(fields) >= 4 {
+			if at, err := time.Parse(time.RFC3339, fields[3]); err == nil {
+				manifest.BuiltAt = at.UTC()
+			}
 		}
+		return manifest
 	}
-	return ""
+	return Manifest{}
 }
 
 // describe names what a set of checksums says it is, for the one error
@@ -249,7 +357,13 @@ func (s Source) open(ctx context.Context, version, name string) (*http.Response,
 	if parsed.Scheme != "https" && parsed.Scheme != "http" {
 		return nil, fmt.Errorf("update: releases are read over http or https, not %q", parsed.Scheme)
 	}
-	address, err := url.JoinPath(base, version, name)
+	segments := []string{version, name}
+	if s.Flat || version == "" {
+		// A branch holds one copy of each file, and its path says
+		// nothing about which build that is. The manifest does.
+		segments = []string{name}
+	}
+	address, err := url.JoinPath(base, segments...)
 	if err != nil {
 		return nil, err
 	}

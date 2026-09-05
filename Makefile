@@ -12,9 +12,14 @@ RESTIC_VERSION      := v0.19.1
 # compares against the newest release. A working tree that is not exactly a
 # tag says so: "v0.1.0-3-gabc1234-dirty" is not a release.
 VERSION             := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+# The commit this build was made from, which is the only thing that puts two
+# builds of a branch in order: v0.1.0-18-gabc1234 is not later than
+# v0.1.0-9-gdef5678 in any order a computer can see. The commit's own time,
+# not the moment of compilation, so two builds of one commit agree.
+BUILT_AT            := $(shell git log -1 --format=%cI 2>/dev/null || echo "")
 REST_SERVER_VERSION := v0.14.0
 
-.PHONY: all build plugin test cover e2e vet fmt tools clean
+.PHONY: all build plugin release test cover e2e vet fmt tools clean
 
 all: fmt vet test build
 
@@ -28,7 +33,8 @@ build:
 plugin:
 	mkdir -p $(BIN)/cprest-plugin
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(PLUGIN_ARCH) go build -trimpath \
-		-ldflags="-s -w -X github.com/shuki/cprest/internal/agent.Version=$(VERSION)" \
+		-ldflags="-s -w -X github.com/shuki/cprest/internal/agent.Version=$(VERSION) \
+			-X github.com/shuki/cprest/internal/agent.BuiltAt=$(BUILT_AT)" \
 		-o $(BIN)/cprest-plugin/cprest-agent ./cmd/agent
 	cp packaging/whm/cprest.cgi packaging/whm/install.sh packaging/whm/uninstall.sh $(BIN)/cprest-plugin/
 	mkdir -p $(BIN)/cprest-plugin/cpanel/uapi \
@@ -47,7 +53,7 @@ plugin:
 	@# for one release cannot be published again under another tag. sha256sum
 	@# ignores a line beginning with #, and so does everything that reads
 	@# this.
-	cd $(BIN) && { printf '# cprest %s\n' '$(VERSION)'; \
+	cd $(BIN) && { printf '# cprest %s %s\n' '$(VERSION)' '$(BUILT_AT)'; \
 		sha256sum cprest-plugin-$(PLUGIN_ARCH).tar.gz get.sh; } > SHA256SUMS
 	@echo
 	@echo "built $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz, $(BIN)/get.sh and $(BIN)/SHA256SUMS"
@@ -55,6 +61,29 @@ plugin:
 	@echo "  scp $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz root@your-server:/root/"
 	@echo "then there, as root:"
 	@echo "  tar xzf cprest-plugin-$(PLUGIN_ARCH).tar.gz && cprest-plugin/install.sh"
+
+# Publish this build to the dist branch, signed.
+#
+# It is the whole update path without a release: build, sign the checksums
+# with the key an operator keeps off this machine, and push the three files
+# to a branch a server reads over https. What lands there is checked on the
+# server exactly as a release is -- same key, same signature, same refusal
+# if either is wrong.
+#
+# CPREST_SIGNING_KEY_FILE says where the private key is. It is never read
+# from the repository and never written into one.
+release: plugin
+	@[ -n "$(CPREST_SIGNING_KEY_FILE)" ] || { \
+		echo "set CPREST_SIGNING_KEY_FILE to the release key, e.g."; \
+		echo "  make release CPREST_SIGNING_KEY_FILE=~/.cprest/cprest-release.pem"; \
+		exit 1; }
+	openssl dgst -sha256 -sign "$(CPREST_SIGNING_KEY_FILE)" \
+		-out $(BIN)/SHA256SUMS.sig $(BIN)/SHA256SUMS
+	@# Verified here with the key that is compiled into the agent, so a
+	@# mismatched private key fails on this machine rather than on a server.
+	openssl dgst -sha256 -verify internal/update/release.pub \
+		-signature $(BIN)/SHA256SUMS.sig $(BIN)/SHA256SUMS
+	sh packaging/whm/publish-dist.sh $(BIN) $(VERSION)
 
 # Unit and integration tests. The store suite starts a throwaway PostgreSQL
 # and skips itself when none is installed, so this stays runnable anywhere.

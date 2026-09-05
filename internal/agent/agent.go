@@ -24,6 +24,27 @@ import (
 // a version it is not.
 var Version = "dev"
 
+// BuiltAt is the commit this build was made from, as an RFC 3339 time. It
+// is what says whether one build is later than another when neither is a
+// released version -- a branch has no version numbers to compare, and a
+// name like v0.1.0-18-g39bbd5b puts builds in no order at all.
+//
+// It is the commit's own time rather than the moment of compilation, so
+// two builds of the same commit agree.
+var BuiltAt = ""
+
+// Built is BuiltAt as a time, and whether this build has one.
+func Built() (time.Time, bool) {
+	if BuiltAt == "" {
+		return time.Time{}, false
+	}
+	at, err := time.Parse(time.RFC3339, BuiltAt)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return at.UTC(), true
+}
+
 // Agent executes backup jobs on one cPanel server.
 type Agent struct {
 	client   *Client

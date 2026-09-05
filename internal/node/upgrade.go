@@ -87,16 +87,25 @@ func ownedByUsAlone(dir string) error {
 // process would be killed halfway through replacing the binary that is
 // running.
 func (e *Engine) StartUpgrade(version string) error {
+	settings, err := e.store.Settings()
+	if err != nil {
+		return err
+	}
+	channel := Channel(settings)
 	state, err := e.store.UpdateState()
 	if err != nil {
 		return err
 	}
 	switch {
-	case !update.IsRelease(version):
+	case channel != update.ChannelDist && !update.IsRelease(version):
 		return fmt.Errorf("%q is not a released version", version)
+	case version == "" || strings.ContainsAny(version, " \t/\\"):
+		return fmt.Errorf("%q is not a build this server can install", version)
 	case version != state.Version:
-		return fmt.Errorf("%s is not the release this server has been told about; check again first", version)
-	case !update.Newer(agent.Version, version):
+		return fmt.Errorf("%s is not the build this server has been told about; check again first", version)
+	case storedChannel(state) != channel:
+		return fmt.Errorf("that build came from another update channel; check again first")
+	case !e.UpdateOffered(state):
 		return fmt.Errorf("this server already runs %s", agent.Version)
 	}
 	if _, err := exec.LookPath("systemd-run"); err != nil {
@@ -153,6 +162,15 @@ func (e *Engine) StartUpgrade(version string) error {
 	return nil
 }
 
+// storedChannel is where a recorded check read from. A check made before
+// channels existed was a check of the releases.
+func storedChannel(state nodestore.UpdateState) update.Channel {
+	if update.Channel(state.Channel) == update.ChannelDist {
+		return update.ChannelDist
+	}
+	return update.ChannelReleases
+}
+
 // runUpgrade fetches the release, checks it, unpacks it and hands it to
 // systemd. It returns once the installer has been started, not once it has
 // finished: by then this process is being restarted by it.
@@ -176,7 +194,29 @@ func (e *Engine) runUpgrade(state nodestore.UpgradeState) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 
-	tarball, err := update.DefaultSource("").Fetch(ctx, state.Version, dir)
+	settings, err := e.store.Settings()
+	if err != nil {
+		return err
+	}
+	channel := Channel(settings)
+	source := update.SourceFor(channel, update.Repo)
+	if channel == update.ChannelDist {
+		// A branch moves. What is published now may not be what the
+		// check found, and going backwards is how a server that follows
+		// the work ends up running last week's program: whoever can push
+		// to the branch cannot forge the signature, but they can put an
+		// older signed build back on it.
+		published, err := source.Published(ctx, "")
+		if err != nil {
+			return err
+		}
+		if running, known := agent.Built(); known && !published.BuiltAt.After(running) {
+			return fmt.Errorf(
+				"what is on the %s branch now (%s) is not newer than what this server runs",
+				update.DistBranch, published.Version)
+		}
+	}
+	tarball, err := source.Fetch(ctx, state.Version, dir)
 	if err != nil {
 		return err
 	}

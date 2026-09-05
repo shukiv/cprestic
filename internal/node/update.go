@@ -48,19 +48,14 @@ func (e *Engine) checkForUpdate(ctx context.Context, now time.Time) {
 		// The time is recorded whatever happened, so a server with no
 		// route to GitHub asks once a day rather than every fifteen
 		// seconds for ever.
-		found := nodestore.UpdateState{CheckedAt: time.Now().UTC()}
-		release, err := update.Latest(asked, nil, update.Repo)
+		found, err := e.askWhatIsPublished(asked, Channel(settings))
+		found.CheckedAt = time.Now().UTC()
 		if err != nil {
 			found.Error = err.Error()
-			e.log.Warn("check for a newer release", "error", err)
-		} else {
-			found.Version = release.Version
-			found.URL = release.URL
-			found.Notes = release.Notes
-			if update.Newer(agent.Version, release.Version) {
-				e.log.Info("a newer release is available",
-					"running", agent.Version, "released", release.Version)
-			}
+			e.log.Warn("check for a newer build", "error", err)
+		} else if e.UpdateOffered(found) {
+			e.log.Info("a newer build is available",
+				"running", agent.Version, "published", found.Version)
 		}
 		if err := e.store.SaveUpdateState(found); err != nil {
 			e.log.Error("record the update check", "error", err)
@@ -74,8 +69,12 @@ func (e *Engine) checkForUpdate(ctx context.Context, now time.Time) {
 // somebody standing at the page who has just been told a release exists,
 // and for an operator watching a failing check to see the reason change.
 func (e *Engine) CheckForUpdateNow(ctx context.Context) (nodestore.UpdateState, error) {
-	found := nodestore.UpdateState{CheckedAt: time.Now().UTC()}
-	release, err := update.Latest(ctx, nil, update.Repo)
+	settings, err := e.store.Settings()
+	if err != nil {
+		return nodestore.UpdateState{}, err
+	}
+	found, err := e.askWhatIsPublished(ctx, Channel(settings))
+	found.CheckedAt = time.Now().UTC()
 	if err != nil {
 		found.Error = err.Error()
 		if saveErr := e.store.SaveUpdateState(found); saveErr != nil {
@@ -83,9 +82,72 @@ func (e *Engine) CheckForUpdateNow(ctx context.Context) (nodestore.UpdateState, 
 		}
 		return found, err
 	}
-	found.Version, found.URL, found.Notes = release.Version, release.URL, release.Notes
 	if err := e.store.SaveUpdateState(found); err != nil {
 		return found, err
 	}
 	return found, nil
+}
+
+// Channel is where this server takes its updates from.
+func Channel(settings nodestore.Settings) update.Channel {
+	if update.Channel(settings.UpdateChannel) == update.ChannelDist {
+		return update.ChannelDist
+	}
+	return update.ChannelReleases
+}
+
+// askWhatIsPublished reads what the chosen channel is offering.
+//
+// A release comes from GitHub's own API, which knows about drafts and
+// pre-releases and has notes attached. The dist branch is three files: the
+// manifest says what the build is, and the release key's signature is what
+// makes it worth reading at all.
+func (e *Engine) askWhatIsPublished(ctx context.Context, channel update.Channel) (nodestore.UpdateState, error) {
+	found := nodestore.UpdateState{Channel: string(channel)}
+	if channel == update.ChannelDist {
+		manifest, err := update.DistSource(update.Repo).Published(ctx, "")
+		if err != nil {
+			return found, err
+		}
+		found.Version = manifest.Version
+		found.BuiltAt = manifest.BuiltAt
+		found.URL = "https://github.com/" + update.Repo + "/tree/" + update.DistBranch
+		found.Notes = "The build published on the " + update.DistBranch +
+			" branch, signed with the same release key."
+		return found, nil
+	}
+	release, err := update.Latest(ctx, nil, update.Repo)
+	if err != nil {
+		return found, err
+	}
+	found.Version, found.URL, found.Notes = release.Version, release.URL, release.Notes
+	return found, nil
+}
+
+// UpdateOffered says whether what was found is worth installing over what
+// is running.
+//
+// Releases are compared by version number: a build of somebody's own is
+// never told to replace itself with a release. A branch has no version
+// numbers that mean anything -- v0.1.0-18-gabc1234 is not later than
+// v0.1.0-9-gdef5678 in any order a computer can see -- so what is compared
+// is the commit each was built from.
+func (e *Engine) UpdateOffered(state nodestore.UpdateState) bool {
+	if state.Version == "" {
+		return false
+	}
+	if storedChannel(state) != update.ChannelDist {
+		return update.Newer(agent.Version, state.Version)
+	}
+	if state.BuiltAt.IsZero() {
+		return false
+	}
+	running, known := agent.Built()
+	if !known {
+		// This build says nothing about where it came from, so anything
+		// that does say is worth offering. A server on this channel asked
+		// to follow the work.
+		return true
+	}
+	return state.BuiltAt.After(running)
 }

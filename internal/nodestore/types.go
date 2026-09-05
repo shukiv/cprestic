@@ -503,6 +503,11 @@ type Settings struct {
 	// because the check only reads a version number, and a backup program
 	// nobody knows is out of date is the worse failure.
 	NoUpdateCheck bool `json:"no_update_check,omitempty"`
+	// UpdateChannel is where updates are read from: "releases" (the
+	// default) or "dist", the branch the latest build is published on. A
+	// server following the work rather than the releases takes the
+	// second; what is published there is signed with the same key.
+	UpdateChannel string `json:"update_channel,omitempty"`
 }
 
 // UpdateState is what the last check for a newer release found. It is kept
@@ -539,6 +544,14 @@ type UpgradeState struct {
 
 type UpdateState struct {
 	CheckedAt time.Time `json:"checked_at"`
+	// Channel is where this was read from: published releases, or the
+	// dist branch. Stored so a page cannot show a branch build under the
+	// heading of a release after the setting is changed.
+	Channel string `json:"channel,omitempty"`
+	// BuiltAt is the commit the published build was made from. It is
+	// what orders two builds of a branch, which have no version numbers
+	// to compare.
+	BuiltAt time.Time `json:"built_at,omitempty"`
 	// Version, URL and Notes describe the newest published release,
 	// whether or not it is newer than what is running here.
 	Version string `json:"version,omitempty"`

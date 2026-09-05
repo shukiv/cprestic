@@ -151,11 +151,20 @@
     {{if $update.Newer}}
     <div class="cpr-spread" style="gap:var(--s4); align-items:flex-start">
       <div>
+        {{if $update.Dist}}
+        <b>Build {{$update.Latest}} is on the dist branch.</b>
+        <p class="cpr-hint" style="margin:var(--s1) 0 0">Built{{with $update.BuiltAt}} {{.}}{{end}},
+        and signed with the same release key as a published release. Installing downloads it,
+        checks that signature, and restarts the service. Destinations, schedules, backups and
+        history stay as they are.{{with $update.ReleaseURL}}
+        <a href="{{.}}" target="_blank" rel="noopener noreferrer">The branch</a>.{{end}}</p>
+        {{else}}
         <b>cP:Restic {{$update.Latest}} has been released.</b>
         <p class="cpr-hint" style="margin:var(--s1) 0 0">Installing downloads it, checks that the
         release key signed it, and restarts the service. Destinations, schedules, backups and
         history stay as they are.{{with $update.ReleaseURL}}
         <a href="{{.}}" target="_blank" rel="noopener noreferrer">What changed</a>.{{end}}</p>
+        {{end}}
       </div>
       <form method="post" action="?p=settings/update/install">
         <input type="hidden" name="csrf" value="{{.CSRF}}">
@@ -165,9 +174,24 @@
       </form>
     </div>
     {{else if not $update.Installing}}
-    <p class="cpr-hint" style="margin:0">Nothing newer has been published.{{with $data.CheckError}}
-    The last ask failed: {{.}}{{end}}</p>
+    <p class="cpr-hint" style="margin:0">Nothing newer has been published{{if $update.Dist}} on the
+    dist branch{{end}}.{{with $data.CheckError}} The last ask failed: {{.}}{{end}}</p>
     {{end}}
+
+    <form method="post" action="?p=settings/update/channel" style="margin-top:var(--s4)">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <label for="update_channel">Where updates come from</label>
+      <div class="cpr-row">
+        <select id="update_channel" name="update_channel">
+          <option value="releases" {{if not $update.Dist}}selected{{end}}>Published releases</option>
+          <option value="dist" {{if $update.Dist}}selected{{end}}>The dist branch — every build, as it is made</option>
+        </select>
+        <button class="cpr-btn cpr-quiet" type="submit">Save</button>
+      </div>
+      <small class="cpr-help">Releases are versions somebody decided to publish. The dist branch is
+      whatever has just been built, signed with the same key and checked the same way — for a server
+      that follows the work rather than the releases.</small>
+    </form>
   </div>
 </div>
 
