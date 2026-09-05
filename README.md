@@ -71,6 +71,22 @@ registers it with WHM through AppConfig, confirms WHM kept the registration,
 and registers cPanel Standardized Hooks for account create, modify, suspend,
 unsuspend and remove. Running it again upgrades in place.
 
+### Removing it
+
+```bash
+sh /usr/local/share/cprest/uninstall.sh
+```
+
+The installer leaves that copy on the server, so removing it never means
+finding the package again. It stops and unregisters everything it put in
+place — service, WHM plugin, cPanel hooks, the account tile — and clears
+restic's cache.
+
+Two files stay: `/etc/cprest/master.key` and `/var/lib/cprest/state.db`.
+Reinstalling picks up from them, with the same destinations, schedules and
+history. Deleting the key deletes the only way to read what is in those
+destinations, so it is left for you to do deliberately.
+
 ### Building it yourself
 
 No release needed, and the way to install a change you have made. On a machine

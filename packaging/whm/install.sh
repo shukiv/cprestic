@@ -16,6 +16,7 @@ STAGING_DIR=/var/lib/cprest/staging
 CACHE_DIR=/var/cache/cprest/restic
 RUN_DIR=/var/run/cprest
 APPCONFIG_DIR=/var/cpanel/apps
+SHARE_DIR=/usr/local/share/cprest
 SERVICE=/etc/systemd/system/cprest.service
 
 say() { printf '%s\n' "$*"; }
@@ -28,6 +29,7 @@ umask 077
 SOURCE_DIR=$(cd "$(dirname "$0")" && pwd)
 [ -f "$SOURCE_DIR/cprest-agent" ] || die "cprest-agent is not next to this script"
 [ -f "$SOURCE_DIR/cprest.cgi" ] || die "cprest.cgi is not next to this script"
+[ -f "$SOURCE_DIR/uninstall.sh" ] || die "uninstall.sh is not next to this script"
 [ -f "$SOURCE_DIR/cpanel/install.json" ] || die "cpanel/install.json is missing from the package"
 [ -f "$SOURCE_DIR/cpanel/uapi/Cprest.pm" ] || die "the cPanel UAPI bridge is missing from the package"
 [ -f "$SOURCE_DIR/cpanel/admin/Cprest/Session.pm" ] || die "the cPanel AdminBin bridge is missing from the package"
@@ -107,6 +109,19 @@ HOOK_BIN=/usr/local/cpanel/3rdparty/bin/cprest-hook
 install -m 0755 "$SOURCE_DIR/cprest-agent" "$HOOK_BIN"
 install -m 0755 "$SOURCE_DIR/cprest.cgi" "$CGI_DIR/cprest.cgi"
 say "installed $PREFIX/cprest-agent and $CGI_DIR/cprest.cgi"
+
+# Keep the way out on the server. Installing from a release unpacks the
+# package into a temporary directory and removes it again, so the uninstaller
+# would otherwise exist only inside a tarball somebody has to find and
+# download a second time. It needs cPanel's plugin descriptor and the icon
+# beside it -- without those it removes everything except the account-facing
+# tile, and does so without complaining. Modes are explicit because this
+# script runs under umask 077 and these are not secret.
+install -d -m 0755 "$SHARE_DIR" "$SHARE_DIR/cpanel" "$SHARE_DIR/branding"
+install -m 0755 "$SOURCE_DIR/uninstall.sh" "$SHARE_DIR/uninstall.sh"
+install -m 0644 "$SOURCE_DIR/cpanel/install.json" "$SHARE_DIR/cpanel/install.json"
+install -m 0644 "$SOURCE_DIR/branding/cpr-badge.svg" "$SHARE_DIR/branding/cpr-badge.svg"
+say "installed $SHARE_DIR/uninstall.sh"
 
 # LivePHP intentionally does not expose the browser's cpsession cookie. The
 # UAPI module enters cPanel's authenticated engine; its root-owned AdminBin
@@ -335,4 +350,6 @@ AppConfig. The Manage Plugins page lists cPanel RPM addons and will not
 show it.
 
 Next: add a backup destination in the plugin, then a schedule.
+
+To remove it again: sh /usr/local/share/cprest/uninstall.sh
 DONE

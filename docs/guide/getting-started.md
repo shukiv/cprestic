@@ -79,6 +79,24 @@ unpacked there will not run otherwise.
    than waiting until 02:00 to find out something was wrong.
 5. **Overview** should then read *n of n accounts have a usable backup*.
 
+## Uninstalling
+
+```bash
+sh /usr/local/share/cprest/uninstall.sh
+```
+
+The installer leaves that copy on the server, so this never means finding the
+package again. It stops the service and unregisters the WHM plugin, the cPanel
+hooks and the account tile, and clears restic's cache.
+
+It keeps `/etc/cprest/master.key` and `/var/lib/cprest/state.db`, so a
+reinstall comes back with the same destinations, schedules and history.
+Deleting the key deletes the only way to read the backups in those
+destinations; that one is left for you to do on purpose, and only once you can
+read them another way.
+
+Backups already written to a destination are not touched either way.
+
 ## Where things live
 
 | Path | What |

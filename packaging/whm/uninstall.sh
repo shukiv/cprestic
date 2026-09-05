@@ -65,6 +65,11 @@ rm -rf -- "$FRONTEND/cprest"
 rm -f "$FRONTEND/assets/application_icons/cprest.png" \
     /usr/local/cpanel/whostmgr/docroot/addon_plugins/cprest.svg
 
+# restic's cache. It is rebuilt from the repository on the next backup, and
+# it is the one thing here that can reach gigabytes, so leaving it behind is
+# not caution, only clutter.
+rm -rf -- /var/cache/cprest
+
 cat <<'DONE'
 cprest removed.
 
@@ -75,4 +80,12 @@ Left in place on purpose:
 Delete those only when you are certain you will not reinstall, and never
 before you have another way to read your backups: without the key file the
 stored destination credentials cannot be recovered.
+
+Reinstalling picks up from there: the same destinations, schedules and
+history come back with it.
 DONE
+
+# Last, because this script is reading itself out of that directory: the copy
+# of the uninstaller the installer left behind, and the two cPanel files it
+# needs to remove the account-facing tile.
+rm -rf -- /usr/local/share/cprest
