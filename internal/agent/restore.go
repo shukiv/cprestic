@@ -173,8 +173,32 @@ func (a *Agent) restoreAccount(ctx context.Context, log *slog.Logger,
 		log.Error("restorepkg", "error", err)
 		return reassemble.Result{}, err
 	}
+
+	if err := a.confirmRestored(ctx, log, assignment.CPanelUser); err != nil {
+		return reassemble.Result{}, err
+	}
 	log.Info("account restored")
 	return result, nil
+}
+
+// confirmRestored checks that the account cPanel said it restored is
+// actually on the server.
+//
+// cPanel's restore exits zero for things that are not a restored account.
+// Seen on a live server: an account terminated a moment before the restore
+// started came back "Success." from restorepkg and was not there
+// afterwards -- the termination finished after the restore did. A restore
+// that reports success and leaves nothing is worse than one that fails,
+// because nobody looks again.
+func (a *Agent) confirmRestored(ctx context.Context, log *slog.Logger, user string) error {
+	if _, err := a.provider.Account(ctx, user); err != nil {
+		log.Error("restorepkg reported success but the account is not here",
+			"account", user, "error", err)
+		return fmt.Errorf(
+			"agent: cPanel reported the restore of %s as successful, but the "+
+				"account is not on this server afterwards: %w", user, err)
+	}
+	return nil
 }
 
 // restoreFiles pulls named paths out of a snapshot, keeping the paths they

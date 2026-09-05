@@ -56,6 +56,9 @@ type Fake struct {
 	// RefuseCreate makes CreateDatabase fail with this reason, the way
 	// cPanel refuses one when the account's database quota is reached.
 	RefuseCreate string
+	// Gone marks accounts this server does not have, for the case where
+	// cPanel says it restored one and it is not there afterwards.
+	Gone map[string]bool
 }
 
 // PutBackHome is one home-directory tree written back into an account.
@@ -131,6 +134,9 @@ func (f *Fake) Accounts(_ context.Context) ([]AccountInfo, error) {
 func (f *Fake) Account(_ context.Context, user string) (AccountInfo, error) {
 	if err := validateUser(user); err != nil {
 		return AccountInfo{}, err
+	}
+	if f.Gone[user] {
+		return AccountInfo{}, fmt.Errorf("cpanel: account home for %s: no such directory", user)
 	}
 	home := filepath.Join(f.Root, "home", user)
 	if err := f.populateHome(home, user); err != nil {

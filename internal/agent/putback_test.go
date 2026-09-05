@@ -337,6 +337,29 @@ func stagedCron(t *testing.T, out, user, body string) {
 	}
 }
 
+// cPanel's restore exits zero for things that are not a restored account.
+// Seen on a live server: an account terminated a moment before the restore
+// started came back "Success." from restorepkg and was not there
+// afterwards. A restore that reports success and leaves nothing is worse
+// than one that fails, because nobody looks again.
+func TestARestoreThatLeavesNoAccountIsNotASuccess(t *testing.T) {
+	agent := quietAgent(&cpanel.Fake{Gone: map[string]bool{"c1": true}})
+
+	err := agent.confirmRestored(context.Background(), agent.log, "c1")
+	if err == nil {
+		t.Fatal("a restore that left no account was reported as successful")
+	}
+	if !strings.Contains(err.Error(), "not on this server afterwards") {
+		t.Errorf("error = %q", err)
+	}
+
+	// The account that is there passes, which is every other restore.
+	here := quietAgent(&cpanel.Fake{Root: t.TempDir()})
+	if err := here.confirmRestored(context.Background(), here.log, "c1"); err != nil {
+		t.Errorf("a restored account was reported as missing: %v", err)
+	}
+}
+
 func TestApplyingFilesWritesTheHomeDirectory(t *testing.T) {
 	out := restoredTree(t)
 	fake := &cpanel.Fake{}
