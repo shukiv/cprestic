@@ -1295,7 +1295,7 @@ func TestCollectedOutputCanBeDeleted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, page := get(t, client, "/settings")
+	_, page := get(t, client, "/settings?tab=storage")
 	if !strings.Contains(page, "restore-customer1") {
 		t.Fatal("the settings page does not list what is waiting in the work directory")
 	}

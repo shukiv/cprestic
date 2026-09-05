@@ -1,9 +1,12 @@
 {{define "content"}}
 {{$data := .Data}}
+{{$tab := $data.Tab}}
 <div>
   <h1>Settings</h1>
   <p class="cpr-sub">How this server takes its backups.</p>
 </div>
+{{template "settingstabs" $tab}}
+{{if eq $tab "backups"}}
 <div class="cpr-card">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">How backups run</h2></div>
   <div class="cpr-pad">
@@ -103,12 +106,14 @@
   </form>
   </div>
 </div>
+{{end}}
 
 {{/* The program itself: what is running, what has been released, and the
      one button that replaces the first with the second. It is a card of its
      own rather than a line in the form above because installing is not a
      setting -- it happens when it is pressed. */}}
 {{$update := $data.Update}}
+{{if eq $tab "version"}}
 <div class="cpr-card">
   <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
     <div>
@@ -194,9 +199,11 @@
     </form>
   </div>
 </div>
+{{end}}
 
 {{/* Nobody reads a page for a server that is working, which is exactly when
      it stops. This is how the server speaks first. */}}
+{{if eq $tab "alerts"}}
 <div class="cpr-card">
   <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
     <div>
@@ -289,7 +296,9 @@
   </div>
 </dialog>
 {{end}}
+{{end}}
 
+{{if eq $tab "storage"}}
 <div class="cpr-card">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Staging</h2></div>
   <div class="cpr-pad">
@@ -341,7 +350,9 @@
   until you collect them, or until they are swept.</p></div>
   {{end}}
 </div>
+{{end}}
 
+{{if eq $tab "backups"}}
 <div class="cpr-card">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
     <h2 style="margin:0">What a backup contains</h2>
@@ -420,11 +431,13 @@
   </div>
   {{end}}
 </div>
+{{end}}
 
 {{/* Last on the page, where something nobody does twice a year belongs.
      Removing this was a command an administrator had to go and look up,
      which is a strange thing to have to look up while standing in front of
      the interface it removes. */}}
+{{if eq $tab "version"}}
 <div class="cpr-danger-zone">
   <h3>Remove cP:Restic from this server</h3>
   <p>Stops the service and unregisters the WHM plugin, the cPanel hooks and the account tile.
@@ -440,6 +453,7 @@
   <p class="cpr-hint" style="margin-top:var(--s3)">Or in a root shell:
   <span class="cpr-mono">sh /usr/local/share/cprest/uninstall.sh</span></p>
 </div>
+{{end}}
 {{end}}
 
 {{define "channelform"}}

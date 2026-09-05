@@ -77,13 +77,13 @@ func (s *Server) handleCheckUpdate(w http.ResponseWriter, r *http.Request) {
 	state, err := s.engine.CheckForUpdateNow(ctx)
 	switch {
 	case err != nil:
-		s.redirect(w, r, "/settings", "error", "Could not ask about newer versions: "+err.Error())
+		s.redirect(w, r, settingsTab("version"), "error", "Could not ask about newer versions: "+err.Error())
 	case state.Version == "":
-		s.redirect(w, r, "/settings", "warn", "GitHub answered, but named no release.")
+		s.redirect(w, r, settingsTab("version"), "warn", "GitHub answered, but named no release.")
 	case s.engine.UpdateOffered(state):
-		s.redirect(w, r, "/settings", "ok", "cP:Restic "+state.Version+" is available to install.")
+		s.redirect(w, r, settingsTab("version"), "ok", "cP:Restic "+state.Version+" is available to install.")
 	default:
-		s.redirect(w, r, "/settings", "ok",
+		s.redirect(w, r, settingsTab("version"), "ok",
 			"This server runs "+agent.Version+", and what is published is "+state.Version+".")
 	}
 }
@@ -96,7 +96,7 @@ func (s *Server) handleCheckUpdate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleChooseChannel(w http.ResponseWriter, r *http.Request) {
 	settings, err := s.engine.Store().Settings()
 	if err != nil {
-		s.redirect(w, r, "/settings", "error", "Could not read the settings: "+err.Error())
+		s.redirect(w, r, settingsTab("version"), "error", "Could not read the settings: "+err.Error())
 		return
 	}
 	chosen := update.ChannelReleases
@@ -104,12 +104,12 @@ func (s *Server) handleChooseChannel(w http.ResponseWriter, r *http.Request) {
 		chosen = update.ChannelDist
 	}
 	if node.Channel(settings) == chosen {
-		s.redirect(w, r, "/settings", "ok", "That is already where updates come from.")
+		s.redirect(w, r, settingsTab("version"), "ok", "That is already where updates come from.")
 		return
 	}
 	settings.UpdateChannel = string(chosen)
 	if err := s.engine.Store().SaveSettings(settings); err != nil {
-		s.redirect(w, r, "/settings", "error", "Could not save that: "+err.Error())
+		s.redirect(w, r, settingsTab("version"), "error", "Could not save that: "+err.Error())
 		return
 	}
 	// What was found on the old channel says nothing about the new one,
@@ -119,11 +119,11 @@ func (s *Server) handleChooseChannel(w http.ResponseWriter, r *http.Request) {
 		s.log.Error("clear what the last check found", "error", err)
 	}
 	if chosen == update.ChannelDist {
-		s.redirect(w, r, "/settings", "ok",
+		s.redirect(w, r, settingsTab("version"), "ok",
 			"Updates now come from the dist branch. Press Check now to see what is on it.")
 		return
 	}
-	s.redirect(w, r, "/settings", "ok",
+	s.redirect(w, r, settingsTab("version"), "ok",
 		"Updates now come from published releases. Press Check now to see the newest.")
 }
 
@@ -156,10 +156,10 @@ func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.engine.StartUninstall(); err != nil {
-		s.redirect(w, r, "/settings", "error", "Could not remove it: "+err.Error())
+		s.redirect(w, r, settingsTab("version"), "error", "Could not remove it: "+err.Error())
 		return
 	}
-	s.redirect(w, r, "/settings", "warn",
+	s.redirect(w, r, settingsTab("version"), "warn",
 		"Removing cP:Restic. This page stops answering in a few seconds. "+
 			"Reinstalling brings back the same destinations, schedules and history.")
 }
@@ -173,20 +173,20 @@ func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDismissUpgrade(w http.ResponseWriter, r *http.Request) {
 	state, err := s.engine.UpgradeStatus()
 	if err != nil {
-		s.redirect(w, r, "/settings", "error", "Could not read the last upgrade: "+err.Error())
+		s.redirect(w, r, settingsTab("version"), "error", "Could not read the last upgrade: "+err.Error())
 		return
 	}
 	if !state.StartedAt.IsZero() && state.FinishedAt.IsZero() {
 		// Nothing is cleared out from under an upgrade that is running:
 		// the card is the only thing saying it is.
-		s.redirect(w, r, "/settings", "warn", "That upgrade has not finished yet.")
+		s.redirect(w, r, settingsTab("version"), "warn", "That upgrade has not finished yet.")
 		return
 	}
 	if err := s.engine.Store().SaveUpgradeState(nodestore.UpgradeState{}); err != nil {
-		s.redirect(w, r, "/settings", "error", "Could not clear it: "+err.Error())
+		s.redirect(w, r, settingsTab("version"), "error", "Could not clear it: "+err.Error())
 		return
 	}
-	s.redirect(w, r, "/settings", "ok", "Cleared.")
+	s.redirect(w, r, settingsTab("version"), "ok", "Cleared.")
 }
 
 // handleUpgrade installs a released version over this one, once it has
@@ -205,7 +205,7 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 		// Which versions are installable is the engine's to say, since
 		// that depends on the channel: a release has a version number, a
 		// branch build has whatever git describe called it.
-		s.redirect(w, r, "/settings", "error", "That is not a build of cP:Restic.")
+		s.redirect(w, r, settingsTab("version"), "error", "That is not a build of cP:Restic.")
 		return
 	}
 	if !confirmed(r) {
@@ -228,9 +228,9 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.engine.StartUpgrade(version); err != nil {
-		s.redirect(w, r, "/settings", "error", "Could not start the upgrade: "+err.Error())
+		s.redirect(w, r, settingsTab("version"), "error", "Could not start the upgrade: "+err.Error())
 		return
 	}
-	s.redirect(w, r, "/settings", "ok",
+	s.redirect(w, r, settingsTab("version"), "ok",
 		"Installing "+version+". This page says how it goes; the service restarts on its way through.")
 }

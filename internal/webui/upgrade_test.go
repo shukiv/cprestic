@@ -28,7 +28,7 @@ func TestSettingsOffersTheRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	status, page := get(t, client, "/?p=settings")
+	status, page := get(t, client, "/?p=settings&tab=version")
 	if status != http.StatusOK {
 		t.Fatalf("settings answered %d", status)
 	}
@@ -80,7 +80,7 @@ func TestUpgradeRefusesAVersionNobodyWasToldAbout(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, page := get(t, client, "/?p=settings")
+	_, page := get(t, client, "/?p=settings&tab=version")
 	token := csrfToken(t, page)
 
 	for _, version := range []string{"v9.9.9", "v1.2.3", "not-a-version", ""} {
@@ -123,7 +123,7 @@ func readBody(t *testing.T, resp *http.Response) string {
 func TestUninstallAsksFirst(t *testing.T) {
 	client, _, _ := newUI(t)
 
-	status, page := get(t, client, "/?p=settings")
+	status, page := get(t, client, "/?p=settings&tab=version")
 	if status != http.StatusOK {
 		t.Fatalf("settings answered %d", status)
 	}
@@ -155,7 +155,7 @@ func TestUninstallAsksFirst(t *testing.T) {
 	}
 	// Nothing ran: there is no uninstaller on a test machine, and the
 	// confirmation is not the thing that would have run it anyway.
-	if status, _ := get(t, client, "/?p=settings"); status != http.StatusOK {
+	if status, _ := get(t, client, "/?p=settings&tab=version"); status != http.StatusOK {
 		t.Errorf("the interface stopped answering: %d", status)
 	}
 }
@@ -172,7 +172,7 @@ func TestDismissClearsTheLastUpgrade(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, page := get(t, client, "/?p=settings")
+	_, page := get(t, client, "/?p=settings&tab=version")
 	if !strings.Contains(page, "v1.3.0 was not installed") {
 		t.Fatal("the settings page does not say the upgrade failed")
 	}
@@ -186,7 +186,7 @@ func TestDismissClearsTheLastUpgrade(t *testing.T) {
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("dismissing answered %d", resp.StatusCode)
 	}
-	_, page = get(t, client, "/?p=settings")
+	_, page = get(t, client, "/?p=settings&tab=version")
 	if strings.Contains(page, "was not installed") {
 		t.Error("the failed upgrade is still on the page")
 	}
@@ -196,5 +196,68 @@ func TestDismissClearsTheLastUpgrade(t *testing.T) {
 	}
 	if !state.StartedAt.IsZero() {
 		t.Errorf("it is still stored: %+v", state)
+	}
+}
+
+// TestSettingsTabsShowOnePartEach: the page was seven cards long, and the
+// two anybody reaches for in a hurry were the two furthest down. Each tab
+// has to hold its own cards, and only its own.
+func TestSettingsTabsShowOnePartEach(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	tabs := map[string]struct{ here, notHere []string }{
+		"": { // no tab named: the first one
+			here:    []string{"How backups run", "What a backup contains", ">Backups<"},
+			notHere: []string{"Remove cP:Restic from this server", "Where problems are reported"},
+		},
+		"&tab=alerts": {
+			here:    []string{"Where problems are reported"},
+			notHere: []string{"How backups run", "Remove cP:Restic from this server"},
+		},
+		"&tab=storage": {
+			here:    []string{"Staging", "Restored files waiting to be collected"},
+			notHere: []string{"How backups run", "Where problems are reported"},
+		},
+		"&tab=version": {
+			here:    []string{"This copy of cP:Restic", "Remove cP:Restic from this server"},
+			notHere: []string{"How backups run", "Where problems are reported"},
+		},
+	}
+	for suffix, want := range tabs {
+		status, page := get(t, client, "/?p=settings"+suffix)
+		if status != http.StatusOK {
+			t.Fatalf("%q answered %d", suffix, status)
+		}
+		for _, text := range want.here {
+			if !strings.Contains(page, text) {
+				t.Errorf("%q does not show %q", suffix, text)
+			}
+		}
+		for _, text := range want.notHere {
+			if strings.Contains(page, text) {
+				t.Errorf("%q shows %q, which belongs to another tab", suffix, text)
+			}
+		}
+		// Every tab carries the whole tab bar, or there is no way back.
+		for _, link := range []string{"?p=settings&amp;tab=alerts", "?p=settings&amp;tab=storage",
+			"?p=settings&amp;tab=version"} {
+			if !strings.Contains(page, link) {
+				t.Errorf("%q does not link to %q", suffix, link)
+			}
+		}
+	}
+
+	// A tab nobody has heard of is the first tab, not an error: this is a
+	// view of one page.
+	if status, page := get(t, client, "/?p=settings&tab=nonsense"); status != http.StatusOK ||
+		!strings.Contains(page, "How backups run") {
+		t.Errorf("an unknown tab answered %d", status)
+	}
+
+	// The links that open the channel drawer were written before the page
+	// had tabs, and they have to land where the channels are.
+	if _, page := get(t, client, "/?p=settings&addchannel=1"); !strings.Contains(page, "Add a channel") ||
+		!strings.Contains(page, "Where problems are reported") {
+		t.Error("adding a channel does not land on the alerts tab")
 	}
 }

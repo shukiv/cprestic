@@ -3232,6 +3232,37 @@ func logTab(asked string) string {
 
 // --- settings ---
 
+// settingsTabs are the parts the page is divided into, and the first is
+// what an address with no tab on it gets.
+var settingsTabs = []string{"backups", "alerts", "storage", "version"}
+
+// settingsTab is the address of one tab, for a handler sending an operator
+// back to the card they were working in rather than to the top of the page.
+func settingsTab(tab string) string {
+	if tab == settingsTabs[0] {
+		return "/settings"
+	}
+	return "/settings?tab=" + tab
+}
+
+// tabFor is which tab a request is asking for. Anything unrecognised is
+// the first: a tab is a view of one page, not a thing that can be missing.
+func tabFor(r *http.Request) string {
+	asked := r.URL.Query().Get("tab")
+	for _, tab := range settingsTabs {
+		if asked == tab {
+			return tab
+		}
+	}
+	// Adding or editing a channel is alerts work whatever the address
+	// says. Those links were written before the page had tabs, and a
+	// drawer that opens on the wrong tab is a form with nothing behind it.
+	if r.URL.Query().Get("addchannel") != "" || r.URL.Query().Get("channel") != "" {
+		return "alerts"
+	}
+	return settingsTabs[0]
+}
+
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	view, err := s.settingsPage()
 	if err != nil {
@@ -3250,6 +3281,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	view.Adding = r.URL.Query().Get("addchannel") != ""
+	view.Tab = tabFor(r)
 
 	s.render(w, r, "settings.html", "Settings", "settings", view)
 }
@@ -3377,7 +3409,11 @@ type settingsView struct {
 	CheckError  string
 	// Update is the release this server has been told about and, if one
 	// is being installed, how that is going.
-	Update     updatePanel
+	Update updatePanel
+	// Tab is which part of the settings is being shown. The page carries
+	// seven cards, and somebody who came to change one thing should not
+	// have to walk past the other six.
+	Tab        string
 	Split      int
 	Monolithic int
 
@@ -3465,7 +3501,7 @@ func (s *Server) handleSaveChannel(w http.ResponseWriter, r *http.Request) {
 		// than making the operator add a new one.
 		existing, err := s.engine.Store().Channel(channel.ID)
 		if err != nil {
-			s.redirect(w, r, "/settings", "error", "That channel no longer exists.")
+			s.redirect(w, r, settingsTab("alerts"), "error", "That channel no longer exists.")
 			return
 		}
 		channel.Kind = existing.Kind
@@ -3491,7 +3527,7 @@ func (s *Server) handleSaveChannel(w http.ResponseWriter, r *http.Request) {
 		s.refuseChannel(w, r, err)
 		return
 	}
-	s.redirect(w, r, "/settings", "ok",
+	s.redirect(w, r, settingsTab("alerts"), "ok",
 		fmt.Sprintf("Saved %q. Send a test to make sure it arrives.", saved.Name))
 }
 
@@ -3499,19 +3535,19 @@ func (s *Server) handleSaveChannel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTestChannel(w http.ResponseWriter, r *http.Request) {
 	id := r.PostFormValue("id")
 	if err := s.engine.TestChannel(r.Context(), id); err != nil {
-		s.redirect(w, r, "/settings", "error", "It did not go: "+err.Error())
+		s.redirect(w, r, settingsTab("alerts"), "error", "It did not go: "+err.Error())
 		return
 	}
-	s.redirect(w, r, "/settings", "ok", "Sent. If it has not arrived, it was not delivered.")
+	s.redirect(w, r, settingsTab("alerts"), "ok", "Sent. If it has not arrived, it was not delivered.")
 }
 
 // handleDeleteChannel removes one.
 func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
 	if err := s.engine.DeleteChannel(r.PostFormValue("id")); err != nil {
-		s.redirect(w, r, "/settings", "error", err.Error())
+		s.redirect(w, r, settingsTab("alerts"), "error", err.Error())
 		return
 	}
-	s.redirect(w, r, "/settings", "ok", "Removed. Nothing will be sent there.")
+	s.redirect(w, r, settingsTab("alerts"), "ok", "Removed. Nothing will be sent there.")
 }
 
 // refuseChannel re-renders the settings page with the channel form open,
@@ -3525,6 +3561,9 @@ func (s *Server) refuseChannel(w http.ResponseWriter, r *http.Request, cause err
 	}
 	view.FormError = cause.Error()
 	view.Adding = true
+	// A refused channel form belongs where the channels are, whatever
+	// tab the page was last seen on.
+	view.Tab = "alerts"
 
 	secret := map[string]bool{"csrf": true}
 	for _, kind := range notify.Kinds {
@@ -3622,28 +3661,28 @@ func deletedPreset(settings nodestore.Settings) string {
 func (s *Server) handleDeleteOutput(w http.ResponseWriter, r *http.Request) {
 	key := r.PostFormValue("key")
 	if err := s.engine.DeleteOutput(key); err != nil {
-		s.redirect(w, r, "/settings", "error", err.Error())
+		s.redirect(w, r, settingsTab("storage"), "error", err.Error())
 		return
 	}
-	s.redirect(w, r, "/settings", "ok", "Removed. The backups themselves are untouched.")
+	s.redirect(w, r, settingsTab("storage"), "ok", "Removed. The backups themselves are untouched.")
 }
 
 // handleClearOutput empties the work directory of everything collected.
 func (s *Server) handleClearOutput(w http.ResponseWriter, r *http.Request) {
 	outputs, err := s.engine.RetainedOutput()
 	if err != nil {
-		s.redirect(w, r, "/settings", "error", err.Error())
+		s.redirect(w, r, settingsTab("storage"), "error", err.Error())
 		return
 	}
 	var freed uint64
 	for _, output := range outputs {
 		if err := s.engine.DeleteOutput(output.Key); err != nil {
-			s.redirect(w, r, "/settings", "error", err.Error())
+			s.redirect(w, r, settingsTab("storage"), "error", err.Error())
 			return
 		}
 		freed += output.Bytes
 	}
-	s.redirect(w, r, "/settings", "ok",
+	s.redirect(w, r, settingsTab("storage"), "ok",
 		fmt.Sprintf("Removed %s of restored files. The backups themselves are untouched.",
 			humanBytes(freed)))
 }
