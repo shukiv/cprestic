@@ -192,7 +192,16 @@ func (e *Engine) UpgradeStatus() (nodestore.UpgradeState, error) {
 	}
 
 	finished := false
-	if state.Dir != "" {
+	// Nothing is downloading unless this process is doing it. A restart
+	// during the download -- somebody else's systemctl, a crash -- leaves
+	// a state nothing will ever finish, and an upgrade that says it is
+	// running is an upgrade that cannot be started again.
+	if state.Stage == "downloading" && !e.upgrading.Load() {
+		finished = true
+		state.Failed = true
+		state.Error = "the download stopped when the service restarted"
+	}
+	if !finished && state.Dir != "" {
 		if code, ok := exitStatus(filepath.Join(state.Dir, "status")); ok {
 			finished = true
 			state.Failed = code != 0
