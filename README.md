@@ -76,6 +76,15 @@ registers it with WHM through AppConfig, confirms WHM kept the registration,
 and registers cPanel Standardized Hooks for account create, modify, suspend,
 unsuspend and remove. Running it again upgrades in place.
 
+### Keeping it current
+
+Every page says so when a newer release exists, with what changed and the
+version running here. Upgrading is the install command again; destinations,
+schedules and history stay. The check reads a version number from GitHub once
+a day and installs nothing on its own — an update that arrives unattended is a
+way for whoever can publish a release to reach every server running this, as
+root, with nobody looking. Settings turns the check off.
+
 ### Removing it
 
 ```bash

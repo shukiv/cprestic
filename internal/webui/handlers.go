@@ -17,6 +17,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
+	"github.com/shuki/cprest/internal/agent"
 	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/destination"
 	"github.com/shuki/cprest/internal/granular"
@@ -3210,6 +3211,15 @@ func (s *Server) settingsPage() (settingsView, error) {
 		return settingsView{}, err
 	}
 
+	// A failed check is not a reason to fail the page.
+	lastChecked, checkError := "", ""
+	if state, err := s.engine.Store().UpdateState(); err == nil {
+		if !state.CheckedAt.IsZero() {
+			lastChecked = humanAgo(&state.CheckedAt)
+		}
+		checkError = state.Error
+	}
+
 	return settingsView{
 		Settings:    settings,
 		StagingFree: free,
@@ -3218,6 +3228,8 @@ func (s *Server) settingsPage() (settingsView, error) {
 		KeepDays:    keepDays(settings),
 		DeletedDays: deletedDays(settings), DeletedPreset: deletedPreset(settings),
 		BugEmail: s.engine.BugEmail(), CanReport: s.engine.CanSendBugReport(),
+		Version:     agent.Version,
+		LastChecked: lastChecked, CheckError: checkError,
 		Split:      split,
 		Monolithic: monolithic,
 		Channels:   channels,
@@ -3242,10 +3254,17 @@ type settingsView struct {
 	DeletedPreset string
 	// BugEmail is where a bug report is sent, and CanReport says this
 	// server has both that address and a mail server to send through.
-	BugEmail   string
-	CanReport  bool
-	Split      int
-	Monolithic int
+	BugEmail  string
+	CanReport bool
+	// Version is what this build calls itself, and LastChecked and
+	// CheckError are the last ask about a newer release. A check that has
+	// been failing for a month is worth seeing beside the tick that turns
+	// it off.
+	Version     string
+	LastChecked string
+	CheckError  string
+	Split       int
+	Monolithic  int
 
 	Channels []nodestore.Channel
 	Kinds    []notify.Kind
@@ -3549,6 +3568,9 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	settings.ProtectAccountRemoval = r.PostFormValue("protect_account_removal") == "1"
+	// Stored the other way round: checking for a newer version is what a
+	// server does unless somebody says not to.
+	settings.NoUpdateCheck = r.PostFormValue("update_check") != "1"
 	settings.BackupOnSuspension = r.PostFormValue("backup_on_suspension") == "1"
 	if hostname := strings.TrimSpace(r.PostFormValue("hostname")); hostname != "" {
 		settings.Hostname = hostname

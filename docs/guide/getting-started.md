@@ -84,6 +84,18 @@ unpacked there will not run otherwise.
    than waiting until 02:00 to find out something was wrong.
 5. **Overview** should then read *n of n accounts have a usable backup*.
 
+## Keeping it current
+
+Every page says so when a newer cP:Restic has been released: the version, what
+changed, and the version this server runs. Upgrading is the install command
+again — it keeps the service's settings, destinations, schedules and history,
+and replaces the program.
+
+The check asks GitHub once a day for a version number and installs nothing.
+Settings → **Check for new versions** turns it off, and turning it off hides
+the banner with it. A build that is not exactly a release — a working tree,
+`v0.1.0-3-gabc1234-dirty` — is never told to upgrade.
+
 ## Uninstalling
 
 ```bash

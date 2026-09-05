@@ -61,6 +61,29 @@ func (s *Store) SaveSettings(settings Settings) error {
 	return s.put(bucketSettings, settingsKey, settings)
 }
 
+// updateKey holds the last update check beside the settings, which is
+// where the rest of this server's own state about itself lives.
+const updateKey = "update"
+
+// UpdateState reads what the last check for a newer release found. A
+// server that has never checked reports a zero time, not an error.
+func (s *Store) UpdateState() (UpdateState, error) {
+	var state UpdateState
+	err := s.get(bucketSettings, updateKey, &state)
+	if errors.Is(err, ErrNotFound) {
+		return UpdateState{}, nil
+	}
+	if err != nil {
+		return UpdateState{}, err
+	}
+	return state, nil
+}
+
+// SaveUpdateState records what a check found, including that it failed.
+func (s *Store) SaveUpdateState(state UpdateState) error {
+	return s.put(bucketSettings, updateKey, state)
+}
+
 // --- secrets ---
 
 // PutSecret stores a sealed credential and returns its id.

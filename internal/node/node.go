@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/shuki/cprest/internal/agent"
@@ -63,8 +64,11 @@ type Engine struct {
 	// lastDeletedSweep is when accounts gone longer than this server
 	// keeps them were last looked for.
 	lastDeletedSweep time.Time
-	staging          *staging.Manager
-	log              *slog.Logger
+	// checkingUpdate is set while the daily ask about a newer release is
+	// in flight, so a slow answer does not start a second one.
+	checkingUpdate atomic.Bool
+	staging        *staging.Manager
+	log            *slog.Logger
 
 	// items remembers what a snapshot holds in the parts of an account
 	// that are not files, so browsing between them does not stream the

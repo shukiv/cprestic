@@ -90,6 +90,14 @@
 
     <section class="cpr-workspace">
       <main id="cprest-main" tabindex="-1">
+        {{with .Update}}<div class="cpr-banner cpr-warn" role="status">
+          <div class="cpr-body">
+            <b>cP:Restic {{.Version}} has been released.</b>
+            This server runs {{.Current}}.
+            {{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener noreferrer">What changed</a>.{{end}}
+            <span class="cpr-hint" style="margin:var(--s1) 0 0; display:block">Upgrading is the install command again; it keeps your destinations, schedules and history. Settings can turn this check off.</span>
+          </div>
+        </div>{{end}}
         {{with .Flash}}<div class="cpr-banner {{if eq .Kind "ok"}}cpr-ok{{else if eq .Kind "warn"}}cpr-warn{{else}}cpr-bad{{end}}">
           <div class="cpr-body">{{.Message}}</div>
         </div>{{end}}

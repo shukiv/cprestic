@@ -86,6 +86,16 @@
           not wait for the backup to finish.</small></span>
         </label>
       </div>
+      <div>
+        <label class="cpr-check">
+          <input type="checkbox" name="update_check" value="1"
+                 {{if not $data.Settings.NoUpdateCheck}}checked{{end}}>
+          <span>Check for new versions
+          <small class="cpr-help">Ask GitHub once a day whether a newer cP:Restic has been
+          released, and say so at the top of every page. It reads a version number and installs
+          nothing. This server runs {{$data.Version}}{{with $data.LastChecked}}; last asked {{.}}{{end}}{{with $data.CheckError}} — the last ask failed: {{.}}{{end}}.</small></span>
+        </label>
+      </div>
     </div>
     <div class="cpr-row" style="margin-top:var(--s4)">
       <button class="cpr-btn cpr-primary" type="submit">Save</button>

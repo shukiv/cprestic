@@ -10,9 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shuki/cprest/internal/agent"
 	"github.com/shuki/cprest/internal/human"
 	"github.com/shuki/cprest/internal/nodestore"
 	"github.com/shuki/cprest/internal/notify"
+	"github.com/shuki/cprest/internal/update"
 )
 
 // page is the data every template receives.
@@ -26,7 +28,19 @@ type page struct {
 	// page rather than in one place that lists runs, because somebody
 	// who has just asked for one and sees nothing asks again.
 	Running []runningWork
-	Assets  assets
+	// Update is a published release newer than this build, when there is
+	// one. It is on every operator page rather than on a page somebody
+	// would have to think to visit: a backup program running a version
+	// with a known fault should say so where it is being used.
+	Update *updateNotice
+	Assets assets
+}
+
+// updateNotice is a release newer than the one running here.
+type updateNotice struct {
+	Version string
+	Current string
+	URL     string
 }
 
 // flash is a one-shot message shown at the top of a page.
@@ -66,6 +80,11 @@ func (s *Server) renderWithCSRF(
 		} else {
 			view.Running = running
 		}
+		// Operators only. A customer cannot upgrade this server and has
+		// no use for knowing which version it runs.
+		if accountOf(r) == "" {
+			view.Update = s.updateNotice()
+		}
 	}
 
 	// Rendered to a buffer first: a template that fails halfway through
@@ -89,6 +108,28 @@ func (s *Server) renderWithCSRF(
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "same-origin")
 	_, _ = buffer.WriteTo(w)
+}
+
+// updateNotice reports a release newer than this build, or nil.
+//
+// Nothing here asks GitHub: the answer is whatever the daily check stored,
+// so drawing a page never waits on somebody else's service.
+func (s *Server) updateNotice() *updateNotice {
+	// Turning the check off turns the banner off with it. Otherwise the
+	// last answer it ever got would sit at the top of every page for
+	// ever, and the tick would look broken.
+	if settings, err := s.engine.Store().Settings(); err == nil && settings.NoUpdateCheck {
+		return nil
+	}
+	state, err := s.engine.Store().UpdateState()
+	if err != nil {
+		s.log.Error("read the last update check", "error", err)
+		return nil
+	}
+	if !update.Newer(agent.Version, state.Version) {
+		return nil
+	}
+	return &updateNotice{Version: state.Version, Current: agent.Version, URL: state.URL}
 }
 
 // redirect sends the operator back to a page with a message.

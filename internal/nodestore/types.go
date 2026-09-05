@@ -492,6 +492,25 @@ type Settings struct {
 	// SendmailPath is the local mail submission program a bug report is
 	// handed to. Empty means the standard one.
 	SendmailPath string `json:"sendmail_path,omitempty"`
+	// NoUpdateCheck stops this server asking GitHub once a day whether a
+	// newer release has been published. It is opt-out rather than opt-in
+	// because the check only reads a version number, and a backup program
+	// nobody knows is out of date is the worse failure.
+	NoUpdateCheck bool `json:"no_update_check,omitempty"`
+}
+
+// UpdateState is what the last check for a newer release found. It is kept
+// so that every page can say so without asking GitHub again.
+type UpdateState struct {
+	CheckedAt time.Time `json:"checked_at"`
+	// Version, URL and Notes describe the newest published release,
+	// whether or not it is newer than what is running here.
+	Version string `json:"version,omitempty"`
+	URL     string `json:"url,omitempty"`
+	Notes   string `json:"notes,omitempty"`
+	// Error is why the last check failed, kept so a server that has been
+	// unable to ask for a month can say that rather than saying nothing.
+	Error string `json:"error,omitempty"`
 }
 
 // DefaultKeepOutputDays is a week: long enough that a restore taken on a
