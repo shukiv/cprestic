@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/shuki/cprest/internal/agent"
+	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/nodestore"
 )
 
@@ -58,6 +59,54 @@ func TestStartUpgradeOnlyInstallsTheReleaseItWasToldAbout(t *testing.T) {
 	}
 	if !state.StartedAt.IsZero() {
 		t.Errorf("a refused upgrade was recorded as started: %+v", state)
+	}
+}
+
+// TestStartUpgradeWaitsForABackupThatIsRunning: installing restarts the
+// service, and a restart fails whatever was in flight. Better to be told
+// to come back than to find tonight's backup marked interrupted.
+func TestStartUpgradeWaitsForABackupThatIsRunning(t *testing.T) {
+	root := t.TempDir()
+	store, err := nodestore.Open(filepath.Join(root, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	settings := nodestore.DefaultSettings()
+	settings.StagingRoot = filepath.Join(root, "staging")
+	settings.ResticCache = filepath.Join(root, "cache")
+	settings.ConfigDir = filepath.Join(root, "config")
+	if err := store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	engine := newEngine(t, store, root)
+
+	was := agent.Version
+	agent.Version = "v1.2.3"
+	t.Cleanup(func() { agent.Version = was })
+
+	if err := store.SaveUpdateState(nodestore.UpdateState{
+		CheckedAt: time.Now().UTC(), Version: "v1.3.0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PutJob(nodestore.Job{Account: "customer1", Status: job.StatusRunning}); err != nil {
+		t.Fatal(err)
+	}
+
+	err = engine.StartUpgrade("v1.3.0")
+	if err == nil {
+		t.Fatal("an upgrade started while a backup was running")
+	}
+	if !strings.Contains(err.Error(), "customer1") {
+		t.Errorf("the reason does not name what is running: %v", err)
+	}
+	state, err := store.UpgradeState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.StartedAt.IsZero() {
+		t.Errorf("it was recorded as started anyway: %+v", state)
 	}
 }
 
