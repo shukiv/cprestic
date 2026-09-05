@@ -38,8 +38,10 @@ plugin:
 	tar -C $(BIN) -czf $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz cprest-plugin
 	@echo
 	@echo "built $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz"
-	@echo "copy it to the cPanel server, then:"
-	@echo "  tar xzf cprest-plugin-$(PLUGIN_ARCH).tar.gz && sudo cprest-plugin/install.sh"
+	@echo "copy it to the cPanel server:"
+	@echo "  scp $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz root@your-server:/root/"
+	@echo "then there, as root:"
+	@echo "  tar xzf cprest-plugin-$(PLUGIN_ARCH).tar.gz && cprest-plugin/install.sh"
 
 # Unit and integration tests. The store suite starts a throwaway PostgreSQL
 # and skips itself when none is installed, so this stays runnable anywhere.

@@ -32,30 +32,47 @@ Both run the same code for the parts that make a backup correct. See
 
 ## Installing the WHM plugin
 
-On a machine with Go:
+Five steps, on two machines: any machine with Go to build on, and the cPanel
+server itself.
+
+**1. Install restic on the cPanel server**, as root. cP:Restic drives restic;
+it does not carry a copy of it.
+
+```bash
+curl -L https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64.bz2 \
+  | bunzip2 > /usr/local/bin/restic
+chmod 755 /usr/local/bin/restic
+```
+
+**2. Build the plugin** on a machine with Go. Nothing in this step needs
+cPanel, and the tarball is statically linked, so it runs on any cPanel server.
 
 ```bash
 make plugin           # builds bin/cprest-plugin-amd64.tar.gz
 ```
 
-On the cPanel server, as root:
+**3. Copy the tarball to the cPanel server.**
+
+```bash
+scp bin/cprest-plugin-amd64.tar.gz root@your-server:/root/
+```
+
+**4. Unpack it and run the installer there, as root.**
 
 ```bash
 tar xzf cprest-plugin-amd64.tar.gz
 cprest-plugin/install.sh
 ```
 
-The installer checks for restic (and tells you how to get it), installs the
-service and the plugin, registers it with WHM, and confirms WHM kept the
-registration. It also registers cPanel Standardized Hooks for account
-create, modify, suspend, unsuspend and remove events. New accounts receive an
-immediate baseline that prefers a complete all-account schedule and then the
-widest coverage; renames keep their named-policy membership, and terminated
-names cannot turn a one-account policy into an all-account policy. The latest
-100 hook outcomes appear on the WHM overview; raw cPanel hook payloads are not
-retained. Then open WHM and look for
-**cprest Backups** in the left
-sidebar's **Plugins** group.
+**5. Open WHM** and look for **cP:Restic Backups** in the left sidebar's
+**Plugins** group.
+
+The installer refuses anything that is not a cPanel server, checks for restic
+and prints step 1 again if it is missing, installs the service and the plugin,
+registers it with WHM through AppConfig, confirms WHM kept the registration,
+and registers cPanel Standardized Hooks for account create, modify, suspend,
+unsuspend and remove. Running it again upgrades an existing install: steps 2
+to 4 are the whole of an upgrade.
 
 Not on the **Manage Plugins** page — that lists cPanel's own RPM addons.
 A plugin registered through AppConfig appears in the sidebar, and its
@@ -72,6 +89,12 @@ parameter ([ADR 8](docs/adr/0008-query-string-routing-under-whm.md)).
 
 Some plugin behavior worth knowing:
 
+- The account hooks act as well as record. A new account gets an immediate
+  baseline backup, under a complete all-account schedule where there is one and
+  otherwise the widest coverage there is. A rename keeps its named-policy
+  membership, and a terminated name cannot turn a one-account policy into an
+  all-account policy. The latest 100 hook outcomes are on the WHM overview; raw
+  cPanel hook payloads are not kept.
 - The overview treats policy promises as coverage, not merely the existence
   of an old backup. It reports overdue, partial, failed and unscheduled
   accounts, and flags each destination whose required copy is missing or
