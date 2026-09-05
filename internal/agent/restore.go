@@ -124,8 +124,26 @@ func (a *Agent) RunRestore(ctx context.Context, assignment protocol.RestoreAssig
 				return report
 			}
 			retain = true
-			report.ArchivePath = filepath.Join(retained.Path,
-				filepath.Base(result.ArchivePath))
+			// Where the archive is inside the directory, not just its
+			// name: a monolithic snapshot puts it one level down, in
+			// archive/, and taking the base name alone reported a path
+			// with nothing at it. The job then said success and the
+			// interface had nothing to hand over.
+			within, err := filepath.Rel(dir.Path, result.ArchivePath)
+			if err != nil {
+				within = filepath.Base(result.ArchivePath)
+			}
+			report.ArchivePath = filepath.Join(retained.Path, within)
+			if _, err := os.Stat(report.ArchivePath); err != nil {
+				// Reported success is a promise that there is something
+				// to collect. Check it rather than make it.
+				log.Error("the rebuilt archive is not where it was reported",
+					"path", report.ArchivePath, "error", err)
+				report.Error = fmt.Sprintf(
+					"the rebuilt archive is not where it should be: %s", report.ArchivePath)
+				report.Status = string(job.StatusFailed)
+				return report
+			}
 			log.Info("archive ready to collect", "path", report.ArchivePath)
 		}
 		return report
