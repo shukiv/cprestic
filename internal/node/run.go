@@ -129,6 +129,12 @@ func (e *Engine) QueueRestore(restore nodestore.Restore) (nodestore.Restore, err
 	if restore.SnapshotID == "" {
 		return nodestore.Restore{}, errors.New("node: restore needs a snapshot")
 	}
+	// Which account this belongs to, and not merely which name. What it
+	// produces may sit on this server for days, and the name may be
+	// somebody else's by then.
+	if restore.AccountSince.IsZero() {
+		restore.AccountSince = e.AccountSince(restore.Account)
+	}
 	if restore.Kind == "" {
 		restore.Kind = protocol.RestoreAccount
 	}
@@ -396,6 +402,14 @@ func (e *Engine) failJob(stored nodestore.Job, reason string) error {
 func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error {
 	if stored.Kind == KindVerify {
 		return e.runDrill(ctx, stored)
+	}
+	// Asked for by one account, run for whoever holds the name now: a
+	// restore queued before the account was removed and recreated is not
+	// this customer's, and neither would be what it produced.
+	if !e.BelongsToCurrentHolder(stored) {
+		return e.failRestore(stored,
+			"the account was removed and made again after this was asked for; "+
+				"nothing was restored")
 	}
 
 	target, err := e.targetFor(stored.RepositoryID)

@@ -389,12 +389,18 @@ type Restore struct {
 	// failure. Error is written for whoever runs the server and names
 	// repositories, paths and commands; this is what a customer is shown
 	// in its place, so nothing that carries either may go in here.
-	Hint       string     `json:"hint,omitempty"`
-	Applied    bool       `json:"applied"`
-	Error      string     `json:"error,omitempty"`
-	QueuedAt   time.Time  `json:"queued_at"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	Hint    string `json:"hint,omitempty"`
+	Applied bool   `json:"applied"`
+	Error   string `json:"error,omitempty"`
+	// AccountSince is when the account this belongs to began, as the
+	// identity record has it. A username can be given to somebody else,
+	// and what the last customer recovered is not the next one's to
+	// collect; the name alone cannot tell those two apart, and this can.
+	// Zero on records written before this existed.
+	AccountSince time.Time  `json:"account_since,omitempty"`
+	QueuedAt     time.Time  `json:"queued_at"`
+	StartedAt    *time.Time `json:"started_at,omitempty"`
+	FinishedAt   *time.Time `json:"finished_at,omitempty"`
 }
 
 // Selections is what this restore asks for, whether it was recorded as one

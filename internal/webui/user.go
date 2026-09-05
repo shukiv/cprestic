@@ -548,6 +548,12 @@ func (s *Server) handleUserHome(w http.ResponseWriter, r *http.Request) {
 		if restore.Account != view.Account {
 			continue
 		}
+		// The name is not the account. What the customer before them
+		// recovered stays on the server for whoever runs it, and is not
+		// listed here to the next holder of the name.
+		if !s.engine.BelongsToCurrentHolder(restore) {
+			continue
+		}
 		view.Restores = append(view.Restores, restoreRow{
 			Restore:     accountSafeRestore(restore),
 			Collectable: restore.ArchivePath != "" && onDisk(restore.ArchivePath),
@@ -961,8 +967,9 @@ func (s *Server) handleUserDownload(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if restore.Account != accountOf(r) {
-		// Not theirs. Say nothing about whose it is.
+	if restore.Account != accountOf(r) || !s.engine.BelongsToCurrentHolder(restore) {
+		// Not theirs -- either another account's, or the same name's
+		// previous holder's. Say nothing about whose it is.
 		http.NotFound(w, r)
 		return
 	}

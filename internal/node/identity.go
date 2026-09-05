@@ -125,6 +125,38 @@ func (e *Engine) noteIdentity(account string) (nodestore.AccountIdentity, error)
 // Zero means all of them: a name that has never changed hands has one
 // owner, and the date this program first noticed it is not a boundary
 // between anybody.
+// AccountSince is when the account holding a name now began, which is
+// what a record has to carry to be told apart from the last holder's.
+func (e *Engine) AccountSince(account string) time.Time {
+	stored, err := e.store.Identity(account)
+	if err != nil {
+		return time.Time{}
+	}
+	return stored.SinceAt
+}
+
+// BelongsToCurrentHolder says whether a restore is the present account's
+// to see and to collect.
+//
+// A name that has never changed hands answers yes to everything: its
+// SinceAt is only when this program first noticed the account, not a
+// boundary between two customers. Once a name has been recycled, what the
+// last customer recovered stays on this server -- an operator may still
+// need it -- and stops being theirs.
+//
+// A record written before restores carried an incarnation is judged by
+// when it was asked for, which is the best that can be said about it.
+func (e *Engine) BelongsToCurrentHolder(restore nodestore.Restore) bool {
+	stored, err := e.store.Identity(restore.Account)
+	if err != nil || !stored.Recycled {
+		return true
+	}
+	if restore.AccountSince.IsZero() {
+		return restore.QueuedAt.After(stored.SinceAt)
+	}
+	return !restore.AccountSince.Before(stored.SinceAt)
+}
+
 func (e *Engine) visibleSince(account string) time.Time {
 	stored, err := e.store.Identity(account)
 	if err != nil || !stored.Recycled {
