@@ -171,19 +171,16 @@ func (s *Server) reportLog(ctx context.Context) string {
 type reportView struct {
 	Subject string
 	Body    string
-	// Repository is where it will go, and Direct says this server can
-	// open the issue itself rather than handing it to the browser.
-	Repository string
-	Direct     bool
+	// Email is where it goes, and CanSend says this server has both that
+	// address and a mail server to send it through.
+	Email   string
+	CanSend bool
 	// Preview is the whole report as it would be sent, shown before it is
-	// sent because an issue may be read by anybody.
+	// sent because it leaves the server.
 	Preview string
-	// IssueURL is where a sent report ended up; Form is GitHub's own
-	// new-issue address with the report filled in, for a server with no
-	// token.
-	IssueURL string
-	Form     string
-	Error    string
+	// Sent says it went.
+	Sent  bool
+	Error string
 }
 
 // handleReport draws the bug-report form.
@@ -194,23 +191,23 @@ type reportView struct {
 // JavaScript -- the thing being reported may be the reason it is off.
 func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	view := reportView{
-		Repository: s.engine.BugRepository(),
-		Direct:     s.engine.HasBugToken(),
-		Subject:    r.URL.Query().Get("subject"),
+		Email:   s.engine.BugEmail(),
+		CanSend: s.engine.CanSendBugReport(),
+		Subject: r.URL.Query().Get("subject"),
 	}
 	s.render(w, r, "report.html", "Report a problem", "", view)
 }
 
-// handleSendReport gathers the debug information, and either opens the
-// issue or hands the operator GitHub's form with it filled in.
+// handleSendReport gathers the debug information and either shows it,
+// hands it over as a file, or sends it.
 func (s *Server) handleSendReport(w http.ResponseWriter, r *http.Request) {
 	subject := strings.TrimSpace(r.PostFormValue("subject"))
 	body := strings.TrimSpace(r.PostFormValue("body"))
 	view := reportView{
-		Subject:    subject,
-		Body:       body,
-		Repository: s.engine.BugRepository(),
-		Direct:     s.engine.HasBugToken(),
+		Subject: subject,
+		Body:    body,
+		Email:   s.engine.BugEmail(),
+		CanSend: s.engine.CanSendBugReport(),
 	}
 	if subject == "" || body == "" {
 		view.Error = "A report needs a subject and a description of what happened."
@@ -221,30 +218,31 @@ func (s *Server) handleSendReport(w http.ResponseWriter, r *http.Request) {
 	report := s.gatherReport(r.Context(), subject, body)
 	view.Preview = report.Markdown()
 
-	// Sending publishes this to GitHub, where an issue may be read by
-	// anybody, so it happens because somebody pressed send on a page that
-	// showed them what was in it -- never as a side effect of opening the
-	// form.
-	if r.PostFormValue("send") != "1" {
-		view.Form = bugreport.NewIssueURL(view.Repository, subject, view.Preview)
-		s.render(w, r, "report.html", "Report a problem", "", view)
-		return
-	}
-	if !view.Direct {
-		view.Form = bugreport.NewIssueURL(view.Repository, subject, view.Preview)
-		s.render(w, r, "report.html", "Report a problem", "", view)
+	// A file, for a server with no mail or an operator who would rather
+	// send it themselves. It is the whole report, the same text.
+	if r.PostFormValue("download") == "1" {
+		name := fmt.Sprintf("cprest-report-%s.md", time.Now().UTC().Format("20060102-1504"))
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		fmt.Fprintf(w, "# %s\n\n%s", subject, view.Preview)
 		return
 	}
 
-	issue, err := s.engine.ReportBug(r.Context(), subject, view.Preview)
-	if err != nil {
-		s.log.Error("send a bug report", "error", err)
-		view.Error = err.Error()
-		view.Form = bugreport.NewIssueURL(view.Repository, subject, view.Preview)
+	// Sending puts this in somebody's inbox, so it happens because
+	// somebody pressed send on a page that showed them what was in it --
+	// never as a side effect of opening the form.
+	if r.PostFormValue("send") != "1" {
 		s.render(w, r, "report.html", "Report a problem", "", view)
 		return
 	}
-	s.log.Info("bug report sent", "issue", issue)
-	view.IssueURL = issue
+	if err := s.engine.SendBugReport(r.Context(), subject, view.Preview); err != nil {
+		s.log.Error("send a bug report", "error", err)
+		view.Error = err.Error()
+		s.render(w, r, "report.html", "Report a problem", "", view)
+		return
+	}
+	s.log.Info("bug report sent", "to", view.Email)
+	view.Sent = true
 	s.render(w, r, "report.html", "Report a problem", "", view)
 }

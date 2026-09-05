@@ -6,10 +6,10 @@
 // the answers: versions, the failures this server has recorded, the
 // settings that shape behaviour, and the last lines the service logged.
 //
-// It goes into a GitHub issue, which may be read by anybody, so what goes
-// in is chosen rather than swept up: no credentials, no repository
-// passwords, no tokens, and the log lines pass through a redactor first.
-// The operator is shown the whole thing before it is sent.
+// It leaves the server as an email, so what goes in is chosen rather than
+// swept up: no credentials, no repository passwords, no tokens, and the log
+// lines pass through a redactor first. The operator is shown the whole
+// thing before any of it is sent.
 package bugreport
 
 import (
@@ -37,7 +37,8 @@ type Section struct {
 // a week must not turn one report into a megabyte nobody reads.
 const MaxSectionBytes = 16 << 10
 
-// Markdown renders the report as the issue body.
+// Markdown renders the whole report: what the operator wrote, then each
+// section under its heading.
 func (r Report) Markdown() string {
 	var out strings.Builder
 	out.WriteString(strings.TrimSpace(r.Body))

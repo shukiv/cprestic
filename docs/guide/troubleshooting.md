@@ -12,18 +12,16 @@ and the last 200 lines the service logged. Passwords, keys, tokens and private
 keys are removed from those lines first, and each section is capped so a noisy
 week does not become a report nobody reads.
 
-Then it goes to GitHub one of two ways:
+Then, either:
 
-- **With a token** (Settings → *GitHub token for reports*) the server opens the
-  issue itself and hands you the link. The token needs only permission to open
-  issues.
-- **Without one** — the default, and nothing to set up — the button opens
-  GitHub's own new-issue form in a new tab with the report filled in, and you
-  press Submit there under your own account. A report too long for a link says
-  so, and the whole text stays on the page to paste.
+- **Email it** — to the address under Settings → *Email bug reports to*, through
+  this server's own mail server. Nothing to configure: every cPanel server runs
+  a mail server, and that is what carries it. Your notification channels are not
+  involved and keep going where they were sent.
+- **Download it** — `cprest-report-<when>.md`, the same text as a file, to send
+  however you like. Always available, including on a server with no mail at all.
 
-An issue is public if the repository is. That is why the report is shown in
-full first, and why sending is a second, separate press.
+Sending is a second, separate press on a page that showed you what is in it.
 
 ## First three commands
 

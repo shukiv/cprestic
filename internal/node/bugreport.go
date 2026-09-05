@@ -3,69 +3,73 @@ package node
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/shuki/cprest/internal/bugreport"
 )
 
-// BugRepository is where this server's reports go.
-func (e *Engine) BugRepository() string {
-	if repository, err := e.store.Settings(); err == nil && repository.BugRepository != "" {
-		return repository.BugRepository
+// DefaultBugEmail is where a report goes when nobody has said otherwise:
+// the address that maintains this program.
+const DefaultBugEmail = ""
+
+// BugEmail is where this server sends bug reports.
+func (e *Engine) BugEmail() string {
+	if settings, err := e.store.Settings(); err == nil &&
+		strings.TrimSpace(settings.BugEmail) != "" {
+		return strings.TrimSpace(settings.BugEmail)
 	}
-	return bugreport.DefaultRepository
+	return DefaultBugEmail
 }
 
-// HasBugToken says whether a report can be sent from here, rather than
-// handed to the browser to submit.
-func (e *Engine) HasBugToken() bool {
-	settings, err := e.store.Settings()
-	return err == nil && settings.BugTokenSecretID != ""
-}
-
-// SetBugToken stores a GitHub token, sealed, or forgets the one there.
-func (e *Engine) SetBugToken(token string) error {
-	settings, err := e.store.Settings()
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(token) == "" {
-		settings.BugTokenSecretID = ""
-		return e.store.SaveSettings(settings)
-	}
-	sealed, err := e.vault.Seal([]byte(strings.TrimSpace(token)))
-	if err != nil {
-		return err
-	}
-	id, err := e.store.PutSecret("github_token", sealed, e.vault.KeyID())
-	if err != nil {
-		return err
-	}
-	settings.BugTokenSecretID = id
-	return e.store.SaveSettings(settings)
-}
-
-// ReportBug opens an issue for what an operator has written, and returns
-// where it went.
+// CanSendBugReport says whether pressing send would do anything.
 //
-// Only with a token: without one the interface sends the operator to
-// GitHub's own form with the report filled in, which is the same thing
-// happening in the browser where somebody is already signed in.
-func (e *Engine) ReportBug(ctx context.Context, subject, body string) (string, error) {
-	settings, err := e.store.Settings()
-	if err != nil {
-		return "", err
+// It needs an address and a mail server. Every cPanel server runs one --
+// it is how a customer's site sends anything at all -- so this is normally
+// true without anybody configuring a thing. A server where it is false
+// still hands the report over as a file.
+func (e *Engine) CanSendBugReport() bool {
+	if bugreport.UsableAddress(e.BugEmail()) != nil {
+		return false
 	}
-	if settings.BugTokenSecretID == "" {
-		return "", fmt.Errorf("node: no GitHub token is configured")
+	return e.mailProgram() != ""
+}
+
+// mailProgram is the local mail submission program, or nothing if this
+// server has none.
+func (e *Engine) mailProgram() string {
+	program := bugreport.Sendmail
+	if e.settings.SendmailPath != "" {
+		program = e.settings.SendmailPath
 	}
-	token, err := e.openSecret(settings.BugTokenSecretID)
-	if err != nil {
-		return "", err
+	if info, err := os.Stat(program); err != nil || info.IsDir() {
+		return ""
 	}
-	repository := settings.BugRepository
-	if repository == "" {
-		repository = bugreport.DefaultRepository
+	return program
+}
+
+// SendBugReport mails one report to whoever maintains this program.
+//
+// Through the server's own mail server rather than through a notification
+// channel: the channels belong to the operator and are configured for
+// their own alerts, and a server that has none must still be able to
+// report a problem.
+func (e *Engine) SendBugReport(ctx context.Context, subject, body string) error {
+	address := e.BugEmail()
+	if err := bugreport.UsableAddress(address); err != nil {
+		return fmt.Errorf(
+			"node: there is no address to send bug reports to: set one under Settings")
 	}
-	return bugreport.CreateIssue(ctx, nil, repository, string(token), subject, body)
+	program := e.mailProgram()
+	if program == "" {
+		return fmt.Errorf(
+			"node: this server has no mail server to send through, so the report can only "+
+				"be taken as a file (looked for %s)", bugreport.Sendmail)
+	}
+	from := "cprest@" + e.settings.Hostname
+	if bugreport.UsableAddress(from) != nil {
+		from = ""
+	}
+	return bugreport.Mail(ctx, program, from, address,
+		"cP:Restic bug report: "+subject, body)
 }

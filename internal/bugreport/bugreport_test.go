@@ -1,6 +1,9 @@
 package bugreport
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -53,39 +56,7 @@ func TestALongSectionKeepsItsEnd(t *testing.T) {
 	}
 }
 
-func TestOnlyAnOwnerAndRepositoryIsAccepted(t *testing.T) {
-	for _, bad := range []string{
-		"", "cprestic", "owner/repo/extra", "owner/", "/repo",
-		"owner/repo;rm -rf", "owner/repo?x=1", "../../etc",
-	} {
-		if err := UsableRepository(bad); err == nil {
-			t.Errorf("%q was accepted as a repository", bad)
-		}
-	}
-	if err := UsableRepository(DefaultRepository); err != nil {
-		t.Errorf("%s was refused: %v", DefaultRepository, err)
-	}
-}
-
-// The pre-filled form is the way that needs nothing configured, so it has
-// to survive a report longer than a URL can carry.
-func TestThePrefilledFormCarriesTheReport(t *testing.T) {
-	link := NewIssueURL("", "A restore failed", strings.Repeat("x", 20000))
-	if !strings.HasPrefix(link, "https://github.com/"+DefaultRepository+"/issues/new?") {
-		t.Errorf("link = %s", link)
-	}
-	if !strings.Contains(link, "title=A+restore+failed") {
-		t.Errorf("the subject is not in the link: %s", link)
-	}
-	if len(link) > 12000 {
-		t.Errorf("the link is %d characters, which no browser will take", len(link))
-	}
-	if !strings.Contains(link, "cut+to+fit+a+link") {
-		t.Error("a report cut to fit does not say so")
-	}
-}
-
-func TestTheIssueBodyCarriesEverySection(t *testing.T) {
+func TestTheReportCarriesEverySection(t *testing.T) {
 	report := Report{
 		Subject: "A restore failed",
 		Body:    "It said success and the account was not there.",
@@ -101,10 +72,76 @@ func TestTheIssueBodyCarriesEverySection(t *testing.T) {
 		"### Service log", "Reported from cP:Restic on",
 	} {
 		if !strings.Contains(markdown, want) {
-			t.Errorf("the issue body does not carry %q:\n%s", want, markdown)
+			t.Errorf("the report does not carry %q:\n%s", want, markdown)
 		}
 	}
 	if strings.Contains(markdown, "### Empty") {
 		t.Error("a section with nothing in it was written out anyway")
+	}
+}
+
+// A bug report is handed to the local mail server, so the message is built
+// here. A header takes whatever an operator typed into the subject, and a
+// log line can be anything at all.
+func TestTheMessageCannotBeUsedToWriteHeaders(t *testing.T) {
+	dir := t.TempDir()
+	saved := filepath.Join(dir, "message")
+	fake := filepath.Join(dir, "sendmail")
+	// A sendmail that keeps what it was given.
+	script := "#!/bin/sh\ncat > " + saved + "\n"
+	if err := os.WriteFile(fake, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	err := Mail(context.Background(), fake, "cprest@host.example.com", "maintainer@example.com",
+		"Restore failed\r\nBcc: somebody@elsewhere.example",
+		"a line\n.\nafter the dot\n")
+	if err != nil {
+		t.Fatalf("Mail: %v", err)
+	}
+	written, err := os.ReadFile(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := string(written)
+
+	headers, body, found := strings.Cut(message, "\r\n\r\n")
+	if !found {
+		t.Fatalf("no body:\n%s", message)
+	}
+	for _, line := range strings.Split(headers, "\r\n") {
+		if strings.HasPrefix(strings.ToLower(line), "bcc:") {
+			t.Errorf("a subject wrote a header of its own:\n%s", headers)
+		}
+	}
+	if strings.Count(headers, "Subject:") != 1 {
+		t.Errorf("the subject did not stay one header:\n%s", headers)
+	}
+	if !strings.Contains(headers, "To: maintainer@example.com") {
+		t.Errorf("headers = %q", headers)
+	}
+	// A lone dot ends a message. The line after it has to survive.
+	if !strings.Contains(body, "after the dot") {
+		t.Errorf("the body was cut at a dot:\n%q", body)
+	}
+}
+
+func TestOnlyAnAddressIsAccepted(t *testing.T) {
+	for _, bad := range []string{
+		"", "nobody", "nobody@", "@example.com", "a@b",
+		"someone@example.com\r\nBcc: else@example.com",
+		"someone@example.com, other@example.com",
+		"<someone@example.com>", "a b@example.com",
+	} {
+		if err := UsableAddress(bad); err == nil {
+			t.Errorf("%q was accepted as an address", bad)
+		}
+	}
+	for _, good := range []string{
+		"someone@example.com", "first.last+tag@sub.example.co.uk",
+	} {
+		if err := UsableAddress(good); err != nil {
+			t.Errorf("%q was refused: %v", good, err)
+		}
 	}
 }

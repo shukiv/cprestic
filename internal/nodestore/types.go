@@ -460,13 +460,13 @@ type Settings struct {
 	// of every customer who has ever left, forever. Zero means the
 	// default; a negative number keeps them until somebody says otherwise.
 	DeletedAccountDays int `json:"deleted_account_days,omitempty"`
-	// BugRepository is where a bug report becomes an issue, as
-	// owner/repository. Empty means this program's own.
-	BugRepository string `json:"bug_repository,omitempty"`
-	// BugTokenSecretID seals a GitHub token that may open issues there.
-	// Without one, reporting hands the browser a pre-filled issue form
-	// instead, which asks nothing of this server.
-	BugTokenSecretID string `json:"bug_token_secret_id,omitempty"`
+	// BugEmail is where a bug report is sent. It goes through the mail
+	// server an email notification channel is already configured with,
+	// so reporting needs an address here and nothing else.
+	BugEmail string `json:"bug_email,omitempty"`
+	// SendmailPath is the local mail submission program a bug report is
+	// handed to. Empty means the standard one.
+	SendmailPath string `json:"sendmail_path,omitempty"`
 }
 
 // DefaultKeepOutputDays is a week: long enough that a restore taken on a

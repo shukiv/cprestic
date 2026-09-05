@@ -2,18 +2,17 @@
 {{$data := .Data}}
 <div class="cpr-page-head">
   <h1>Report a problem</h1>
-  <p class="cpr-hint">What went wrong, in your words, with what this server can say about
-  itself attached. It becomes an issue on
-  <a class="cpr-link" href="https://github.com/{{$data.Repository}}/issues"
-     target="_blank" rel="noopener noreferrer">{{$data.Repository}}</a>, which anyone may
-  read — so the whole report is shown before anything is sent.</p>
+  <p class="cpr-hint">What went wrong, in your words, with what this server can say about itself
+  attached. {{if $data.Email}}It is emailed to <b>{{$data.Email}}</b>, through this server's own
+  mail server.{{else}}Nobody has said where it should go: put an address under
+  <a class="cpr-link" href="?p=settings">Settings</a>, or take the report as a file and send it
+  yourself.{{end}}</p>
 </div>
 
-{{if $data.IssueURL}}
+{{if $data.Sent}}
 <div class="cpr-card"><div class="cpr-pad">
   <div class="cpr-banner cpr-ok"><div class="cpr-body">
-    <strong>Sent.</strong> It is
-    <a class="cpr-link" href="{{$data.IssueURL}}" target="_blank" rel="noopener noreferrer">{{$data.IssueURL}}</a>.
+    <strong>Sent</strong> to {{$data.Email}}.
   </div></div>
 </div></div>
 {{else}}
@@ -22,7 +21,7 @@
 <div class="cpr-banner cpr-bad"><div class="cpr-body">{{$data.Error}}</div></div>
 {{end}}
 
-<div class="cpr-card" data-report-form>
+<div class="cpr-card">
   <form method="post" action="?p=report/send">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     <div class="cpr-pad cpr-formgrid">
@@ -43,8 +42,9 @@
     <div class="cpr-pad cpr-bulkbar" style="border-top:1px solid var(--line)">
       <span style="flex:1"></span>
       <button class="cpr-btn" type="submit">Show me what would be sent</button>
-      {{if $data.Direct}}
-      <button class="cpr-btn cpr-primary" type="submit" name="send" value="1">Send it</button>
+      <button class="cpr-btn" type="submit" name="download" value="1">Download it</button>
+      {{if $data.CanSend}}
+      <button class="cpr-btn cpr-primary" type="submit" name="send" value="1">Email it</button>
       {{end}}
     </div>
   </form>
@@ -52,22 +52,17 @@
 
 {{if $data.Preview}}
 <div class="cpr-card" style="margin-top:var(--s4)">
-  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
+  <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
     <h2 style="margin:0">What would be sent</h2>
+    {{if not $data.CanSend}}
+    <span class="cpr-hint" style="margin:0">{{if $data.Email}}This server has no mail server to
+    send it through, so take the file.{{else}}No address is set, so this can only be taken as a
+    file.{{end}}</span>
+    {{end}}
   </div>
   <div class="cpr-pad">
-    <textarea rows="18" readonly class="cpr-mono"
-              aria-label="The whole report">{{$data.Preview}}</textarea>
+    <textarea rows="18" readonly class="cpr-mono" aria-label="The whole report">{{$data.Preview}}</textarea>
   </div>
-  {{if $data.Form}}
-  <div class="cpr-pad cpr-bulkbar" style="border-top:1px solid var(--line)">
-    <span class="cpr-hint" style="margin:0">This server has no GitHub token, so the report goes
-    through your own GitHub account: the form opens filled in, and you press Submit there.</span>
-    <span style="flex:1"></span>
-    <a class="cpr-btn cpr-primary" href="{{$data.Form}}" target="_blank" rel="noopener noreferrer">
-      Open the issue form</a>
-  </div>
-  {{end}}
 </div>
 {{end}}
 {{end}}

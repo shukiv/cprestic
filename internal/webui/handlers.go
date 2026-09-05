@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/shuki/cprest/internal/bugreport"
 	"io"
 	"net/http"
 	"net/url"
@@ -3202,7 +3201,7 @@ func (s *Server) settingsPage() (settingsView, error) {
 		OutputBytes: held,
 		KeepDays:    keepDays(settings),
 		DeletedDays: deletedDays(settings), DeletedPreset: deletedPreset(settings),
-		BugRepository: s.engine.BugRepository(), BugToken: s.engine.HasBugToken(),
+		BugEmail: s.engine.BugEmail(), CanReport: s.engine.CanSendBugReport(),
 		Split:      split,
 		Monolithic: monolithic,
 		Channels:   channels,
@@ -3225,12 +3224,12 @@ type settingsView struct {
 	// when it is a number somebody typed rather than one on the list.
 	DeletedDays   int
 	DeletedPreset string
-	// BugRepository is where a report becomes an issue, and BugToken says
-	// one is stored -- never what it is.
-	BugRepository string
-	BugToken      bool
-	Split         int
-	Monolithic    int
+	// BugEmail is where a bug report is sent, and CanReport says this
+	// server has both that address and a mail server to send through.
+	BugEmail   string
+	CanReport  bool
+	Split      int
+	Monolithic int
 
 	Channels []nodestore.Channel
 	Kinds    []notify.Kind
@@ -3525,17 +3524,13 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			settings.DeletedAccountDays = days
 		}
 	}
-	// Where a bug report becomes an issue, and the token that lets this
-	// server open one itself. An empty token box leaves the stored one
-	// alone -- a page that shows nothing there must not erase it on every
-	// save -- and "forget" is how it goes.
-	if repository := strings.TrimSpace(r.PostFormValue("bug_repository")); repository != "" {
-		if err := bugreport.UsableRepository(repository); err != nil {
-			s.redirect(w, r, "/settings", "error",
-				"That is not an owner/repository, like "+bugreport.DefaultRepository+".")
-			return
-		}
-		settings.BugRepository = repository
+	// Where a bug report is sent. Emptying the box turns reporting off,
+	// which is a thing somebody may mean.
+	settings.BugEmail = strings.TrimSpace(r.PostFormValue("bug_email"))
+	if settings.BugEmail != "" && !strings.Contains(settings.BugEmail, "@") {
+		s.redirect(w, r, "/settings", "error",
+			"That is not an email address to send bug reports to.")
+		return
 	}
 	settings.ProtectAccountRemoval = r.PostFormValue("protect_account_removal") == "1"
 	settings.BackupOnSuspension = r.PostFormValue("backup_on_suspension") == "1"
@@ -3549,18 +3544,6 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	if err := s.engine.Store().SaveSettings(settings); err != nil {
 		s.redirect(w, r, "/settings", "error", err.Error())
 		return
-	}
-	// The token is sealed like any other credential, and is written only
-	// when something was typed: an empty box on a page that never shows
-	// the stored one means "unchanged", not "remove it".
-	if token := strings.TrimSpace(r.PostFormValue("bug_token")); token != "" {
-		if token == "forget" {
-			token = ""
-		}
-		if err := s.engine.SetBugToken(token); err != nil {
-			s.redirect(w, r, "/settings", "error", err.Error())
-			return
-		}
 	}
 	s.redirect(w, r, "/settings", "ok", "Saved. Account-removal protection takes effect immediately; restart the service for the other runtime changes.")
 }

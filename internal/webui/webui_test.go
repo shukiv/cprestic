@@ -2654,7 +2654,7 @@ func TestAProblemIsReportedOnlyAfterItIsShown(t *testing.T) {
 	}
 
 	_, form := get(t, client, "/report")
-	for _, want := range []string{`name="subject"`, `name="body"`, "shukiv/cprestic"} {
+	for _, want := range []string{`name="subject"`, `name="body"`, "Download it"} {
 		if !strings.Contains(form, want) {
 			t.Errorf("the report page does not carry %q", want)
 		}
@@ -2692,12 +2692,35 @@ func TestAProblemIsReportedOnlyAfterItIsShown(t *testing.T) {
 	body := string(shown)
 	for _, want := range []string{
 		"What would be sent", "It said success", "Versions and environment",
-		// No token on this server, so it is GitHub's own form that opens.
-		"github.com/shukiv/cprestic/issues/new?",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the preview does not carry %q", want)
 		}
+	}
+	// No address and no mail channel on this server, so there is nothing
+	// to press that would send it -- only the file.
+	if strings.Contains(body, `name="send" value="1"`) {
+		t.Error("a server that cannot send offers to send anyway")
+	}
+
+	// The same report as a file, for a server with no mail at all.
+	file, err := client.PostForm("http://ui/report/send", map[string][]string{
+		"csrf": {csrfToken(t, form)}, "subject": {"A restore failed"},
+		"body": {"It said success and the account was not there."}, "download": {"1"},
+	})
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer file.Body.Close()
+	if got := file.Header.Get("Content-Disposition"); !strings.Contains(got, "cprest-report-") {
+		t.Errorf("the report does not come back as a file: %q", got)
+	}
+	saved, err := io.ReadAll(file.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(saved), "### Versions and environment") {
+		t.Error("the file does not carry the report")
 	}
 }
 
