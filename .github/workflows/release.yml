@@ -1,0 +1,49 @@
+# Publish the WHM plugin when a version tag is pushed.
+#
+# The tag is the publish: nothing here runs on a branch push, so a release
+# exists only because somebody named a version. The tarball is built the same
+# way `make plugin` builds it locally -- statically linked, -trimpath, no
+# build-time inputs from the runner -- so the same tag produces the same bytes
+# and the checksum published beside it can be checked against a local build.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Vet
+        run: make vet
+
+      - name: Build the plugin tarball
+        run: make plugin
+
+      # get.sh is published as an asset of its own so that the one-line
+      # install fetches it from the release rather than from a branch: what
+      # somebody pipes into a root shell is then a named version with its
+      # checksum published beside it, not whatever master says today.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --generate-notes \
+            bin/cprest-plugin-amd64.tar.gz \
+            bin/SHA256SUMS \
+            bin/get.sh

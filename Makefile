@@ -36,8 +36,10 @@ plugin:
 	cp packaging/branding/png/cpr-badge-48.png $(BIN)/cprest-plugin/branding/
 	chmod +x $(BIN)/cprest-plugin/install.sh $(BIN)/cprest-plugin/uninstall.sh $(BIN)/cprest-plugin/cprest.cgi
 	tar -C $(BIN) -czf $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz cprest-plugin
+	cp packaging/whm/get.sh $(BIN)/get.sh
+	cd $(BIN) && sha256sum cprest-plugin-$(PLUGIN_ARCH).tar.gz get.sh > SHA256SUMS
 	@echo
-	@echo "built $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz"
+	@echo "built $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz, $(BIN)/get.sh and $(BIN)/SHA256SUMS"
 	@echo "copy it to the cPanel server:"
 	@echo "  scp $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz root@your-server:/root/"
 	@echo "then there, as root:"

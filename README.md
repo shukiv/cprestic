@@ -32,51 +32,76 @@ Both run the same code for the parts that make a backup correct. See
 
 ## Installing the WHM plugin
 
-Five steps, on two machines: any machine with Go to build on, and the cPanel
-server itself.
-
-**1. Install restic on the cPanel server**, as root. cP:Restic drives restic;
-it does not carry a copy of it.
+On the cPanel server, as root:
 
 ```bash
-curl -L https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64.bz2 \
-  | bunzip2 > /usr/local/bin/restic
-chmod 755 /usr/local/bin/restic
+curl -fsSL https://github.com/shukiv/cprestic/releases/latest/download/get.sh | sh
 ```
 
-**2. Build the plugin** on a machine with Go. Nothing in this step needs
-cPanel, and the tarball is statically linked, so it runs on any cPanel server.
+That fetches the newest release, checks it against the checksums published
+beside it, and runs the installer inside it. `CPREST_VERSION=v1.2.3` before
+`sh` pins a particular release instead of the newest.
+
+Piping a script into a root shell is a reasonable thing to refuse, given what
+this one installs. The same install, read first:
+
+```bash
+curl -fsSLO https://github.com/shukiv/cprestic/releases/latest/download/get.sh
+curl -fsSLO https://github.com/shukiv/cprestic/releases/latest/download/SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS
+less get.sh
+sh get.sh
+```
+
+The checksum says the download arrived whole. It does not say who built it:
+both files come from the same release page, so it is not a defence against
+that page being wrong. It is short enough to read, which is the defence.
+
+Then open WHM and look for **cP:Restic Backups** in the left sidebar's
+**Plugins** group.
+
+Not on the **Manage Plugins** page — that lists cPanel's own RPM addons.
+A plugin registered through AppConfig appears in the sidebar, and its
+registration under **Development → Apps Managed by AppConfig**.
+
+The installer refuses anything that is not a cPanel server, installs restic
+if the server has none — the version cprest is built against, checked against
+restic's own published checksum — installs the service and the plugin,
+registers it with WHM through AppConfig, confirms WHM kept the registration,
+and registers cPanel Standardized Hooks for account create, modify, suspend,
+unsuspend and remove. Running it again upgrades in place.
+
+### Building it yourself
+
+No release needed, and the way to install a change you have made. On a machine
+with Go:
 
 ```bash
 make plugin           # builds bin/cprest-plugin-amd64.tar.gz
 ```
 
-**3. Copy the tarball to the cPanel server.**
+Copy the tarball over:
 
 ```bash
 scp bin/cprest-plugin-amd64.tar.gz root@your-server:/root/
 ```
 
-**4. Unpack it and run the installer there, as root.**
+Then unpack it and run the installer there, as root:
 
 ```bash
 tar xzf cprest-plugin-amd64.tar.gz
-cprest-plugin/install.sh
+sh cprest-plugin/install.sh
 ```
 
-**5. Open WHM** and look for **cP:Restic Backups** in the left sidebar's
-**Plugins** group.
+Through `sh` because cPanel mounts `/tmp` and `/var/tmp` noexec, and an
+installer unpacked there will not run otherwise.
 
-The installer refuses anything that is not a cPanel server, checks for restic
-and prints step 1 again if it is missing, installs the service and the plugin,
-registers it with WHM through AppConfig, confirms WHM kept the registration,
-and registers cPanel Standardized Hooks for account create, modify, suspend,
-unsuspend and remove. Running it again upgrades an existing install: steps 2
-to 4 are the whole of an upgrade.
-
-Not on the **Manage Plugins** page — that lists cPanel's own RPM addons.
-A plugin registered through AppConfig appears in the sidebar, and its
-registration under **Development → Apps Managed by AppConfig**.
+A tag beginning `v` builds and publishes that tarball, its checksums and
+`get.sh` as a GitHub release
+([the workflow](.github/workflows/release.yml)). The published build is what
+`make plugin` produces: statically linked, `-trimpath`, so the same tag gives
+the same bytes and a local build can be checked against the published
+checksum.
 
 From there: add a destination, add a schedule, and the server backs itself
 up. Restores are on the Restore page — a whole account, or named files —

@@ -6,8 +6,8 @@ second machine, no database to run.
 ## Before you install
 
 - **root on the cPanel server.** The plugin refuses every WHM user that is not root.
-- **restic.** One command, below. The installer checks for it and prints that
-  command if it is missing.
+- **restic.** The installer fetches it if this server has none, checked
+  against restic's own published checksum.
 - **Somewhere to put backups.** Another Linux box over SSH, an S3 bucket, a restic
   REST server, or a mounted disk. See [Destinations](destinations.md).
 - **Room to stage.** A backup rebuilds one account in full on local disk before it
@@ -15,49 +15,56 @@ second machine, no database to run.
 
 ## Install
 
-Five steps, on two machines: any machine with Go to build on, and the cPanel
-server itself.
-
-**1. Install restic on the cPanel server**, as root. cP:Restic drives restic;
-it does not carry a copy of it.
+On the cPanel server, as root:
 
 ```bash
-curl -L https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64.bz2 \
-  | bunzip2 > /usr/local/bin/restic
-chmod 755 /usr/local/bin/restic
+curl -fsSL https://github.com/shukiv/cprestic/releases/latest/download/get.sh | sh
 ```
 
-**2. Build the plugin** on a machine with Go. Nothing in this step needs
-cPanel, and the tarball is statically linked, so it runs on any cPanel server.
+One command. It fetches the newest release, checks it against the checksums
+published beside it, and runs the installer inside it. To read the script
+before a root shell does, download it with its checksums first:
 
 ```bash
-make plugin           # builds bin/cprest-plugin-amd64.tar.gz
+curl -fsSLO https://github.com/shukiv/cprestic/releases/latest/download/get.sh
+curl -fsSLO https://github.com/shukiv/cprestic/releases/latest/download/SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS
+less get.sh
+sh get.sh
 ```
 
-**3. Copy the tarball to the cPanel server.**
+`CPREST_VERSION=v1.2.3` before `sh` installs that release rather than the
+newest.
 
-```bash
-scp bin/cprest-plugin-amd64.tar.gz root@your-server:/root/
-```
+The installer installs restic if this server has none, installs the service,
+registers the plugin with WHM through AppConfig, confirms WHM kept the
+registration, and registers cPanel hooks for account create, modify, suspend,
+unsuspend and remove. Running it again upgrades in place.
 
-**4. Unpack it and run the installer there, as root.**
-
-```bash
-tar xzf cprest-plugin-amd64.tar.gz
-cprest-plugin/install.sh
-```
-
-**5. Open WHM** and look for **cP:Restic Backups** in the sidebar's **Plugins**
+Then open WHM and look for **cP:Restic Backups** in the sidebar's **Plugins**
 group. Not under **Manage Plugins** — that page lists cPanel's own RPM addons;
 an AppConfig plugin appears in the sidebar, and its registration under
 **Development → Apps Managed by AppConfig**.
 
-The installer refuses anything that is not a cPanel server, checks for restic
-and prints step 1 again if it is missing, installs the service, registers the
-plugin with WHM through AppConfig, confirms WHM kept the registration, and
-registers cPanel hooks for account create, modify, suspend, unsuspend and
-remove. Running it again upgrades an existing install: steps 2 to 4 are the
-whole of an upgrade.
+### From source instead
+
+For a change you have made, or a machine you would rather not download to.
+On a machine with Go:
+
+```bash
+make plugin           # builds bin/cprest-plugin-amd64.tar.gz
+scp bin/cprest-plugin-amd64.tar.gz root@your-server:/root/
+```
+
+Then on the cPanel server, as root:
+
+```bash
+tar xzf cprest-plugin-amd64.tar.gz
+sh cprest-plugin/install.sh
+```
+
+Through `sh` because cPanel mounts `/tmp` and `/var/tmp` noexec: an installer
+unpacked there will not run otherwise.
 
 ## The first ten minutes
 
