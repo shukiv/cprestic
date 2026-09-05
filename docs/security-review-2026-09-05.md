@@ -1,7 +1,30 @@
 # cP:Restic — high-severity security and bug review
 
 Date: 2026-09-05  
-Status: findings only; fixes have not been implemented by this review.
+Status: **all six findings fixed**, each with a regression test. The report
+below is kept as it was written, as the record of what was found; the table
+under [What was done](#what-was-done) says where each one was fixed.
+
+## What was done
+
+Every finding was reproduced independently before being fixed, and each of the
+audit's own reproduction tests now fails to reproduce.
+
+| ID | Fixed in | How |
+| --- | --- | --- |
+| SEC-01 | `e3c7aa9` | The account's exclusion file is opened `O_NOFOLLOW`, must be an ordinary file, and must belong to whoever owns the home directory. |
+| SEC-02 | `cb96e35` | Extraction goes through `os.Root`, which resolves every path against the directory itself; absolute link targets are refused outright. |
+| SEC-03 | `79208c5` | A restore records which account it belonged to, not only which name; the customer's list, the download and the queued work all require it to be theirs. |
+| SEC-04 | `e3c7aa9` | The same open is `O_NONBLOCK`, and what is read is bounded in bytes and lines. |
+| SEC-05 | `9d4782f` | Reports are authorized where they are applied: the job must belong to an account on the reporting server and be running there. |
+| BUG-01 | `5152f5f` | The archive's place inside the work directory is carried over to the retained one, and its existence is checked before success is reported. |
+
+The regression tests are permanent and live beside the code they cover:
+`internal/cpanel/excludes_hardening_test.go`,
+`internal/reassemble/tar_escape_test.go`,
+`internal/webui/recycled_test.go`,
+`internal/store/report_ownership_test.go`,
+`internal/agent/download_path_test.go`.
 
 ## Scope and evidence
 
