@@ -112,25 +112,6 @@ looking. Settings turns the check off, and **Check now** asks straight away.
 The install command still works, for a server that would rather do it that
 way.
 
-### Removing it
-
-**Settings → Remove cP:Restic from this server**, at the bottom of the page.
-It asks first, and says what goes and what stays. Or, in a root shell:
-
-```bash
-sh /usr/local/share/cprest/uninstall.sh
-```
-
-The installer leaves that copy on the server, so removing it never means
-finding the package again. It stops and unregisters everything it put in
-place — service, WHM plugin, cPanel hooks, the account tile — and clears
-restic's cache.
-
-Two files stay: `/etc/cprest/master.key` and `/var/lib/cprest/state.db`.
-Reinstalling picks up from them, with the same destinations, schedules and
-history. Deleting the key deletes the only way to read what is in those
-destinations, so it is left for you to do deliberately.
-
 ### Building it yourself
 
 No release needed, and the way to install a change you have made. On a machine
@@ -232,6 +213,52 @@ server, so the credential able to delete backups lives on the machine an
 attacker would compromise. Fleet mode keeps it on a separate host and an
 append-only endpoint then means backup history cannot be destroyed at all.
 [ADR 7](docs/adr/0007-standalone-mode.md) sets out what you give up.
+
+## Removing it
+
+Two ways, and they do the same thing:
+
+- **Settings → Remove cP:Restic from this server**, the last card on the page.
+  It asks first and says what goes and what stays.
+- In a root shell:
+
+  ```bash
+  sh /usr/local/share/cprest/uninstall.sh
+  ```
+
+The installer leaves that copy of the uninstaller on the server, so removing
+the plugin never means finding the package again.
+
+**What it removes**
+
+| | |
+|---|---|
+| The service | stopped, disabled, `/etc/systemd/system/cprest.service` gone |
+| The WHM plugin | `cprest.cgi`, its AppConfig registration, the sidebar icon |
+| The cPanel hooks | account create, remove, suspend and unsuspend, unregistered through `manage_hooks` |
+| The account tile | the customer-facing plugin, its UAPI module and AdminBin |
+| The programs | `/usr/local/bin/cprest-agent`, `/usr/local/cpanel/3rdparty/bin/cprest-hook` |
+| restic's cache | `/var/cache/cprest`, rebuilt from the repository if you reinstall |
+| Itself | `/usr/local/share/cprest`, last, since the script is running out of it |
+
+**What it does not touch**
+
+- **Your backups.** Nothing on any destination is read, written or deleted.
+  Removing the plugin is not removing the backups, and there is no path
+  through the uninstaller that reaches them.
+- `/etc/cprest/master.key` — the key your stored destination credentials are
+  encrypted with.
+- `/var/lib/cprest/state.db` — destinations, schedules, and the history of
+  every run.
+- Anything a restore left in `/var/lib/cprest/staging` for collection, and
+  `restic` itself, which the installer put in `/usr/local/bin` and other
+  things may be using.
+
+Reinstalling picks up from those two files: the same destinations, the same
+schedules, the same history. Delete them only when you are certain you will
+not, and never before you have another way to read what is on your
+destinations — without the key file, the stored credentials cannot be
+recovered, and credentials nobody can read are backups nobody can reach.
 
 ## What runs
 
