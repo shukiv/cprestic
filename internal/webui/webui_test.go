@@ -762,7 +762,7 @@ func TestDownloadRequestNeedsABackup(t *testing.T) {
 
 	_, page := get(t, client, "/accounts")
 	resp, err := client.PostForm("http://ui/accounts/download", map[string][]string{
-		"csrf": {csrfToken(t, page)}, "account": {"customer1"},
+		"csrf": {csrfToken(t, page)}, "account": {"departed"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2592,6 +2592,53 @@ func TestTheStripSaysWhatIsRunningOnEveryPage(t *testing.T) {
 	_, quiet := get(t, client, "/destinations")
 	if strings.Contains(quiet, "Backing up customer1") {
 		t.Error("a finished backup is still shown as running")
+	}
+}
+
+// A whole-account restore used to mean "the newest backup there is". An
+// account broken this morning wants last night's, and an operator
+// restoring several at once means one date rather than a snapshot id each.
+func TestARestoreCanBeAskedForAsAtADate(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	finished := time.Now().Add(-2 * time.Hour)
+	retired := time.Now().Add(-time.Hour)
+	if _, err := engine.Store().PutJob(nodestore.Job{
+		Account: "departed", Status: job.StatusSuccess, FinishedAt: &finished,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Store().PutIdentity(nodestore.AccountIdentity{
+		Account: "departed", UID: 1234, SinceAt: finished,
+		LastSeen: finished, CreatedAt: finished, RetiredAt: &retired,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/restore?tab=deleted")
+	if !strings.Contains(page, `name="asof"`) {
+		t.Error("the restore page does not ask which restore point")
+	}
+
+	// A date that is not one is refused rather than quietly meaning
+	// "the newest", which would restore the wrong day without saying so.
+	resp, err := client.PostForm("http://ui/recover/accounts", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "account": {"customer1"},
+		"repository": {"repo"}, "asof": {"last tuesday"},
+	})
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if location := resp.Header.Get("Location"); !strings.Contains(location, "is+not+a+date") {
+		t.Errorf("a date that is not one was accepted: %s", location)
+	}
+	restores, err := engine.Store().Restores(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restores) != 0 {
+		t.Errorf("queued %+v", restores)
 	}
 }
 

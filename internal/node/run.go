@@ -595,6 +595,7 @@ func (e *Engine) Schedule(ctx context.Context, now time.Time) (int, error) {
 	}
 	e.watchForTrouble(ctx, now)
 	e.sweepRetention(ctx, now)
+	e.sweepDeletedAccounts(ctx, now)
 	if now.Sub(e.lastReconcile) >= time.Minute {
 		if err := e.ReconcileAccounts(ctx); err != nil {
 			e.log.Warn("reconcile cPanel accounts", "error", err)

@@ -556,3 +556,27 @@ func attachedRepository(t *testing.T, store *nodestore.Store, engine *node.Engin
 	}
 	return repo
 }
+
+// A deleted account's backups are the only ones nothing else ever removes:
+// retention thins a series and always keeps something. Without a life they
+// accumulate on a destination somebody pays for, forever.
+func TestDeletedAccountsAreKeptForTheConfiguredTime(t *testing.T) {
+	for _, tc := range []struct {
+		days int
+		want time.Duration
+	}{
+		{days: 0, want: nodestore.DefaultDeletedAccountDays * 24 * time.Hour},
+		{days: 30, want: 30 * 24 * time.Hour},
+		{days: 365, want: 365 * 24 * time.Hour},
+		{days: -1, want: 0}, // kept until somebody says otherwise
+	} {
+		settings := nodestore.Settings{DeletedAccountDays: tc.days}
+		if got := settings.KeepDeletedAccountsFor(); got != tc.want {
+			t.Errorf("%d days = %v, want %v", tc.days, got, tc.want)
+		}
+	}
+	if nodestore.DefaultDeletedAccountDays != 90 {
+		t.Errorf("the default is %d days, and the guides say ninety",
+			nodestore.DefaultDeletedAccountDays)
+	}
+}

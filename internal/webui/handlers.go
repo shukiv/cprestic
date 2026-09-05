@@ -3113,12 +3113,13 @@ func (s *Server) settingsPage() (settingsView, error) {
 		Outputs:     outputs,
 		OutputBytes: held,
 		KeepDays:    keepDays(settings),
-		Split:       split,
-		Monolithic:  monolithic,
-		Channels:    channels,
-		Kinds:       notify.Kinds,
-		Events:      notify.Events,
-		Submitted:   map[string]string{},
+		DeletedDays: deletedDays(settings), DeletedPreset: deletedPreset(settings),
+		Split:      split,
+		Monolithic: monolithic,
+		Channels:   channels,
+		Kinds:      notify.Kinds,
+		Events:     notify.Events,
+		Submitted:  map[string]string{},
 	}, nil
 }
 
@@ -3130,8 +3131,13 @@ type settingsView struct {
 	Outputs     []staging.Output
 	OutputBytes uint64
 	KeepDays    int
-	Split       int
-	Monolithic  int
+	// DeletedDays is how long a deleted account's backups are kept, and
+	// DeletedPreset is which of the offered periods that is -- "custom"
+	// when it is a number somebody typed rather than one on the list.
+	DeletedDays   int
+	DeletedPreset string
+	Split         int
+	Monolithic    int
 
 	Channels []nodestore.Channel
 	Kinds    []notify.Kind
@@ -3345,6 +3351,30 @@ func keepDays(settings nodestore.Settings) int {
 	return settings.KeepOutputDays
 }
 
+// deletedDays is how long a deleted account's backups are kept, with the
+// default spelt out rather than left as a zero to interpret.
+func deletedDays(settings nodestore.Settings) int {
+	if settings.DeletedAccountDays == 0 {
+		return nodestore.DefaultDeletedAccountDays
+	}
+	return settings.DeletedAccountDays
+}
+
+// deletedPresets are the periods the form offers, in the order it offers
+// them. Anything else an operator has set is offered back as "custom".
+var deletedPresets = []int{-1, 30, 90, 180, 365}
+
+// deletedPreset names which of the offered periods is in force.
+func deletedPreset(settings nodestore.Settings) string {
+	days := deletedDays(settings)
+	for _, preset := range deletedPresets {
+		if days == preset {
+			return strconv.Itoa(preset)
+		}
+	}
+	return "custom"
+}
+
 // handleDeleteOutput removes one finished restore's files from the work
 // directory, when an operator has finished with them.
 func (s *Server) handleDeleteOutput(w http.ResponseWriter, r *http.Request) {
@@ -3390,6 +3420,18 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	// what this server did before it swept anything at all.
 	settings.KeepOutputDays = atoiOr(r.PostFormValue("keep_output_days"),
 		nodestore.DefaultKeepOutputDays)
+	// How long a deleted account's backups are kept. The form offers a
+	// few periods and "custom"; anything unreadable leaves the setting
+	// alone rather than silently choosing a shorter life for somebody
+	// else's backups.
+	if chosen := r.PostFormValue("deleted_account_days"); chosen != "" {
+		if chosen == "custom" {
+			chosen = r.PostFormValue("deleted_account_days_custom")
+		}
+		if days, err := strconv.Atoi(strings.TrimSpace(chosen)); err == nil && days != 0 {
+			settings.DeletedAccountDays = days
+		}
+	}
 	settings.ProtectAccountRemoval = r.PostFormValue("protect_account_removal") == "1"
 	settings.BackupOnSuspension = r.PostFormValue("backup_on_suspension") == "1"
 	if hostname := strings.TrimSpace(r.PostFormValue("hostname")); hostname != "" {
@@ -3643,6 +3685,26 @@ func (s *Server) handleRecoverAccounts(w http.ResponseWriter, r *http.Request) {
 	apply := r.PostFormValue("apply") != ""
 	unrestricted := r.PostFormValue("unrestricted") != ""
 
+	// A date rather than a snapshot: several accounts are chosen at once
+	// and their backups are not taken at the same minute, so each
+	// resolves the same day to its own newest backup up to the end of it.
+	// Empty means the newest there is, which is what rebuilding a lost
+	// server means.
+	var asOf time.Time
+	if chosen := strings.TrimSpace(r.PostFormValue("asof")); chosen != "" {
+		day, err := time.ParseInLocation("2006-01-02", chosen, time.Local)
+		if err != nil {
+			s.redirect(w, r, back, "error",
+				"That restore point is not a date. Use the date field, or leave it "+
+					"empty for the most recent backup.")
+			return
+		}
+		asOf = day.AddDate(0, 0, 1).Add(-time.Second)
+		if asOf.After(time.Now()) {
+			asOf = time.Time{}
+		}
+	}
+
 	if len(accounts) == 0 {
 		s.redirect(w, r, back, "error", "Choose at least one account first.")
 		return
@@ -3658,7 +3720,7 @@ func (s *Server) handleRecoverAccounts(w http.ResponseWriter, r *http.Request) {
 	var queued []string
 	var refused []string
 	for _, account := range accounts {
-		snapshot, err := s.engine.LatestSnapshot(r.Context(), repository, account)
+		snapshot, err := s.engine.SnapshotAsOf(r.Context(), repository, account, asOf)
 		if err != nil {
 			refused = append(refused, account+" ("+err.Error()+")")
 			continue
@@ -3680,6 +3742,9 @@ func (s *Server) handleRecoverAccounts(w http.ResponseWriter, r *http.Request) {
 	verb := "Rebuilding"
 	if apply {
 		verb = "Restoring onto this server"
+	}
+	if !asOf.IsZero() {
+		verb += " from " + asOf.Format("2 January 2006")
 	}
 	switch {
 	case len(queued) == 0:

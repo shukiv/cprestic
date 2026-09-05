@@ -38,6 +38,24 @@
         after this they are swept. −1 keeps them until you delete them.</small>
       </div>
       <div>
+        <label for="deleted_account_days">Keep a deleted account's backups for</label>
+        <select id="deleted_account_days" name="deleted_account_days">
+          <option value="-1" {{if eq $data.DeletedPreset "-1"}}selected{{end}}>Until I remove them</option>
+          <option value="30" {{if eq $data.DeletedPreset "30"}}selected{{end}}>30 days</option>
+          <option value="90" {{if eq $data.DeletedPreset "90"}}selected{{end}}>90 days</option>
+          <option value="180" {{if eq $data.DeletedPreset "180"}}selected{{end}}>180 days</option>
+          <option value="365" {{if eq $data.DeletedPreset "365"}}selected{{end}}>A year</option>
+          <option value="custom" {{if eq $data.DeletedPreset "custom"}}selected{{end}}>Some other number of days…</option>
+        </select>
+        <input type="number" name="deleted_account_days_custom" min="1"
+               aria-label="Days to keep a deleted account's backups"
+               value="{{$data.DeletedDays}}">
+        <small class="cpr-help">When a cPanel account has been gone this long, its backups are
+        removed from every destination and its history here goes with them. Nothing else ever
+        removes them: retention thins a series but never empties it. The number beside the list
+        is used when you choose “some other number of days”.</small>
+      </div>
+      <div>
         <label class="cpr-check">
           <input type="checkbox" name="protect_account_removal" value="1"
                  {{if $data.Settings.ProtectAccountRemoval}}checked{{end}}>

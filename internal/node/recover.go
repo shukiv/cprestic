@@ -192,6 +192,22 @@ func Summarise(snapshots []resticrun.Snapshot) Contents {
 // means a page that has been open since before tonight's backup cannot
 // quietly restore yesterday's.
 func (e *Engine) LatestSnapshot(ctx context.Context, repositoryID, account string) (string, error) {
+	return e.SnapshotAsOf(ctx, repositoryID, account, time.Time{})
+}
+
+// SnapshotAsOf is the newest backup of one account taken at or before a
+// moment, or the newest of all when that moment is zero.
+//
+// Restoring is not always "put back the last one". An account that was
+// broken this morning wants last night's, and an operator rebuilding
+// several accounts means the same date for all of them rather than a
+// snapshot id each. So a date is what the page asks for, and each account
+// resolves it to its own backup: they are not taken at the same minute,
+// and a run that was skipped for one account must not silently give it a
+// different day's data than the others without saying so.
+func (e *Engine) SnapshotAsOf(ctx context.Context, repositoryID, account string,
+	asOf time.Time) (string, error) {
+
 	repo, err := e.OpenRepository(repositoryID, false)
 	if err != nil {
 		return "", err
@@ -200,17 +216,28 @@ func (e *Engine) LatestSnapshot(ctx context.Context, repositoryID, account strin
 	if err != nil {
 		return "", err
 	}
-	var latest resticrun.Snapshot
+	var chosen resticrun.Snapshot
+	held := 0
 	for _, snapshot := range snapshots {
 		if snapshot.Account() != account {
 			continue
 		}
-		if latest.ID == "" || snapshot.Time.After(latest.Time) {
-			latest = snapshot
+		held++
+		if !asOf.IsZero() && snapshot.Time.After(asOf) {
+			continue
+		}
+		if chosen.ID == "" || snapshot.Time.After(chosen.Time) {
+			chosen = snapshot
 		}
 	}
-	if latest.ID == "" {
+	switch {
+	case chosen.ID != "":
+		return chosen.ID, nil
+	case held > 0:
+		return "", fmt.Errorf(
+			"node: no backup of %s from %s or earlier -- the oldest here is newer",
+			account, asOf.Format("2006-01-02"))
+	default:
 		return "", fmt.Errorf("node: this destination holds no backup of %s", account)
 	}
-	return latest.ID, nil
 }

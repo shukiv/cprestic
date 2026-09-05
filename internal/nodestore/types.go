@@ -451,11 +451,39 @@ type Settings struct {
 	// suspends an account. It is opt-in because billing systems may suspend
 	// large numbers of accounts automatically.
 	BackupOnSuspension bool `json:"backup_on_suspension,omitempty"`
+	// DeletedAccountDays is how long a deleted account's backups are kept
+	// before they are forgotten: the snapshots removed from every
+	// destination and the account's history with them.
+	//
+	// Nothing else ever removes them. Retention keeps a series thinned but
+	// never empties it, so without this a server accumulates the backups
+	// of every customer who has ever left, forever. Zero means the
+	// default; a negative number keeps them until somebody says otherwise.
+	DeletedAccountDays int `json:"deleted_account_days,omitempty"`
 }
 
 // DefaultKeepOutputDays is a week: long enough that a restore taken on a
 // Friday is still there on Monday.
 const DefaultKeepOutputDays = 7
+
+// DefaultDeletedAccountDays is ninety: long enough that a customer who
+// left in anger and came back in March still has their site, and short
+// enough that a destination is not paid for forever to hold the backups of
+// people who are gone.
+const DefaultDeletedAccountDays = 90
+
+// KeepDeletedAccountsFor is how long a deleted account's backups survive.
+// Zero means they are kept until somebody removes them by hand.
+func (s Settings) KeepDeletedAccountsFor() time.Duration {
+	switch {
+	case s.DeletedAccountDays < 0:
+		return 0
+	case s.DeletedAccountDays == 0:
+		return DefaultDeletedAccountDays * 24 * time.Hour
+	default:
+		return time.Duration(s.DeletedAccountDays) * 24 * time.Hour
+	}
+}
 
 // KeepOutputFor is how long finished restore output survives.
 func (s Settings) KeepOutputFor() time.Duration {

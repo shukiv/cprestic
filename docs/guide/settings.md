@@ -39,6 +39,18 @@ so on a server with a nightly schedule it is one message per account per night.
 It is off unless chosen, and it is there for the operator who wants to know the
 moment a restore into a live account begins.
 
+## How long a deleted account's backups are kept
+
+Ninety days by default, then they are removed from every destination and the
+account's history here goes with them. Nothing else ever removes them:
+retention thins a series but never empties it, so without this a server holds
+the backups of every customer who has ever left, forever.
+
+The choices are never, 30, 90, 180 days, a year, or a number you type. An
+account whose name is back on the server is left alone — whoever holds it now
+is not the customer who left. One can always be removed sooner by hand, under
+Restore → Deleted accounts.
+
 ## Staging
 
 Where an account is rebuilt before upload, and how much room is left there. A

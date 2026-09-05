@@ -63,6 +63,10 @@
   </table></div>
   <div class="cpr-pad cpr-bulkbar" style="border-top:1px solid var(--line)">
     <span class="cpr-hint" style="margin:0" data-bulk-count>Nothing chosen</span>
+    <label class="cpr-pager-size" style="margin:0">Restore point
+      <input type="date" name="asof" aria-label="Newest backup on or before this date"
+             title="The newest backup taken on or before this date. Leave it empty for the most recent backup there is.">
+    </label>
     <label class="cpr-pager-size" style="margin:0">From
       <select name="repository" aria-label="Restore from">
         {{range $data.Repositories}}{{if .Repository.InitialisedAt}}
@@ -174,6 +178,10 @@
     </table></div>
     <div class="cpr-pad cpr-bulkbar" style="border-top:1px solid var(--line)">
       <span class="cpr-hint" style="margin:0" data-bulk-count>Nothing chosen</span>
+      <label class="cpr-pager-size" style="margin:0">Restore point
+        <input type="date" name="asof" aria-label="Newest backup on or before this date"
+               title="The newest backup taken on or before this date. Leave it empty for the most recent backup there is.">
+      </label>
       <span style="flex:1"></span>
       <label class="cpr-check" style="margin:0" title="cprest asks cPanel for a restricted restore, because the archive holds each account's own home directory and cPanel's restore runs as root.">
         <input type="checkbox" name="unrestricted" value="1"><span>unrestricted</span></label>

@@ -60,8 +60,11 @@ type Engine struct {
 	lastWatch     time.Time
 	lastProbe     time.Time
 	lastReconcile time.Time
-	staging       *staging.Manager
-	log           *slog.Logger
+	// lastDeletedSweep is when accounts gone longer than this server
+	// keeps them were last looked for.
+	lastDeletedSweep time.Time
+	staging          *staging.Manager
+	log              *slog.Logger
 
 	// items remembers what a snapshot holds in the parts of an account
 	// that are not files, so browsing between them does not stream the

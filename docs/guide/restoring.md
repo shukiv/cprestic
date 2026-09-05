@@ -38,12 +38,27 @@ Choose an account and a destination. The page then shows:
   ticked one at a time; cron jobs and FTP logins are listed to be read, since
   each is lines inside a single file.
 
+- **Which backup** — the *Restore point* field beside the destination takes a
+  date, and each account gets its newest backup taken on or before the end of
+  that day. Leave it empty for the most recent there is. A date rather than a
+  snapshot because several accounts are restored at once and their backups are
+  not taken at the same minute; an account with nothing that old is named and
+  the others still go.
+
 - **Forgetting a deleted account** — a customer has gone and asked for their
   backups to go with them. **Forget…** on a row of *Deleted accounts* removes
   every backup of that name from every destination, and this server's record
   that the account existed, its history with it. It asks first, on the page, and
   only for a name cPanel no longer has. Nothing here brings any of it back; the
   space comes back at the next prune.
+
+  It also happens on its own: a deleted account's backups are kept for
+  **90 days** by default and then forgotten, because nothing else ever removes
+  them — retention thins a series but never empties it, so a server otherwise
+  accumulates the backups of every customer who has ever left. The period is
+  under Settings: never, 30, 90, 180 days, a year, or a number you choose. A
+  name that is back on the server is left alone: whoever holds it now is not
+  the customer who left.
 
 - **Cron jobs** can go back into the account. The whole crontab is replaced,
   because that is what the backup holds and what cron reads, so a job added
