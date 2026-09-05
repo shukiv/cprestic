@@ -87,8 +87,8 @@
 {{end}}
 
 {{/* Settings, split by what somebody came to change. The page had grown to
-     seven cards, and the two that matter in a hurry -- what is wrong with
-     this build, how to get rid of it -- were the two furthest down. Links
+     seven cards, and the two that matter in a hurry -- which build this is,
+     how to get rid of it -- were the two furthest down. Links
      again, not a scripted widget: every tab is a page that survives a
      reload and works with scripting off. */}}
 {{define "settingstabs"}}
@@ -96,7 +96,7 @@
   <a href="?p=settings" {{if eq . "backups"}}aria-current="page"{{end}}>Backups</a>
   <a href="?p=settings&amp;tab=alerts" {{if eq . "alerts"}}aria-current="page"{{end}}>Alerts</a>
   <a href="?p=settings&amp;tab=storage" {{if eq . "storage"}}aria-current="page"{{end}}>Storage</a>
-  <a href="?p=settings&amp;tab=version" {{if eq . "version"}}aria-current="page"{{end}}>This copy</a>
+  <a href="?p=settings&amp;tab=version" {{if eq . "version"}}aria-current="page"{{end}}>Version</a>
 </nav>
 {{end}}
 
