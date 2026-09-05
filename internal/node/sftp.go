@@ -140,6 +140,33 @@ func (e *Engine) PrepareSFTPKey() (PreparedKey, error) {
 	}, nil
 }
 
+// PreparedKeyAt describes a key an earlier click made, so a form that
+// comes back -- refused, or waiting for a host key to be agreed to --
+// still shows the public half somebody may already be installing on the
+// far side. Without it the page would offer to make a second key and
+// quietly stop pointing at the first.
+//
+// The path arrives from a form, so only a prepared key in cprest's own key
+// directory is described: nothing else on this server is a file this reads.
+// The private half is not returned either way.
+func (e *Engine) PreparedKeyAt(path string) (PreparedKey, bool) {
+	if path == "" {
+		return PreparedKey{}, false
+	}
+	clean := filepath.Clean(path)
+	if filepath.Dir(clean) != filepath.Join(e.settings.ConfigDir, "keys") ||
+		!strings.HasPrefix(filepath.Base(clean), "prepared-") {
+		return PreparedKey{}, false
+	}
+	pair, err := sshkeys.PublicHalf(clean)
+	if err != nil {
+		return PreparedKey{}, false
+	}
+	return PreparedKey{
+		Path: clean, AuthorizedKey: pair.AuthorizedKey, Fingerprint: pair.Fingerprint,
+	}, true
+}
+
 // preparedKeyLife is how long a key nobody used stays. Long enough to add
 // it to a server somebody else administers and come back tomorrow.
 const preparedKeyLife = 7 * 24 * time.Hour

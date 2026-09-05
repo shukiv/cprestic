@@ -630,7 +630,23 @@ func (s *Server) refuseDestination(w http.ResponseWriter, r *http.Request, cause
 			}
 		}
 	}
+	s.keepPreparedKey(&view)
 	s.render(w, r, "destinations.html", "Backup destinations", "destinations", view)
+}
+
+// keepPreparedKey shows again the key an earlier click made, when the form
+// that comes back is still pointing at it.
+//
+// A form is handed back more than once -- something was refused, or a host
+// key is waiting to be agreed to -- and the key whose public half somebody
+// may already have installed on the far side must stay on the page. What
+// happened before was that the green block vanished and the button to make
+// a key took its place, so pressing it made a second key and pointed the
+// form at that one instead.
+func (s *Server) keepPreparedKey(view *destinationsView) {
+	if prepared, ok := s.engine.PreparedKeyAt(view.Submitted["identity_file"]); ok {
+		view.Prepared = &prepared
+	}
 }
 
 // handlePrepareKey makes an SSH key and hands the form back with the public
@@ -813,6 +829,7 @@ func (s *Server) confirmHost(w http.ResponseWriter, r *http.Request, unconfirmed
 			view.Submitted[name] = values[0]
 		}
 	}
+	s.keepPreparedKey(&view)
 	s.render(w, r, "destinations.html", "Destinations", "destinations", view)
 }
 

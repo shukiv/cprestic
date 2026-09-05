@@ -335,15 +335,33 @@ func shellQuote(value string) string {
 // PublicKeyFromFile derives the authorized_keys line from a stored private
 // key, so the interface can show it again after the destination was saved.
 func PublicKeyFromFile(path string) (string, error) {
+	pair, err := PublicHalf(path)
+	if err != nil {
+		return "", err
+	}
+	return pair.AuthorizedKey, nil
+}
+
+// PublicHalf reads a stored private key and reports what somebody
+// installing it on another server needs: the authorized_keys line and the
+// fingerprint to compare it against.
+//
+// Only the public half comes back. The private key stays in the file it
+// was read from.
+func PublicHalf(path string) (KeyPair, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("sshkeys: read %s: %w", path, err)
+		return KeyPair{}, fmt.Errorf("sshkeys: read %s: %w", path, err)
 	}
 	signer, err := ssh.ParsePrivateKey(body)
 	if err != nil {
-		return "", fmt.Errorf("sshkeys: parse %s: %w", path, err)
+		return KeyPair{}, fmt.Errorf("sshkeys: parse %s: %w", path, err)
 	}
-	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))), nil
+	public := signer.PublicKey()
+	return KeyPair{
+		AuthorizedKey: strings.TrimSpace(string(ssh.MarshalAuthorizedKey(public))),
+		Fingerprint:   ssh.FingerprintSHA256(public),
+	}, nil
 }
 
 // RunAsAdmin runs a script on the remote server as an account that can
