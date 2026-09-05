@@ -1,0 +1,142 @@
+package node_test
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/shuki/cprest/internal/agent"
+	"github.com/shuki/cprest/internal/nodestore"
+)
+
+// TestStartUpgradeOnlyInstallsTheReleaseItWasToldAbout covers the guards
+// in front of the one thing here that fetches something and runs it as
+// root. None of these reach the network.
+func TestStartUpgradeOnlyInstallsTheReleaseItWasToldAbout(t *testing.T) {
+	root := t.TempDir()
+	store, err := nodestore.Open(filepath.Join(root, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	settings := nodestore.DefaultSettings()
+	settings.StagingRoot = filepath.Join(root, "staging")
+	settings.ResticCache = filepath.Join(root, "cache")
+	settings.ConfigDir = filepath.Join(root, "config")
+	if err := store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	engine := newEngine(t, store, root)
+
+	was := agent.Version
+	agent.Version = "v1.2.3"
+	t.Cleanup(func() { agent.Version = was })
+
+	if err := store.SaveUpdateState(nodestore.UpdateState{
+		CheckedAt: time.Now().UTC(), Version: "v1.3.0",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	refused := map[string]string{
+		"a version nobody published":  "v9.9.9",
+		"a build of somebody's own":   "v1.3.0-2-gabc1234-dirty",
+		"not a version at all":        "; rm -rf /",
+		"nothing":                     "",
+		"the version already running": "v1.2.3",
+	}
+	for what, version := range refused {
+		if err := engine.StartUpgrade(version); err == nil {
+			t.Errorf("%s was installed: %q", what, version)
+		}
+	}
+	state, err := store.UpgradeState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.StartedAt.IsZero() {
+		t.Errorf("a refused upgrade was recorded as started: %+v", state)
+	}
+}
+
+// TestUpgradeStatusReadsWhatTheInstallerLeft is how an upgrade is
+// reported at all: the process that started one is replaced by it, so
+// what happened is read back off disk.
+func TestUpgradeStatusReadsWhatTheInstallerLeft(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status string
+		failed bool
+		kept   bool
+	}{
+		{"it worked", "0\n", false, false},
+		{"it did not", "1\n", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			store, err := nodestore.Open(filepath.Join(root, "state.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			settings := nodestore.DefaultSettings()
+			settings.StagingRoot = filepath.Join(root, "staging")
+			settings.ResticCache = filepath.Join(root, "cache")
+			settings.ConfigDir = filepath.Join(root, "config")
+			if err := store.SaveSettings(settings); err != nil {
+				t.Fatal(err)
+			}
+			engine := newEngine(t, store, root)
+
+			dir := filepath.Join(root, "upgrade", "v1.3.0")
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "status"), []byte(tc.status), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "install.log"),
+				[]byte("WHM plugin directory: /usr/local/cpanel/whostmgr/docroot/cgi\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.SaveUpgradeState(nodestore.UpgradeState{
+				Version: "v1.3.0", From: "v1.2.3", Stage: "installing",
+				StartedAt: time.Now().UTC().Add(-time.Minute), Dir: dir,
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			state, err := engine.UpgradeStatus()
+			if err != nil {
+				t.Fatalf("UpgradeStatus: %v", err)
+			}
+			if state.FinishedAt.IsZero() {
+				t.Fatal("an upgrade that has ended was reported as still running")
+			}
+			if state.Failed != tc.failed {
+				t.Errorf("failed = %v, want %v (%s)", state.Failed, tc.failed, state.Error)
+			}
+			if state.Stage != "" {
+				t.Errorf("stage = %q, want it cleared", state.Stage)
+			}
+			if !strings.Contains(state.Log, "WHM plugin directory") {
+				t.Errorf("the installer's output was not kept: %q", state.Log)
+			}
+			// It is read once and remembered: the second read must say
+			// the same thing after the unpacked copy has been removed.
+			again, err := engine.UpgradeStatus()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if again.Failed != tc.failed || again.FinishedAt.IsZero() {
+				t.Errorf("the second reading disagrees: %+v", again)
+			}
+			_, err = os.Stat(dir)
+			if kept := err == nil; kept != tc.kept {
+				t.Errorf("the unpacked release kept = %v, want %v", kept, tc.kept)
+			}
+		})
+	}
+}

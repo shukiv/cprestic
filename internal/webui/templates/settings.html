@@ -104,6 +104,65 @@
   </div>
 </div>
 
+{{/* The program itself: what is running, what has been released, and the
+     one button that replaces the first with the second. It is a card of its
+     own rather than a line in the form above because installing is not a
+     setting -- it happens when it is pressed. */}}
+{{$update := $data.Update}}
+<div class="cpr-card">
+  <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
+    <div>
+      <h2 style="margin:0">This copy of cP:Restic</h2>
+      <p class="cpr-hint" style="margin:var(--s1) 0 0" data-live="cprest-version">Version
+      {{$update.Running}}{{with $update.Checked}} — asked about newer ones {{.}}{{end}}.</p>
+    </div>
+    <form method="post" action="?p=settings/update/check">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <button class="cpr-btn cpr-quiet" type="submit">Check now</button>
+    </form>
+  </div>
+  <div class="cpr-pad" data-live="upgrade">
+    {{if $update.Installing}}
+    <div class="cpr-banner cpr-warn" role="status" data-running="1"><div class="cpr-body">
+      <b>{{$update.Stage}}.</b>
+      <span class="cpr-hint" style="display:block; margin-top:var(--s1)">This page keeps itself
+      current, including over the restart. Nothing else on this server is stopped.</span>
+    </div></div>
+    {{else if $update.Failed}}
+    <div class="cpr-banner cpr-bad"><div class="cpr-body">
+      <b>{{$update.Upgrade.Version}} was not installed.</b> {{$update.Upgrade.Error}}
+      This server still runs {{$update.Running}} and nothing was changed.
+      {{with $update.Upgrade.Log}}<div class="cpr-log" style="margin-top:var(--s2)">{{.}}</div>{{end}}
+    </div></div>
+    {{else if $update.Installed}}
+    <div class="cpr-banner cpr-ok"><div class="cpr-body">
+      <b>{{$update.Upgrade.Version}} is installed.</b> It was {{$update.Upgrade.From}} before.
+    </div></div>
+    {{end}}
+
+    {{if $update.Newer}}
+    <div class="cpr-spread" style="gap:var(--s4); align-items:flex-start">
+      <div>
+        <b>cP:Restic {{$update.Latest}} has been released.</b>
+        <p class="cpr-hint" style="margin:var(--s1) 0 0">Installing downloads it, checks that the
+        release key signed it, and restarts the service. Destinations, schedules, backups and
+        history stay as they are.{{with $update.ReleaseURL}}
+        <a href="{{.}}" target="_blank" rel="noopener noreferrer">What changed</a>.{{end}}</p>
+      </div>
+      <form method="post" action="?p=settings/update/install">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <input type="hidden" name="version" value="{{$update.Latest}}">
+        <button class="cpr-btn cpr-primary" type="submit"
+                {{if $update.Installing}}disabled{{end}}>Install {{$update.Latest}}</button>
+      </form>
+    </div>
+    {{else if not $update.Installing}}
+    <p class="cpr-hint" style="margin:0">Nothing newer has been published.{{with $data.CheckError}}
+    The last ask failed: {{.}}{{end}}</p>
+    {{end}}
+  </div>
+</div>
+
 {{/* Nobody reads a page for a server that is working, which is exactly when
      it stops. This is how the server speaks first. */}}
 <div class="cpr-card">

@@ -67,3 +67,25 @@ func (e *Engine) checkForUpdate(ctx context.Context, now time.Time) {
 		}
 	}()
 }
+
+// CheckForUpdateNow asks GitHub straight away and records the answer.
+//
+// The daily check is what keeps a server current on its own; this is for
+// somebody standing at the page who has just been told a release exists,
+// and for an operator watching a failing check to see the reason change.
+func (e *Engine) CheckForUpdateNow(ctx context.Context) (nodestore.UpdateState, error) {
+	found := nodestore.UpdateState{CheckedAt: time.Now().UTC()}
+	release, err := update.Latest(ctx, nil, update.Repo)
+	if err != nil {
+		found.Error = err.Error()
+		if saveErr := e.store.SaveUpdateState(found); saveErr != nil {
+			e.log.Error("record the update check", "error", saveErr)
+		}
+		return found, err
+	}
+	found.Version, found.URL, found.Notes = release.Version, release.URL, release.Notes
+	if err := e.store.SaveUpdateState(found); err != nil {
+		return found, err
+	}
+	return found, nil
+}

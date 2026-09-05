@@ -84,6 +84,28 @@ func (s *Store) SaveUpdateState(state UpdateState) error {
 	return s.put(bucketSettings, updateKey, state)
 }
 
+// upgradeKey holds the upgrade that is running, or the last one that ran.
+const upgradeKey = "upgrade"
+
+// UpgradeState reads the upgrade in flight, or the last one. A server that
+// has never upgraded reports a zero value, not an error.
+func (s *Store) UpgradeState() (UpgradeState, error) {
+	var state UpgradeState
+	err := s.get(bucketSettings, upgradeKey, &state)
+	if errors.Is(err, ErrNotFound) {
+		return UpgradeState{}, nil
+	}
+	if err != nil {
+		return UpgradeState{}, err
+	}
+	return state, nil
+}
+
+// SaveUpgradeState records how far an upgrade got.
+func (s *Store) SaveUpgradeState(state UpgradeState) error {
+	return s.put(bucketSettings, upgradeKey, state)
+}
+
 // --- secrets ---
 
 // PutSecret stores a sealed credential and returns its id.

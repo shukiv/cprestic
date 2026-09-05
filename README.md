@@ -79,11 +79,20 @@ unsuspend and remove. Running it again upgrades in place.
 ### Keeping it current
 
 Every page says so when a newer release exists, with what changed and the
-version running here. Upgrading is the install command again; destinations,
-schedules and history stay. The check reads a version number from GitHub once
-a day and installs nothing on its own — an update that arrives unattended is a
-way for whoever can publish a release to reach every server running this, as
-root, with nobody looking. Settings turns the check off.
+version running here. **Settings → This copy of cP:Restic** installs it: one
+button, a confirmation, and a card that says how it went. It downloads the
+release, checks the release key signed it, runs the same installer as a hand
+install and restarts the service — destinations, schedules, backups and
+history stay. Queued backups stay queued and run afterwards; one that is
+running is why the button refuses until it has finished. Nothing that the
+release key did not sign is unpacked, let alone run.
+
+The check reads a version number from GitHub once a day and installs nothing
+on its own — an update that arrives unattended is a way for whoever can
+publish a release to reach every server running this, as root, with nobody
+looking. Settings turns the check off, and **Check now** asks straight away.
+The install command still works, for a server that would rather do it that
+way.
 
 ### Removing it
 

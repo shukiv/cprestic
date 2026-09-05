@@ -67,6 +67,9 @@ type Engine struct {
 	// checkingUpdate is set while the daily ask about a newer release is
 	// in flight, so a slow answer does not start a second one.
 	checkingUpdate atomic.Bool
+	// upgrading is set while a newer release is being fetched and
+	// installed, so a second click does not start a second one.
+	upgrading atomic.Bool
 	// lastKeySweep is when prepared SFTP keys nobody used were last
 	// looked for.
 	lastKeySweep time.Time

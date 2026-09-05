@@ -87,14 +87,38 @@ unpacked there will not run otherwise.
 ## Keeping it current
 
 Every page says so when a newer cP:Restic has been released: the version, what
-changed, and the version this server runs. Upgrading is the install command
-again — it keeps the service's settings, destinations, schedules and history,
-and replaces the program.
+changed, and the version this server runs.
+
+**Settings → This copy of cP:Restic** installs it. The button names the
+version; the page that follows says what happens and asks for a tick, because
+this replaces the program on the server and restarts it. Then the card follows
+it through — downloading, installing, and what the installer said — and keeps
+following it across the restart, so the page an operator is watching is the
+page that tells them it worked.
+
+What it does is what a hand install does: download the release, check it, run
+`install.sh`. What is different is what happens before the installer is handed
+anything. The checksums published with a release are signed with the cP:Restic
+release key, which is compiled into this program; a release whose signature
+does not verify, or which arrives without one, stops there, with nothing
+unpacked and nothing run. Then the tarball is checked against those signed
+checksums. Only then is anything unpacked, and only ordinary files under
+`cprest-plugin/` are written — a path leading out of that directory, or a
+symlink, is refused rather than followed.
+
+The installer runs outside this service, as a transient systemd unit, because
+installing restarts the service that started it. Backups already queued stay
+queued and run afterwards; a backup that is *running* is why the button
+refuses until it has finished, since a restart would fail it.
 
 The check asks GitHub once a day for a version number and installs nothing.
 Settings → **Check for new versions** turns it off, and turning it off hides
-the banner with it. A build that is not exactly a release — a working tree,
-`v0.1.0-3-gabc1234-dirty` — is never told to upgrade.
+the banner and the button with it; **Check now** asks straight away. A build
+that is not exactly a release — a working tree, `v0.1.0-3-gabc1234-dirty` — is
+never offered an upgrade.
+
+The install command still works. Upgrading by hand is the same thing without
+the button.
 
 ## Uninstalling
 

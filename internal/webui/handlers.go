@@ -31,6 +31,7 @@ import (
 	"github.com/shuki/cprest/internal/reassemble"
 	"github.com/shuki/cprest/internal/resticrun"
 	"github.com/shuki/cprest/internal/staging"
+	"github.com/shuki/cprest/internal/update"
 )
 
 // --- dashboard ---
@@ -3301,11 +3302,24 @@ func (s *Server) settingsPage() (settingsView, error) {
 
 	// A failed check is not a reason to fail the page.
 	lastChecked, checkError := "", ""
+	panel := updatePanel{Running: agent.Version}
 	if state, err := s.engine.Store().UpdateState(); err == nil {
 		if !state.CheckedAt.IsZero() {
 			lastChecked = humanAgo(&state.CheckedAt)
 		}
 		checkError = state.Error
+		panel.Latest, panel.ReleaseURL = state.Version, state.URL
+		panel.Checked = lastChecked
+		panel.Newer = !settings.NoUpdateCheck && update.Newer(agent.Version, state.Version)
+	}
+	// Reading this is also what notices an upgrade that has finished,
+	// since the process that started one is not the process that reports
+	// on it.
+	if upgrade, err := s.engine.UpgradeStatus(); err == nil {
+		panel.Upgrade = upgrade
+		panel.Installing = !upgrade.StartedAt.IsZero() && upgrade.FinishedAt.IsZero()
+	} else {
+		s.log.Error("read the upgrade in flight", "error", err)
 	}
 
 	return settingsView{
@@ -3318,6 +3332,7 @@ func (s *Server) settingsPage() (settingsView, error) {
 		BugEmail: s.engine.BugEmail(), CanReport: s.engine.CanSendBugReport(),
 		Version:     agent.Version,
 		LastChecked: lastChecked, CheckError: checkError,
+		Update:     panel,
 		Split:      split,
 		Monolithic: monolithic,
 		Channels:   channels,
@@ -3351,8 +3366,11 @@ type settingsView struct {
 	Version     string
 	LastChecked string
 	CheckError  string
-	Split       int
-	Monolithic  int
+	// Update is the release this server has been told about and, if one
+	// is being installed, how that is going.
+	Update     updatePanel
+	Split      int
+	Monolithic int
 
 	Channels []nodestore.Channel
 	Kinds    []notify.Kind

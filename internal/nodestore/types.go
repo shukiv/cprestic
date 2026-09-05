@@ -501,6 +501,36 @@ type Settings struct {
 
 // UpdateState is what the last check for a newer release found. It is kept
 // so that every page can say so without asking GitHub again.
+// UpgradeState is an installation of a newer release: what was asked for,
+// how far it got, and what the installer said.
+//
+// It is stored rather than held in memory because installing replaces this
+// program and restarts it. Whatever is remembered about an upgrade has to
+// survive the upgrade, or the page an operator is watching comes back
+// saying nothing ever happened.
+type UpgradeState struct {
+	// Version is the release being installed, and From is what was
+	// running when it was asked for.
+	Version string `json:"version,omitempty"`
+	From    string `json:"from,omitempty"`
+	// Stage is what is happening now: "downloading" while the release is
+	// being fetched and checked, "installing" once the installer has been
+	// handed it. Empty when nothing is in flight.
+	Stage     string    `json:"stage,omitempty"`
+	StartedAt time.Time `json:"started_at,omitempty"`
+	// FinishedAt is when it stopped, either way. A zero time with a
+	// StartedAt is an upgrade still going.
+	FinishedAt time.Time `json:"finished_at,omitempty"`
+	Failed     bool      `json:"failed,omitempty"`
+	Error      string    `json:"error,omitempty"`
+	// Log is the tail of what the installer printed, which is what says
+	// why an upgrade that failed did.
+	Log string `json:"log,omitempty"`
+	// Dir is where the release was unpacked, so the run can be picked up
+	// again by the process that replaced the one that started it.
+	Dir string `json:"dir,omitempty"`
+}
+
 type UpdateState struct {
 	CheckedAt time.Time `json:"checked_at"`
 	// Version, URL and Notes describe the newest published release,

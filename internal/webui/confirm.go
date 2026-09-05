@@ -42,7 +42,10 @@ type confirmation struct {
 	Button string
 	// Cancel is where "no" leads, which is the page the button was on.
 	Cancel string
-	Fields []confirmField
+	// Section is which tab stays lit behind the question. Restores are
+	// what usually asks, so that is what an empty one means.
+	Section string
+	Fields  []confirmField
 }
 
 // confirmField is one value of the held request, carried forward as a
@@ -65,7 +68,11 @@ func (s *Server) askFirst(w http.ResponseWriter, r *http.Request, ask confirmati
 	// the handler it belongs to.
 	ask.Action = linkTo(r.URL.Path)
 	ask.Fields = heldFields(r)
-	s.render(w, r, "confirm.html", "Confirm", "restore", ask)
+	section := ask.Section
+	if section == "" {
+		section = "restore"
+	}
+	s.render(w, r, "confirm.html", "Confirm", section, ask)
 }
 
 // heldFields is the submitted request without the two fields the

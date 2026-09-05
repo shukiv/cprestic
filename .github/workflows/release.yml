@@ -55,7 +55,7 @@ jobs:
           openssl dgst -sha256 -sign "$key" -out bin/SHA256SUMS.sig bin/SHA256SUMS
           # Verify with the committed public key, so a mismatched secret
           # fails here rather than on somebody's server.
-          openssl dgst -sha256 -verify packaging/whm/cprest-release.pub \
+          openssl dgst -sha256 -verify internal/update/release.pub \
             -signature bin/SHA256SUMS.sig bin/SHA256SUMS
 
       # get.sh is published as an asset of its own so that the one-line
