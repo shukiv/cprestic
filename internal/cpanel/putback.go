@@ -230,11 +230,26 @@ func (r *Real) LoadDatabase(ctx context.Context, user, database, dumpPath string
 		return fmt.Errorf("cpanel: database dump %s is not a file", dumpPath)
 	}
 
-	// --one-database confines the load to the database named here: a
-	// statement that switched to another one would be ignored rather than
-	// run. The dumps this reads are single-database dumps that never
-	// switch, and this keeps that true whatever produced the file.
-	load := exec.CommandContext(ctx, r.mysql(), "--one-database", database)
+	// A dump is not a script of SQL and nothing else. The mysql client
+	// reads some lines itself rather than sending them to the server, and
+	// one of those is "\!", which runs a shell command -- here, as root,
+	// on the machine an account is being recovered onto. The archive this
+	// dump came out of is another server's backup, and this program's
+	// whole premise is that the other server may be the one that was
+	// compromised.
+	//
+	// --binary-mode turns the client's own commands off for input that is
+	// not being typed by a person: everything but charset and delimiter,
+	// and dumps need delimiter for triggers and routines. --local-infile=0
+	// refuses LOAD DATA LOCAL INFILE, which is the other line in a dump
+	// that reaches the local filesystem rather than the server.
+	//
+	// --one-database stays as it was: it confines the load to the database
+	// named here, so a statement that switched to another one is ignored
+	// rather than run. It is a filter on USE and never was a sandbox,
+	// which is why the two flags above are the ones doing the work.
+	load := exec.CommandContext(ctx, r.mysql(),
+		"--binary-mode", "--local-infile=0", "--one-database", database)
 	load.Stdin = dump
 	var stderr bytes.Buffer
 	load.Stderr = &stderr
