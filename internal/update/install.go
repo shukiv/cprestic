@@ -136,6 +136,16 @@ func (s Source) Fetch(ctx context.Context, version, dir string) (string, error) 
 		return "", fmt.Errorf(
 			"update: the checksums of %s are not signed by the cP:Restic release key", version)
 	}
+	// The signature says these checksums were published by whoever holds
+	// the release key. The version inside them says which release they
+	// were published for. Without that second check, anybody who can make
+	// a tag -- which is not the same as holding the key -- could publish
+	// last year's signed release again under this year's number, and this
+	// server would install it believing it had gone forward.
+	if signedFor := versionIn(sums); signedFor != version {
+		return "", fmt.Errorf(
+			"update: those checksums are signed for %s, not %s", describe(signedFor), version)
+	}
 	want, err := sumFor(sums, TarballName)
 	if err != nil {
 		return "", err
@@ -155,10 +165,37 @@ func (s Source) Fetch(ctx context.Context, version, dir string) (string, error) 
 
 // IsRelease says whether a version is a published release rather than a
 // build of somebody's own. Only these are ever fetched, so a version
-// number can never put anything of its own in a URL.
+// number can never put anything of its own in a URL, and nothing with
+// space around it is one: this is a whole answer on its own, not a check
+// that happens to be followed by another.
 func IsRelease(version string) bool {
 	_, ok := parse(version)
-	return ok && strings.HasPrefix(version, "v")
+	return ok && strings.HasPrefix(version, "v") && version == strings.TrimSpace(version)
+}
+
+// versionIn reads the release a set of checksums was published for, which
+// the build writes as its first line: "# cprest v1.2.3".
+func versionIn(sums []byte) string {
+	for _, line := range strings.Split(string(sums), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || fields[0] != "#" {
+			continue
+		}
+		if len(fields) == 3 && fields[1] == "cprest" {
+			return fields[2]
+		}
+	}
+	return ""
+}
+
+// describe names what a set of checksums says it is, for the one error
+// that has to distinguish "signed for another release" from "signed for
+// nothing in particular".
+func describe(version string) string {
+	if version == "" {
+		return "no particular release"
+	}
+	return version
 }
 
 // get reads one small file of a release into memory.

@@ -84,7 +84,18 @@ main() {
         openssl dgst -sha256 -verify "$work/release.pub" \
             -signature "$work/SHA256SUMS.sig" "$work/SHA256SUMS" >/dev/null 2>&1 \
             || die "the checksums are not signed by the cP:Restic release key; nothing was installed"
-        say "signature ok"
+
+        # Which release those checksums were published for. The build
+        # writes it into the file that gets signed, so a signature made
+        # for one release cannot be published again under another tag by
+        # somebody who can make a tag but does not hold the key.
+        signed_for=$(sed -n 's/^# cprest \(v[0-9.]*\)$/\1/p' "$work/SHA256SUMS" | head -1)
+        [ -n "$signed_for" ] \
+            || die "the published checksums do not say which release they are for; nothing was installed"
+        if [ -n "${CPREST_VERSION:-}" ] && [ "$signed_for" != "$CPREST_VERSION" ]; then
+            die "those checksums are signed for $signed_for, not $CPREST_VERSION; nothing was installed"
+        fi
+        say "signature ok, for $signed_for"
 
         # Only the line for the file actually downloaded: the rest of that
         # file names things this machine did not fetch.

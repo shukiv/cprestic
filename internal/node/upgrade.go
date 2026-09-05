@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/shuki/cprest/internal/agent"
@@ -39,6 +40,37 @@ echo $? > status
 // rather than in it: staging is swept.
 func (e *Engine) upgradeDir() string {
 	return filepath.Join(filepath.Dir(e.settings.StagingRoot), "upgrade")
+}
+
+// ownedByUsAlone checks that a directory this server is about to write a
+// root-run script into belongs to this user and to nobody else.
+//
+// Everything between downloading a release and running its installer is
+// done by path -- write the tarball, unpack it, write the wrapper, run the
+// wrapper -- so a directory anybody else may write to is a directory where
+// somebody else may swap what root ends up running in between two of those
+// steps. On an installed server this is /var/lib/cprest, made 0700 by root
+// at startup; the check is here because the cost of being wrong about that
+// is the whole machine.
+func ownedByUsAlone(dir string) error {
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", dir)
+	}
+	if mode := info.Mode(); mode&os.ModeSymlink != 0 || mode.Perm()&0o022 != 0 {
+		return fmt.Errorf("%s can be written to by somebody other than its owner", dir)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("cannot tell who owns %s", dir)
+	}
+	if int(stat.Uid) != os.Getuid() {
+		return fmt.Errorf("%s belongs to another user", dir)
+	}
+	return nil
 }
 
 // StartUpgrade installs a published release over this one.
@@ -133,6 +165,12 @@ func (e *Engine) runUpgrade(state nodestore.UpgradeState) error {
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
+	}
+	if err := ownedByUsAlone(filepath.Dir(e.upgradeDir())); err != nil {
+		return fmt.Errorf("nothing was installed: %w", err)
+	}
+	if err := ownedByUsAlone(e.upgradeDir()); err != nil {
+		return fmt.Errorf("nothing was installed: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)

@@ -43,7 +43,12 @@ plugin:
 	tar -C $(BIN) --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w' \
 		-czf $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz cprest-plugin
 	cp packaging/whm/get.sh $(BIN)/get.sh
-	cd $(BIN) && sha256sum cprest-plugin-$(PLUGIN_ARCH).tar.gz get.sh > SHA256SUMS
+	@# The version goes inside the file that is signed, so a signature made
+	@# for one release cannot be published again under another tag. sha256sum
+	@# ignores a line beginning with #, and so does everything that reads
+	@# this.
+	cd $(BIN) && { printf '# cprest %s\n' '$(VERSION)'; \
+		sha256sum cprest-plugin-$(PLUGIN_ARCH).tar.gz get.sh; } > SHA256SUMS
 	@echo
 	@echo "built $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz, $(BIN)/get.sh and $(BIN)/SHA256SUMS"
 	@echo "copy it to the cPanel server:"

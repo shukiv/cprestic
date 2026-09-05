@@ -27,12 +27,20 @@ type release struct {
 
 func newRelease(t *testing.T, tarball []byte) *release {
 	t.Helper()
+	return newReleaseFor(t, tarball, "v9.9.9")
+}
+
+// newReleaseFor publishes a release whose checksums say which release they
+// belong to, as the build writes them.
+func newReleaseFor(t *testing.T, tarball []byte, version string) *release {
+	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(tarball)
-	sums := []byte(hex.EncodeToString(sum[:]) + "  " + TarballName + "\nabc  get.sh\n")
+	sums := []byte("# cprest " + version + "\n" +
+		hex.EncodeToString(sum[:]) + "  " + TarballName + "\nabc  get.sh\n")
 	digest := sha256.Sum256(sums)
 	signature, err := ecdsa.SignASN1(rand.Reader, key, digest[:])
 	if err != nil {
@@ -141,13 +149,40 @@ func TestFetchRefusesWhatTheKeyDidNotSign(t *testing.T) {
 			r.files[SumsName] = append([]byte("# added after signing\n"), r.files[SumsName]...)
 		},
 		"no signature published": func(r *release) { delete(r.files, SigName) },
+		// Making a tag is not holding the key. Publishing an old release
+		// again under a new number is the one attack a signature alone
+		// does not stop.
+		"an older release published again under this number": func(r *release) {
+			old := newReleaseFor(t, plugin(t), "v0.0.1")
+			old.key = r.key
+			resigned := newReleaseFor(t, old.files[TarballName], "v0.0.1")
+			resigned.key = r.key
+			digest := sha256.Sum256(resigned.files[SumsName])
+			signature, err := ecdsa.SignASN1(rand.Reader, r.key, digest[:])
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.files[SumsName] = resigned.files[SumsName]
+			r.files[SigName] = signature
+			r.files[TarballName] = resigned.files[TarballName]
+		},
+		"checksums that say no release at all": func(r *release) {
+			sums := []byte(strings.SplitN(string(r.files[SumsName]), "\n", 2)[1])
+			digest := sha256.Sum256(sums)
+			signature, err := ecdsa.SignASN1(rand.Reader, r.key, digest[:])
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.files[SumsName], r.files[SigName] = sums, signature
+		},
 		"a tarball that is not the one signed for": func(r *release) {
 			r.files[TarballName] = plugin(t, &tar.Header{
 				Name: "cprest-plugin/extra", Mode: 0o644, Typeflag: tar.TypeReg,
 			})
 		},
 		"nothing about the tarball in the checksums": func(r *release) {
-			sums := []byte(strings.SplitN(string(r.files[SumsName]), "\n", 2)[1])
+			lines := strings.SplitN(string(r.files[SumsName]), "\n", 3)
+			sums := []byte(lines[0] + "\n" + lines[2])
 			digest := sha256.Sum256(sums)
 			signature, err := ecdsa.SignASN1(rand.Reader, r.key, digest[:])
 			if err != nil {
@@ -178,7 +213,9 @@ func TestFetchRefusesWhatTheKeyDidNotSign(t *testing.T) {
 func TestFetchOnlyTakesReleaseVersions(t *testing.T) {
 	published := newRelease(t, plugin(t))
 	source := published.serve(t)
-	for _, version := range []string{"", "dev", "v0.1", "v0.1.0-3-gabc1234-dirty", "../../etc", "v1.0.0/x"} {
+	for _, version := range []string{
+		"", "dev", "v0.1", "v0.1.0-3-gabc1234-dirty", "../../etc", "v1.0.0/x", "v9.9.9\n", " v9.9.9",
+	} {
 		if _, err := source.Fetch(context.Background(), version, t.TempDir()); err == nil {
 			t.Errorf("%q was fetched", version)
 		}
