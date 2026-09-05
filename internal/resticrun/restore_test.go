@@ -167,3 +167,36 @@ func TestRestoreRejectsFailureExitCode(t *testing.T) {
 		t.Fatal("a failed restore should be an error")
 	}
 }
+
+// A restore counts in different words from a backup: bytes_restored and
+// files_restored where a backup says bytes_done and files_done. Reading
+// one with the other's struct gives a bar that never moves.
+func TestRestoreProgressIsReadFromResticsOwnWords(t *testing.T) {
+	var seen []RestoreProgress
+	read := restoreProgressReader(func(p RestoreProgress) {
+		seen = append(seen, p)
+	})
+
+	for _, line := range []string{
+		`{"message_type":"status","seconds_elapsed":3,"percent_done":0.574,` +
+			`"total_files":120,"files_restored":69,"total_bytes":1000,"bytes_restored":574}`,
+		`{"message_type":"summary","total_bytes":1000,"bytes_restored":1000}`,
+		`not json at all`,
+	} {
+		read([]byte(line))
+	}
+
+	if len(seen) != 1 {
+		t.Fatalf("read %d status lines, want 1: %+v", len(seen), seen)
+	}
+	if seen[0].PercentDone != 0.574 {
+		t.Errorf("percent_done is %v, want 0.574", seen[0].PercentDone)
+	}
+	if seen[0].BytesRestored != 574 || seen[0].TotalBytes != 1000 {
+		t.Errorf("bytes are %d of %d, want 574 of 1000",
+			seen[0].BytesRestored, seen[0].TotalBytes)
+	}
+	if seen[0].FilesRestored != 69 {
+		t.Errorf("files_restored is %d, want 69", seen[0].FilesRestored)
+	}
+}

@@ -3884,12 +3884,13 @@ func (s *Server) handleRecoverAccounts(w http.ResponseWriter, r *http.Request) {
 	case len(queued) == 0:
 		s.redirect(w, r, back, "error", "Nothing was queued: "+strings.Join(refused, "; "))
 	case len(refused) == 0:
-		s.redirect(w, r, back, "ok", fmt.Sprintf("%s %d account(s), one after another: %s.",
-			verb, len(queued), strings.Join(queued, ", ")))
+		s.redirect(w, r, back, "ok", fmt.Sprintf("%s %s, one after another: %s.",
+			verb, counted(len(queued), "account"), strings.Join(queued, ", ")))
 	default:
 		s.redirect(w, r, back, "warn", fmt.Sprintf(
-			"%s %d account(s): %s. Not queued: %s.",
-			verb, len(queued), strings.Join(queued, ", "), strings.Join(refused, "; ")))
+			"%s %s: %s. Not queued: %s.",
+			verb, counted(len(queued), "account"), strings.Join(queued, ", "),
+			strings.Join(refused, "; ")))
 	}
 }
 

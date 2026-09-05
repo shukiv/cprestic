@@ -50,6 +50,24 @@ type Request struct {
 	WorkDir string
 	// Repo is the repository holding the snapshot.
 	Repo resticrun.Repository
+	// OnStage, when set, is told what the reassembly is doing as it moves
+	// from one part of the account to the next.
+	//
+	// A split snapshot is several restic runs, each counting from zero,
+	// so a percentage on its own would appear to go backwards twice. The
+	// stage is what makes it read as three parts rather than as a fault.
+	OnStage func(stage string)
+	// OnProgress, when set, is handed restic's own account of whichever
+	// part is being read now. It runs on the goroutine reading restic's
+	// output, so it must not block.
+	OnProgress func(resticrun.RestoreProgress)
+}
+
+// stage says what is happening now, for a caller that wants to show it.
+func (r Request) stage(name string) {
+	if r.OnStage != nil {
+		r.OnStage(name)
+	}
 }
 
 // Result is what a completed reassembly produced.
@@ -207,10 +225,12 @@ func restoreMonolithic(ctx context.Context, restorer Restorer, req Request,
 	snapshot resticrun.Snapshot, found Parts) (Result, error) {
 
 	dir := filepath.Join(req.WorkDir, "archive")
+	req.stage("reading the account archive")
 	restored, err := restorer.Restore(ctx, req.Repo, resticrun.RestoreSpec{
 		SnapshotID: snapshot.ID,
 		Subpath:    filepath.Dir(found.Archive),
 		Target:     dir,
+		OnProgress: req.OnProgress,
 	})
 	if err != nil {
 		return Result{}, fmt.Errorf("reassemble: restore archive: %w", err)
@@ -231,11 +251,13 @@ func restoreSplit(ctx context.Context, restorer Restorer, req Request,
 	snapshot resticrun.Snapshot, found Parts) (Result, error) {
 
 	var bytesRestored uint64
-	restore := func(subpath, target string) error {
+	restore := func(stage, subpath, target string) error {
+		req.stage(stage)
 		restored, err := restorer.Restore(ctx, req.Repo, resticrun.RestoreSpec{
 			SnapshotID: snapshot.ID,
 			Subpath:    subpath,
 			Target:     target,
+			OnProgress: req.OnProgress,
 		})
 		if err != nil {
 			return err
@@ -247,7 +269,7 @@ func restoreSplit(ctx context.Context, restorer Restorer, req Request,
 	// 1. The metadata part holds the pkgacct archive with everything except
 	//    the home directory and the databases.
 	metadataDir := filepath.Join(req.WorkDir, "metadata")
-	if err := restore(found.Metadata, metadataDir); err != nil {
+	if err := restore("reading the account settings", found.Metadata, metadataDir); err != nil {
 		return Result{}, fmt.Errorf("reassemble: restore metadata: %w", err)
 	}
 
@@ -256,6 +278,7 @@ func restoreSplit(ctx context.Context, restorer Restorer, req Request,
 		return Result{}, err
 	}
 	treeDir := filepath.Join(req.WorkDir, "tree")
+	req.stage("unpacking the account settings")
 	if err := extractTar(archive, treeDir); err != nil {
 		return Result{}, err
 	}
@@ -268,11 +291,11 @@ func restoreSplit(ctx context.Context, restorer Restorer, req Request,
 	}
 
 	// 3. Each remaining part is restored straight into its slot.
-	if err := restore(found.Homedir, filepath.Join(root, HomedirDir)); err != nil {
+	if err := restore("reading the home directory", found.Homedir, filepath.Join(root, HomedirDir)); err != nil {
 		return Result{}, fmt.Errorf("reassemble: restore home directory: %w", err)
 	}
 	if found.Databases != "" {
-		if err := restore(found.Databases, filepath.Join(root, DatabaseDir)); err != nil {
+		if err := restore("reading the databases", found.Databases, filepath.Join(root, DatabaseDir)); err != nil {
 			return Result{}, fmt.Errorf("reassemble: restore databases: %w", err)
 		}
 		if err := placeDatabaseUsers(root); err != nil {
@@ -282,6 +305,7 @@ func restoreSplit(ctx context.Context, restorer Restorer, req Request,
 
 	// 4. Repack, which is the form restorepkg accepts.
 	rebuilt := filepath.Join(req.WorkDir, filepath.Base(root)+".tar")
+	req.stage("building the account archive")
 	if err := createTar(treeDir, rebuilt); err != nil {
 		return Result{}, err
 	}

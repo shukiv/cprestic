@@ -403,6 +403,24 @@ func (s *Store) PutJobs(jobs []Job) ([]Job, error) {
 // job and the caller throttles it further, so this stays cheap. A job that
 // has already finished is left alone: a late status line must not reopen
 // a closed record.
+// SetRestoreProgress records how far a running restore has got.
+//
+// A restore that has finished keeps whatever it finished as: progress
+// arriving late must not reopen it, and a percentage beside a finished
+// restore would be read as one still running.
+func (s *Store) SetRestoreProgress(id string, progress RestoreProgress) error {
+	stored, err := s.Restore(id)
+	if err != nil {
+		return err
+	}
+	if stored.Status.Terminal() {
+		return nil
+	}
+	stored.Progress = &progress
+	_, err = s.PutRestore(stored)
+	return err
+}
+
 func (s *Store) SetJobProgress(id string, progress JobProgress) error {
 	stored, err := s.Job(id)
 	if err != nil {

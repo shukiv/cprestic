@@ -478,6 +478,14 @@
 }
 .cprest .cpr-runline + .cpr-runline { margin-top:var(--s1); }
 
+/* Work that has been asked for and has not started. An account runs one
+   job at a time, so this is where a restore spends its first moments. It
+   does not spin, because nothing is turning yet. */
+.cprest .cpr-wait {
+  width:9px; height:9px; flex:none; border-radius:50%;
+  border:1.5px solid currentColor; opacity:.45;
+}
+
 /* Named for what it is, not what it looks like: .cpr-bar is already the
    app bar at the top of every page. */
 .cprest .cpr-progress {
@@ -485,6 +493,11 @@
   background:var(--line); border-radius:99px; overflow:hidden;
 }
 .cprest .cpr-progress i { display:block; height:100%; background:var(--accent); transition:width .4s ease; }
+/* The same bar in the strip, indented under the line it belongs to and
+   given the width to be read across a room. */
+.cprest .cpr-progress.cpr-progress-wide {
+  width:360px; margin-left:calc(9px + var(--s2));
+}
 
 /* --- report modal ---------------------------------------------------- */
 /* restic's account of a run is long and only wanted occasionally, so it

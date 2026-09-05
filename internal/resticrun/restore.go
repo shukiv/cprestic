@@ -102,6 +102,10 @@ type RestoreSpec struct {
 	// Verify re-reads restored files and compares them against the
 	// snapshot. It costs a second pass over the data.
 	Verify bool
+	// OnProgress, when set, is called about once a second while restic
+	// works. It runs on the goroutine reading restic's output, so it must
+	// not block.
+	OnProgress func(RestoreProgress)
 }
 
 // RestoreResult is restic's summary of a completed restore.
@@ -111,6 +115,47 @@ type RestoreResult struct {
 	FilesRestored uint64 `json:"files_restored"`
 	TotalBytes    uint64 `json:"total_bytes"`
 	BytesRestored uint64 `json:"bytes_restored"`
+}
+
+// RestoreProgress is restic's account of a restore while it is running.
+//
+// It is a different shape from a backup's, and reading one with the
+// other's struct yields zeroes: restic counts a restore in bytes_restored
+// and files_restored where a backup counts bytes_done and files_done.
+type RestoreProgress struct {
+	PercentDone    float64 `json:"percent_done"`
+	TotalFiles     uint64  `json:"total_files"`
+	FilesRestored  uint64  `json:"files_restored"`
+	TotalBytes     uint64  `json:"total_bytes"`
+	BytesRestored  uint64  `json:"bytes_restored"`
+	SecondsElapsed float64 `json:"seconds_elapsed"`
+}
+
+// restoreProgressReader turns restic's status lines into RestoreProgress
+// calls. It returns nil when nobody is listening, so nothing is parsed for
+// a caller that does not want it.
+func restoreProgressReader(onProgress func(RestoreProgress)) func([]byte) {
+	if onProgress == nil {
+		return nil
+	}
+	return func(line []byte) {
+		if len(line) == 0 || line[0] != '{' {
+			return
+		}
+		var probe struct {
+			MessageType string `json:"message_type"`
+		}
+		if err := json.Unmarshal(line, &probe); err != nil || probe.MessageType != "status" {
+			return
+		}
+		var progress RestoreProgress
+		if err := json.Unmarshal(line, &progress); err != nil {
+			// A status line this program cannot read is not worth failing
+			// a restore over; the summary is what it is judged on.
+			return
+		}
+		onProgress(progress)
+	}
 }
 
 // RestoreArgs builds the argument list for "restic restore".
@@ -154,7 +199,7 @@ func (r *Runner) Restore(ctx context.Context, repo Repository, spec RestoreSpec)
 	if err != nil {
 		return RestoreResult{}, err
 	}
-	result, err := r.run(ctx, repo, args, secondary{}, nil)
+	result, err := r.run(ctx, repo, args, secondary{}, restoreProgressReader(spec.OnProgress))
 	if err != nil {
 		return RestoreResult{}, err
 	}

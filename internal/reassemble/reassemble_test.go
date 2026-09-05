@@ -369,3 +369,36 @@ func TestClassifyRecognisesASystemSnapshot(t *testing.T) {
 		t.Error("a snapshot mixing the server's settings with an account was accepted")
 	}
 }
+
+// A split snapshot is several restic runs, each counting from zero. The
+// stage is what makes a percentage that starts again read as the next part
+// of the account rather than as a fault.
+func TestReassemblyNamesEachStageItIsWorkingOn(t *testing.T) {
+	restorer, root := buildSplitSnapshot(t)
+	var stages []string
+
+	_, err := Run(context.Background(), restorer, Request{
+		Account: "customer1", SnapshotID: "40dc15203b1cf9aa",
+		WorkDir: filepath.Join(root, "work"),
+		OnStage: func(stage string) { stages = append(stages, stage) },
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, want := range []string{
+		"reading the account settings", "unpacking the account settings",
+		"reading the home directory", "building the account archive",
+	} {
+		found := false
+		for _, said := range stages {
+			if said == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("no stage said %q; got %v", want, stages)
+		}
+	}
+}

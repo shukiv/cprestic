@@ -158,6 +158,9 @@ func New(cfg Config) (*Engine, error) {
 	// it deserves to see it move. restic reports about once a second per
 	// repository; the engine writes far less often than that.
 	worker.OnProgress = engine.recordProgress
+	// And a restore, which is the longer of the two and until now said
+	// nothing at all while it ran.
+	worker.OnRestoreStage = engine.recordRestoreStage
 	if err := engine.RecoverFromRestart(); err != nil {
 		return nil, err
 	}
@@ -656,6 +659,47 @@ func (e *Engine) recordProgress(jobID, repositoryID string, progress resticrun.P
 	}
 }
 
+// recordRestoreStage stores what a running restore is doing, and how far
+// through it is where restic can say.
+//
+// It is called from the goroutine reading restic's output as well as from
+// the restore itself, so it keeps the work small and never fails the
+// restore: one that cannot write its progress is still one that is running.
+//
+// A change of stage is always written. Only the percentage inside a stage
+// is throttled, because a stage is the part an operator is waiting to see
+// change.
+func (e *Engine) recordRestoreStage(restoreID, stage string, progress *resticrun.RestoreProgress) {
+	record := nodestore.RestoreProgress{Stage: stage, At: time.Now().UTC()}
+	if progress != nil {
+		percent := progress.PercentDone * 100
+		if percent > 100 {
+			percent = 100
+		}
+		record.Percent, record.Known = percent, true
+		record.BytesRestored = progress.BytesRestored
+		record.TotalBytes = progress.TotalBytes
+
+		e.progressMu.Lock()
+		last, seen := e.lastProgress[restoreID]
+		now := time.Now()
+		if seen && last.stage == stage &&
+			percent-last.percent < progressFloor && now.Sub(last.at) < progressInterval {
+			e.progressMu.Unlock()
+			return
+		}
+		if e.lastProgress == nil {
+			e.lastProgress = map[string]progressMark{}
+		}
+		e.lastProgress[restoreID] = progressMark{percent: percent, at: now, stage: stage}
+		e.progressMu.Unlock()
+	}
+
+	if err := e.store.SetRestoreProgress(restoreID, record); err != nil {
+		e.log.Debug("record restore progress", "restore_id", restoreID, "error", err)
+	}
+}
+
 // forgetProgress drops what was remembered about a job that has finished,
 // so the map does not grow for the life of the process.
 func (e *Engine) forgetProgress(jobID string) {
@@ -668,6 +712,10 @@ func (e *Engine) forgetProgress(jobID string) {
 type progressMark struct {
 	percent float64
 	at      time.Time
+	// stage is set for a restore, which counts each part of an account
+	// from zero: the throttle must let a new stage through even when its
+	// percentage is lower than what the last one reached.
+	stage string
 }
 
 // RetainedOutput lists what finished restores have left in the work

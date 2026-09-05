@@ -3033,3 +3033,76 @@ func TestRecreatingADeletedAccountSaysSo(t *testing.T) {
 		}
 	}
 }
+
+// A restore is queued before it runs, because an account has one job in
+// flight at a time. The strip used to show nothing until it started, so
+// somebody who had just asked for one saw the same empty page they saw
+// before asking.
+func TestWorkThatIsWaitingIsShownAsWaiting(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	if _, err := engine.Store().PutRestore(nodestore.Restore{
+		Account: "customer1", RepositoryID: "vault", SnapshotID: "abcdef01",
+		Kind: protocol.RestoreAccount, Status: job.StatusPending, QueuedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/")
+	for _, want := range []string{
+		"Waiting to restore customer1", `data-running="1"`, `data-live="cpr-running"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the strip does not say %q", want)
+		}
+	}
+	// Nothing is turning yet, so nothing spins and no bar sits at zero.
+	if strings.Contains(page, `role="progressbar"`) {
+		t.Error("a restore that has not started is shown with a progress bar")
+	}
+}
+
+// A restore takes longer than a backup and until now said nothing at all
+// while it ran: no stage, no percentage, no bar.
+func TestARunningRestoreShowsItsStageAndABar(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	started := time.Now()
+	stored, err := engine.Store().PutRestore(nodestore.Restore{
+		Account: "customer1", RepositoryID: "vault", SnapshotID: "abcdef01",
+		Kind: protocol.RestoreAccount, Status: job.StatusRunning,
+		QueuedAt: started, StartedAt: &started,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Store().SetRestoreProgress(stored.ID, nodestore.RestoreProgress{
+		Stage: "reading the home directory", Percent: 57.4, Known: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/restore")
+	for _, want := range []string{
+		"Restoring customer1", "reading the home directory", "57%",
+		`role="progressbar"`, "width:57.4%",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the strip does not say %q", want)
+		}
+	}
+
+	// A stage restic cannot count says so rather than sitting at nothing.
+	if err := engine.Store().SetRestoreProgress(stored.ID, nodestore.RestoreProgress{
+		Stage: "handing the archive to cPanel's restore",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, uncounted := get(t, client, "/restore")
+	if !strings.Contains(uncounted, "handing the archive to cPanel&#39;s restore") {
+		t.Error("the strip does not name a stage restic cannot count")
+	}
+	if strings.Contains(uncounted, `role="progressbar"`) {
+		t.Error("a stage with nothing to count is shown with a bar")
+	}
+}

@@ -470,6 +470,10 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 	})
 
 	stored.Status = job.Status(report.Status)
+	// A finished restore carries no progress. A stage and a percentage
+	// beside it would read as one still running.
+	stored.Progress = nil
+	e.forgetProgress(stored.ID)
 	stored.BytesRestored = report.BytesRestored
 	stored.ArchivePath = report.ArchivePath
 	stored.RestoredTo = report.RestoredTo

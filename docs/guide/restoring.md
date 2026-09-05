@@ -134,6 +134,24 @@ server's own settings first**: an account restored onto a machine that has not
 been set up lands somewhere that cannot serve it. Then restore the accounts
 from the *Restore account(s)* tab.
 
+## Watching one run
+
+Every page carries a strip at the top saying what is happening now. A
+restore appears there the moment it is asked for — as **waiting**, because
+an account runs one job at a time — and then as it runs, naming the stage
+it is on: reading the account settings, unpacking them, reading the home
+directory, reading the databases, building the archive, handing that
+archive to cPanel's restore.
+
+A bar sits under the stages restic can count. It does not appear on the
+others, because a bar that cannot move is read as a restore that is stuck.
+The percentage belongs to the stage, not to the whole restore: a split
+backup is several reads, each counting from zero, and the stage beside the
+number is what says so.
+
+The page refreshes itself while anything is running and stops when nothing
+is. With scripting switched off, reloading shows the same thing.
+
 ## Where restores show up
 
 On the [Logs](logs.md) page, under **Restores**: what was asked for, what

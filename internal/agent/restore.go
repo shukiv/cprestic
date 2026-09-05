@@ -87,17 +87,21 @@ func (a *Agent) RunRestore(ctx context.Context, assignment protocol.RestoreAssig
 	restoreCtx, cancel := context.WithTimeout(ctx, a.TargetTimeout)
 	defer cancel()
 
+	// What the interface shows while this runs. One watch for the whole
+	// restore, so every stage of it is reported against the same record.
+	watch := a.watchRestore(assignment.JobID)
+
 	switch assignment.Kind {
 	case protocol.RestoreFiles:
-		return a.restoreFiles(restoreCtx, log, assignment, repo, dir, report)
+		return a.restoreFiles(restoreCtx, log, assignment, repo, dir, report, watch)
 	case protocol.RestoreItems:
 		// A granular restore keeps what it produced, the same way a
 		// rebuilt account archive does: it is there to be collected.
-		result, keep := a.restoreItems(restoreCtx, log, assignment, repo, dir, report)
+		result, keep := a.restoreItems(restoreCtx, log, assignment, repo, dir, report, watch)
 		retain = keep
 		return result
 	case protocol.RestoreAccount, "":
-		result, err := a.restoreAccount(restoreCtx, log, assignment, repo, dir)
+		result, err := a.restoreAccount(restoreCtx, log, assignment, repo, dir, watch)
 		if err != nil {
 			report.Error = err.Error()
 			return report
@@ -135,13 +139,15 @@ func (a *Agent) RunRestore(ctx context.Context, assignment protocol.RestoreAssig
 // cPanel.
 func (a *Agent) restoreAccount(ctx context.Context, log *slog.Logger,
 	assignment protocol.RestoreAssignment, repo resticrun.Repository,
-	dir *staging.Dir) (reassemble.Result, error) {
+	dir *staging.Dir, watch *restoreWatch) (reassemble.Result, error) {
 
 	result, err := reassemble.Run(ctx, a.runner, reassemble.Request{
 		Account:    assignment.CPanelUser,
 		SnapshotID: assignment.SnapshotID,
 		WorkDir:    dir.Path,
 		Repo:       repo,
+		OnStage:    watch.StageFunc(),
+		OnProgress: watch.ProgressFunc(),
 	})
 	if err != nil {
 		log.Error("rebuild account archive", "error", err)
@@ -169,6 +175,9 @@ func (a *Agent) restoreAccount(ctx context.Context, log *slog.Logger,
 	}
 	log.Warn("applying restore to the live account",
 		"archive", result.ArchivePath, "restricted", !options.Unrestricted)
+	// The longest stage restic cannot count: cPanel's own restore reports
+	// nothing until it is finished.
+	watch.Stage("handing the archive to cPanel's restore")
 	if err := a.provider.Apply(ctx, result.ArchivePath, options); err != nil {
 		log.Error("restorepkg", "error", err)
 		return reassemble.Result{}, err
@@ -205,7 +214,8 @@ func (a *Agent) confirmRestored(ctx context.Context, log *slog.Logger, user stri
 // had, and leaves them where the operator asked.
 func (a *Agent) restoreFiles(ctx context.Context, log *slog.Logger,
 	assignment protocol.RestoreAssignment, repo resticrun.Repository,
-	dir *staging.Dir, report protocol.RestoreReport) protocol.RestoreReport {
+	dir *staging.Dir, report protocol.RestoreReport,
+	watch *restoreWatch) protocol.RestoreReport {
 
 	if len(assignment.IncludePaths) == 0 {
 		report.Error = "agent: a files restore needs at least one path"
@@ -221,12 +231,14 @@ func (a *Agent) restoreFiles(ctx context.Context, log *slog.Logger,
 		return report
 	}
 
+	watch.Stage("reading the files out of the backup")
 	restored, err := a.runner.Restore(ctx, repo, resticrun.RestoreSpec{
 		SnapshotID: assignment.SnapshotID,
 		Target:     target,
 		// Include keeps the original directory structure, so the operator
 		// can see where each file came from.
-		Include: assignment.IncludePaths,
+		Include:    assignment.IncludePaths,
+		OnProgress: watch.ProgressFunc(),
 	})
 	if err != nil {
 		log.Error("restore files", "error", err)

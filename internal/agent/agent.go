@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shuki/cprest/internal/cpanel"
@@ -44,6 +45,13 @@ type Agent struct {
 	// the goroutine reading restic's output, roughly once a second per
 	// repository, so it must not block.
 	OnProgress func(jobID, repositoryID string, progress resticrun.Progress)
+	// OnRestoreStage, when set, is called as a restore moves through its
+	// stages. progress is nil for a stage restic cannot count -- unpacking
+	// an archive, handing one to cPanel, writing a database back -- so the
+	// interface shows the stage on its own rather than a bar that does not
+	// move. Called from the goroutine reading restic's output as well as
+	// from the restore itself, so it must not block.
+	OnRestoreStage func(restoreID, stage string, progress *resticrun.RestoreProgress)
 }
 
 // Config assembles an Agent.
@@ -315,6 +323,68 @@ func (a *Agent) progressFor(jobID, repositoryID string) func(resticrun.Progress)
 	return func(progress resticrun.Progress) {
 		a.OnProgress(jobID, repositoryID, progress)
 	}
+}
+
+// restoreWatch adapts the hook to what a restore reports, and keeps the
+// stage beside the percentage.
+//
+// restic counts each part of a split snapshot from zero, so a percentage
+// without the stage it belongs to reads as a bar that goes backwards. The
+// stage is set on the goroutine running the restore and read on the one
+// parsing restic's output, so it is held under a lock.
+type restoreWatch struct {
+	agent     *Agent
+	restoreID string
+	mu        sync.Mutex
+	stage     string
+}
+
+// watchRestore returns nil when nobody is listening, so restic's status
+// lines are not even parsed.
+func (a *Agent) watchRestore(restoreID string) *restoreWatch {
+	if a.OnRestoreStage == nil {
+		return nil
+	}
+	return &restoreWatch{agent: a, restoreID: restoreID}
+}
+
+// Stage records that the restore has moved on, and says so with no
+// percentage: whatever the last part reached does not describe this one.
+func (w *restoreWatch) Stage(stage string) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	w.stage = stage
+	w.mu.Unlock()
+	w.agent.OnRestoreStage(w.restoreID, stage, nil)
+}
+
+// Progress passes restic's own figure on, against the stage it belongs to.
+func (w *restoreWatch) Progress(progress resticrun.RestoreProgress) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	stage := w.stage
+	w.mu.Unlock()
+	w.agent.OnRestoreStage(w.restoreID, stage, &progress)
+}
+
+// StageFunc and ProgressFunc are the hooks in the shape reassemble takes,
+// and are nil when nobody is listening.
+func (w *restoreWatch) StageFunc() func(string) {
+	if w == nil {
+		return nil
+	}
+	return w.Stage
+}
+
+func (w *restoreWatch) ProgressFunc() func(resticrun.RestoreProgress) {
+	if w == nil {
+		return nil
+	}
+	return w.Progress
 }
 
 // Staging holds what pkgacct writes and what mysqldump writes. In split

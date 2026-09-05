@@ -33,7 +33,8 @@ import (
 // certificate, an FTP login -- and none of those is built yet.
 func (a *Agent) restoreItems(ctx context.Context, log *slog.Logger,
 	assignment protocol.RestoreAssignment, repo resticrun.Repository,
-	dir *staging.Dir, report protocol.RestoreReport) (protocol.RestoreReport, bool) {
+	dir *staging.Dir, report protocol.RestoreReport,
+	watch *restoreWatch) (protocol.RestoreReport, bool) {
 
 	snapshot, err := reassemble.FindSnapshot(ctx, a.runner, reassemble.Request{
 		Account:    assignment.CPanelUser,
@@ -57,10 +58,12 @@ func (a *Agent) restoreItems(ctx context.Context, log *slog.Logger,
 	}
 
 	raw := filepath.Join(dir.Path, "raw")
+	watch.Stage("reading " + plan.Description + " out of the backup")
 	restored, err := a.runner.Restore(ctx, repo, resticrun.RestoreSpec{
 		SnapshotID: snapshot.ID,
 		Target:     raw,
 		Include:    plan.Include,
+		OnProgress: watch.ProgressFunc(),
 	})
 	if err != nil {
 		log.Error("restore items", "error", err, "include", plan.Include)
@@ -137,6 +140,7 @@ func (a *Agent) restoreItems(ctx context.Context, log *slog.Logger,
 		if err := os.RemoveAll(raw); err != nil {
 			log.Warn("remove the raw restore tree", "error", err)
 		}
+		watch.Stage("putting " + plan.Description + " back into the account")
 		written, hint, err := a.applyItems(ctx, log, assignment, out)
 		if err != nil {
 			report.Error = err.Error()
@@ -155,6 +159,7 @@ func (a *Agent) restoreItems(ctx context.Context, log *slog.Logger,
 
 	archivePath := filepath.Join(dir.Path, fmt.Sprintf("items-%s-%s.tar",
 		assignment.CPanelUser, itemsLabel(assignment)))
+	watch.Stage("packing up " + plan.Description)
 	if err := reassemble.PackDir(out, archivePath); err != nil {
 		report.Error = err.Error()
 		return report, false

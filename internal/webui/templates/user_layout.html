@@ -47,7 +47,7 @@
     {{if .Running}}
     <div class="cpr-banner cpr-warn" role="status" data-running="1">
       <div class="cpr-body">
-        {{range .Running}}<div class="cpr-runline"><span class="cpr-spin"></span>{{.Label}}</div>{{end}}
+        {{template "runningnow" .Running}}
         <span class="cpr-hint" style="margin:var(--s1) 0 0; display:block">This page keeps itself up to date while it runs.</span>
       </div>
     </div>

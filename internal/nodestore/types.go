@@ -294,6 +294,27 @@ type Job struct {
 }
 
 // JobProgress is how far a running backup has got.
+// RestoreProgress is how far a running restore has got.
+//
+// A restore is several things in a row -- reading each part of the account
+// out of the repository, unpacking it, building the archive, handing that
+// to cPanel -- and restic can count only the reading. So the stage is what
+// this record is really for, and the percentage is what it can add when
+// there is one to add.
+type RestoreProgress struct {
+	// Stage is what is happening now, in words: "reading the home
+	// directory", "handing the archive to cPanel's restore".
+	Stage string `json:"stage"`
+	// Percent is 0-100 within the stage, and Known says whether there is
+	// one: a stage restic cannot count would otherwise read as stuck at
+	// nothing.
+	Percent       float64   `json:"percent"`
+	Known         bool      `json:"known"`
+	BytesRestored uint64    `json:"bytes_restored,omitempty"`
+	TotalBytes    uint64    `json:"total_bytes,omitempty"`
+	At            time.Time `json:"at"`
+}
+
 type JobProgress struct {
 	// Percent is 0-100, as restic reports it.
 	Percent    float64 `json:"percent"`
@@ -355,8 +376,12 @@ type Restore struct {
 	Apply         bool       `json:"apply"`
 	Status        job.Status `json:"status"`
 	BytesRestored uint64     `json:"bytes_restored"`
-	ArchivePath   string     `json:"archive_path,omitempty"`
-	RestoredTo    string     `json:"restored_to,omitempty"`
+	// Progress is how far a running restore has got. Nil until it starts
+	// and after it finishes: a percentage against a restore that is over
+	// says nothing.
+	Progress    *RestoreProgress `json:"progress,omitempty"`
+	ArchivePath string           `json:"archive_path,omitempty"`
+	RestoredTo  string           `json:"restored_to,omitempty"`
 	// Detail records what a rehearsal actually checked, so a passing
 	// drill says more than "success".
 	Detail string `json:"detail,omitempty"`

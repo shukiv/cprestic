@@ -61,6 +61,13 @@ handing back part of one would hand back a file that is not the one in the
 backup. The FTP list shows the login name and its directory and never the
 password hash beside them.
 
+## Watching one run
+
+The customer's page carries the same strip as the operator's, showing only
+their own account's work: waiting first, because an account runs one job at
+a time, then the stage it is on with a bar under the stages that can be
+counted. The page keeps itself up to date while anything is running.
+
 ## The recovery basket
 
 The parts of an account depend on each other. A database restored without the
