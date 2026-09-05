@@ -242,6 +242,13 @@ func (s Source) open(ctx context.Context, version, name string) (*http.Response,
 	if base == "" {
 		base = DefaultSource("").Base
 	}
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return nil, fmt.Errorf("update: %s is not an address releases can be read from: %w", base, err)
+	}
+	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return nil, fmt.Errorf("update: releases are read over http or https, not %q", parsed.Scheme)
+	}
 	address, err := url.JoinPath(base, version, name)
 	if err != nil {
 		return nil, err
@@ -252,11 +259,7 @@ func (s Source) open(ctx context.Context, version, name string) (*http.Response,
 	}
 	request.Header.Set("User-Agent", "cprest")
 
-	client := s.Client
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Minute}
-	}
-	response, err := client.Do(request)
+	response, err := s.client().Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -265,6 +268,41 @@ func (s Source) open(ctx context.Context, version, name string) (*http.Response,
 		return nil, fmt.Errorf("update: %s of %s: %s", name, version, response.Status)
 	}
 	return response, nil
+}
+
+// maxHops is how many redirects a release may be behind. GitHub answers a
+// release download with one, to wherever it keeps the file.
+const maxHops = 5
+
+// client is the client to fetch with, with this program's own rule about
+// where a redirect may lead.
+//
+// A release download is redirected -- GitHub sends the request on to the
+// storage that holds the file -- so redirects are followed. What is not
+// followed is a redirect off https onto a plain connection: nothing
+// unsigned can be installed either way, but a download that quietly
+// stopped being private or tamper-evident halfway is not a download to
+// keep going with. The hop count is capped so a server answering every
+// request with a redirect is an error rather than a loop.
+func (s Source) client() *http.Client {
+	client := &http.Client{Timeout: 10 * time.Minute}
+	if s.Client != nil {
+		// The caller's transport, this program's redirect rule: a client
+		// passed in for a test still travels the way a real one does.
+		copied := *s.Client
+		client = &copied
+	}
+	client.CheckRedirect = func(request *http.Request, via []*http.Request) error {
+		if len(via) >= maxHops {
+			return fmt.Errorf("update: %s is behind more than %d redirects", via[0].URL, maxHops)
+		}
+		if via[0].URL.Scheme == "https" && request.URL.Scheme != "https" {
+			return fmt.Errorf("update: %s redirected to %s, which is not https",
+				via[0].URL, request.URL.Scheme)
+		}
+		return nil
+	}
+	return client
 }
 
 // sumFor reads one entry out of a sha256sum file.

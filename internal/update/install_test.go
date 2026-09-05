@@ -296,3 +296,74 @@ func TestTheKeyIsTheSameEverywhere(t *testing.T) {
 		t.Errorf("the embedded release key does not parse: %v", err)
 	}
 }
+
+// TestFetchFollowsARedirectButNotOffHTTPS covers what a release download
+// actually does -- GitHub sends it on to the storage holding the file --
+// and where it stops.
+func TestFetchFollowsARedirectButNotOffHTTPS(t *testing.T) {
+	published := newRelease(t, plugin(t))
+	files := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, found := published.files[filepath.Base(req.URL.Path)]
+		if !found {
+			http.NotFound(w, req)
+			return
+		}
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(files.Close)
+
+	t.Run("one hop is followed", func(t *testing.T) {
+		front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			http.Redirect(w, req, files.URL+req.URL.Path, http.StatusFound)
+		}))
+		t.Cleanup(front.Close)
+
+		source := Source{Client: front.Client(), Base: front.URL, Key: &published.key.PublicKey}
+		if _, err := source.Fetch(context.Background(), "v9.9.9", t.TempDir()); err != nil {
+			t.Fatalf("Fetch through a redirect: %v", err)
+		}
+	})
+
+	t.Run("a plain address is not", func(t *testing.T) {
+		secure := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			http.Redirect(w, req, files.URL+req.URL.Path, http.StatusFound)
+		}))
+		t.Cleanup(secure.Close)
+
+		source := Source{Client: secure.Client(), Base: secure.URL, Key: &published.key.PublicKey}
+		_, err := source.Fetch(context.Background(), "v9.9.9", t.TempDir())
+		if err == nil {
+			t.Fatal("a download was followed off https onto a plain connection")
+		}
+		if !strings.Contains(err.Error(), "not https") {
+			t.Errorf("the reason is not the downgrade: %v", err)
+		}
+	})
+
+	t.Run("a server that only redirects", func(t *testing.T) {
+		var loop *httptest.Server
+		loop = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			http.Redirect(w, req, loop.URL+req.URL.Path, http.StatusFound)
+		}))
+		t.Cleanup(loop.Close)
+
+		source := Source{Client: loop.Client(), Base: loop.URL, Key: &published.key.PublicKey}
+		if _, err := source.Fetch(context.Background(), "v9.9.9", t.TempDir()); err == nil {
+			t.Fatal("a redirect loop was followed to the end")
+		}
+	})
+}
+
+// TestFetchReadsOnlyOverHTTP is the other end of the same rule: an
+// operator's own CPREST_RELEASE_BASE moves where a release is read from,
+// not how.
+func TestFetchReadsOnlyOverHTTP(t *testing.T) {
+	published := newRelease(t, plugin(t))
+	for _, base := range []string{"file:///tmp", "ftp://example.com/releases", "/tmp/releases"} {
+		source := Source{Base: base, Key: &published.key.PublicKey}
+		_, err := source.Fetch(context.Background(), "v9.9.9", t.TempDir())
+		if err == nil {
+			t.Errorf("%q was read from", base)
+		}
+	}
+}
