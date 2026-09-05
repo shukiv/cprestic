@@ -59,6 +59,31 @@ func (s *Service) Enrol(ctx context.Context, serverID string, req protocol.Enrol
 	return protocol.EnrolResponse{ServerID: serverID, PollInterval: s.PollInterval}, nil
 }
 
+// validClaimToken checks the shape of the token a report carries before
+// it reaches SQL, where a uuid cast on anything else is a database error
+// rather than a refusal. It says nothing about whether the token is the
+// right one for this attempt; only the store can answer that.
+func validClaimToken(token string) bool {
+	if len(token) != 36 {
+		return false
+	}
+	for i, char := range token {
+		switch i {
+		case 8, 13, 18, 23:
+			if char != '-' {
+				return false
+			}
+		default:
+			hex := char >= '0' && char <= '9' ||
+				char >= 'a' && char <= 'f' || char >= 'A' && char <= 'F'
+			if !hex {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // NextWork leases whatever this server should do next.
 //
 // Restores are offered before backups: someone is usually waiting for a
@@ -94,6 +119,7 @@ func (s *Service) NextRestore(ctx context.Context, serverID string) (protocol.Re
 
 	return protocol.RestoreAssignment{
 		JobID:        claimed.JobID,
+		ClaimToken:   claimed.ClaimToken,
 		AccountID:    claimed.Account.ID,
 		CPanelUser:   claimed.Account.CPanelUser,
 		SnapshotID:   claimed.SnapshotID,
@@ -114,6 +140,9 @@ func (s *Service) ReportRestore(ctx context.Context, serverID string, report pro
 	if report.JobID == "" {
 		return errors.New("controller: restore report is missing a job id")
 	}
+	if !validClaimToken(report.ClaimToken) {
+		return errors.New("controller: restore report is missing the claim token it was assigned")
+	}
 	status := job.Status(report.Status)
 	switch status {
 	case job.StatusSuccess, job.StatusFailed:
@@ -121,7 +150,7 @@ func (s *Service) ReportRestore(ctx context.Context, serverID string, report pro
 		return fmt.Errorf("controller: restore report has invalid status %q", report.Status)
 	}
 
-	if err := s.store.ApplyRestoreReport(ctx, serverID, report.JobID, store.RestoreOutcome{
+	if err := s.store.ApplyRestoreReport(ctx, serverID, report.JobID, report.ClaimToken, store.RestoreOutcome{
 		Status:        status,
 		BytesRestored: report.BytesRestored,
 		ArchivePath:   report.ArchivePath,
@@ -151,6 +180,7 @@ func (s *Service) NextJob(ctx context.Context, serverID string) (protocol.JobAss
 
 	assignment := protocol.JobAssignment{
 		JobID:          claimed.JobID,
+		ClaimToken:     claimed.ClaimToken,
 		AccountID:      claimed.Account.ID,
 		CPanelUser:     claimed.Account.CPanelUser,
 		SizeEstimate:   uint64(claimed.Account.SizeEstimate),
@@ -201,6 +231,9 @@ func (s *Service) Report(ctx context.Context, serverID string, report protocol.J
 	if report.JobID == "" {
 		return "", errors.New("controller: report is missing a job id")
 	}
+	if !validClaimToken(report.ClaimToken) {
+		return "", errors.New("controller: report is missing the claim token it was assigned")
+	}
 
 	targets := make([]store.TargetReport, 0, len(report.Targets))
 	for _, target := range report.Targets {
@@ -223,7 +256,7 @@ func (s *Service) Report(ctx context.Context, serverID string, report protocol.J
 		})
 	}
 
-	status, err := s.store.ApplyReport(ctx, serverID, report.JobID, targets, report.StagingError)
+	status, err := s.store.ApplyReport(ctx, serverID, report.JobID, report.ClaimToken, targets, report.StagingError)
 	if err != nil {
 		return "", err
 	}

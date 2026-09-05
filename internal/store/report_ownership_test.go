@@ -28,11 +28,14 @@ func TestOneServerCannotReportOnAnothersWork(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateJob: %v", err)
 		}
-		if _, err := f.db.ClaimNextJob(ctx, f.serverID, time.Minute); err != nil {
+		claimed, err := f.db.ClaimNextJob(ctx, f.serverID, time.Minute)
+		if err != nil {
 			t.Fatalf("ClaimNextJob: %v", err)
 		}
 
-		if _, err := f.db.ApplyReport(ctx, intruder, jobID, nil,
+		// The intruder even knows the claim token, which is the strongest
+		// version of this: what refuses it is whose server it is.
+		if _, err := f.db.ApplyReport(ctx, intruder, jobID, claimed.ClaimToken, nil,
 			"staging: need 8192 bytes free, have 512"); err == nil {
 			t.Error("another server failed this server's backup")
 		}
@@ -45,10 +48,11 @@ func TestOneServerCannotReportOnAnothersWork(t *testing.T) {
 		}
 
 		// The server that has it can still finish it.
-		if _, err := f.db.ApplyReport(ctx, f.serverID, jobID, []store.TargetReport{
-			{RepositoryID: f.repoA.ID, Status: job.TargetSuccess, SnapshotID: "40dc1520"},
-			{RepositoryID: f.repoB.ID, Status: job.TargetSuccess, SnapshotID: "40dc1521"},
-		}, ""); err != nil {
+		if _, err := f.db.ApplyReport(ctx, f.serverID, jobID, claimed.ClaimToken,
+			[]store.TargetReport{
+				{RepositoryID: f.repoA.ID, Status: job.TargetSuccess, SnapshotID: "40dc1520"},
+				{RepositoryID: f.repoB.ID, Status: job.TargetSuccess, SnapshotID: "40dc1521"},
+			}, ""); err != nil {
 			t.Fatalf("the owning server could not report: %v", err)
 		}
 	})
@@ -62,16 +66,21 @@ func TestOneServerCannotReportOnAnothersWork(t *testing.T) {
 		}
 
 		// Not even claimed yet: reporting it successful would take it off
-		// the queue, and nobody would ever perform it.
-		if err := f.db.ApplyRestoreReport(ctx, intruder, jobID, store.RestoreOutcome{
-			Status: job.StatusSuccess, BytesRestored: 4096,
-		}); err == nil {
+		// the queue, and nobody would ever perform it. There is no token
+		// to present because nothing has been leased, which is itself the
+		// refusal.
+		const unclaimedToken = "0f1e2d3c-4b5a-4968-8776-655443332211"
+		if err := f.db.ApplyRestoreReport(ctx, intruder, jobID, unclaimedToken,
+			store.RestoreOutcome{
+				Status: job.StatusSuccess, BytesRestored: 4096,
+			}); err == nil {
 			t.Error("another server reported an unclaimed restore as done")
 		}
-		if _, err := f.db.ClaimNextRestore(ctx, f.serverID, time.Minute); err != nil {
+		claimed, err := f.db.ClaimNextRestore(ctx, f.serverID, time.Minute)
+		if err != nil {
 			t.Fatalf("the restore was taken off the queue: %v", err)
 		}
-		if err := f.db.ApplyRestoreReport(ctx, intruder, jobID, store.RestoreOutcome{
+		if err := f.db.ApplyRestoreReport(ctx, intruder, jobID, claimed.ClaimToken, store.RestoreOutcome{
 			Status: job.StatusSuccess, BytesRestored: 4096,
 		}); err == nil {
 			t.Error("another server finished this server's restore")
@@ -83,7 +92,7 @@ func TestOneServerCannotReportOnAnothersWork(t *testing.T) {
 		if stored.Status != job.StatusRunning {
 			t.Errorf("the restore is %q, want it still running", stored.Status)
 		}
-		if err := f.db.ApplyRestoreReport(ctx, f.serverID, jobID, store.RestoreOutcome{
+		if err := f.db.ApplyRestoreReport(ctx, f.serverID, jobID, claimed.ClaimToken, store.RestoreOutcome{
 			Status: job.StatusSuccess, BytesRestored: 4096,
 		}); err != nil {
 			t.Fatalf("the owning server could not report: %v", err)

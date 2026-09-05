@@ -230,7 +230,12 @@ func (a *Agent) execute(ctx context.Context, assignment protocol.Assignment) {
 // failure to reach one repository fails only that target, because the
 // copies that did land are still good.
 func (a *Agent) RunJob(ctx context.Context, assignment protocol.JobAssignment) protocol.JobReport {
-	report := protocol.JobReport{JobID: assignment.JobID}
+	// The token says which attempt this is. The controller refuses a
+	// report that does not carry the token of the attempt it is running,
+	// so a job whose lease was reclaimed cannot close out its successor.
+	report := protocol.JobReport{
+		JobID: assignment.JobID, ClaimToken: assignment.ClaimToken,
+	}
 	log := a.log.With("job_id", assignment.JobID, "account", assignment.CPanelUser)
 
 	system := assignment.CPanelUser == cpanel.SystemAccount

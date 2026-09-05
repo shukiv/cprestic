@@ -93,7 +93,8 @@ func (s *Store) ClaimNextJob(ctx context.Context, serverID string, lease time.Du
 			UPDATE backup_jobs SET
 			    status = 'running',
 			    started_at = coalesce(started_at, now()),
-			    lease_expires_at = now() + $2::interval
+			    lease_expires_at = now() + $2::interval,
+			    claim_token = gen_random_uuid()
 			 WHERE id = (
 			     SELECT bj.id
 			       FROM backup_jobs bj
@@ -111,11 +112,13 @@ func (s *Store) ClaimNextJob(ctx context.Context, serverID string, lease time.Du
 			      ORDER BY bj.created_at
 			      FOR UPDATE OF bj SKIP LOCKED
 			      LIMIT 1)
-			 RETURNING id::text, lease_expires_at, account_id::text, policy_id::text`,
+			 RETURNING id::text, claim_token::text, lease_expires_at,
+			           account_id::text, policy_id::text`,
 			serverID, lease.String())
 
 		var accountID, policyID string
-		err := row.Scan(&claimed.JobID, &claimed.LeaseExpiresAt, &accountID, &policyID)
+		err := row.Scan(&claimed.JobID, &claimed.ClaimToken, &claimed.LeaseExpiresAt,
+			&accountID, &policyID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNoWork
 		}
@@ -218,7 +221,7 @@ type TargetReport struct {
 // The rollup is computed here from the stored rows rather than taken from
 // the agent: a compromised or buggy agent must not be able to declare a
 // job successful.
-func (s *Store) ApplyReport(ctx context.Context, serverID, jobID string, reports []TargetReport, stagingError string) (job.Status, error) {
+func (s *Store) ApplyReport(ctx context.Context, serverID, jobID, claimToken string, reports []TargetReport, stagingError string) (job.Status, error) {
 	var status job.Status
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		// Whose job this is, and whether that server is running it now.
@@ -226,7 +229,7 @@ func (s *Store) ApplyReport(ctx context.Context, serverID, jobID string, reports
 		// the job id was the only thing that decided whose results these
 		// were, and a job id is not a secret one server keeps from
 		// another.
-		if err := jobIsRunningOn(ctx, tx, serverID, jobID); err != nil {
+		if err := jobIsRunningOn(ctx, tx, serverID, jobID, claimToken); err != nil {
 			return err
 		}
 		for _, report := range reports {
@@ -271,6 +274,7 @@ func (s *Store) ApplyReport(ctx context.Context, serverID, jobID string, reports
 			UPDATE backup_jobs SET
 			    status = $2::job_status,
 			    lease_expires_at = NULL,
+			    claim_token = NULL,
 			    finished_at = CASE WHEN $3 THEN now() ELSE finished_at END
 			 WHERE id = $1`, jobID, string(status), status.Terminal()); err != nil {
 			return fmt.Errorf("store: update job status: %w", err)
@@ -285,15 +289,18 @@ func (s *Store) ApplyReport(ctx context.Context, serverID, jobID string, reports
 //
 // A job that has been reclaimed, finished, or never claimed is not one
 // this server is entitled to report on: an outcome for it would be a
-// result nobody produced.
-func jobIsRunningOn(ctx context.Context, tx pgx.Tx, serverID, jobID string) error {
+// result nobody produced. The claim token narrows that to the attempt
+// that is running: the same server can hold two attempts at one job over
+// time, and the earlier one's result is not the current one's.
+func jobIsRunningOn(ctx context.Context, tx pgx.Tx, serverID, jobID, claimToken string) error {
 	var found string
 	err := tx.QueryRow(ctx, `
 		SELECT bj.id::text
 		  FROM backup_jobs bj
 		  JOIN accounts a ON a.id = bj.account_id
 		 WHERE bj.id = $1 AND a.server_id = $2 AND bj.status = 'running'
-		 FOR UPDATE OF bj`, jobID, serverID).Scan(&found)
+		   AND bj.claim_token = $3::uuid
+		 FOR UPDATE OF bj`, jobID, serverID, claimToken).Scan(&found)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -331,7 +338,7 @@ func targetStatuses(ctx context.Context, tx pgx.Tx, jobID string) ([]job.TargetR
 func (s *Store) ReclaimExpiredLeases(ctx context.Context) (int, error) {
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE backup_jobs
-		   SET status = 'pending', lease_expires_at = NULL
+		   SET status = 'pending', lease_expires_at = NULL, claim_token = NULL
 		 WHERE status = 'running'
 		   AND lease_expires_at IS NOT NULL
 		   AND lease_expires_at < now()`)

@@ -61,7 +61,11 @@ type RestoreSelection struct {
 
 // RestoreAssignment is one account, or part of one, to bring back.
 type RestoreAssignment struct {
-	JobID      string `json:"job_id"`
+	JobID string `json:"job_id"`
+	// ClaimToken identifies this lease attempt. It comes back in the
+	// report, which is how the controller tells this attempt's result
+	// from that of an attempt whose lease it has already reclaimed.
+	ClaimToken string `json:"claim_token"`
 	AccountID  string `json:"account_id"`
 	CPanelUser string `json:"cpanel_user"`
 
@@ -112,7 +116,9 @@ func (a RestoreAssignment) Selections() []RestoreSelection {
 
 // RestoreReport closes out a restore.
 type RestoreReport struct {
-	JobID         string  `json:"job_id"`
+	JobID string `json:"job_id"`
+	// ClaimToken is the token from the assignment this report answers.
+	ClaimToken    string  `json:"claim_token"`
 	Status        string  `json:"status"`
 	BytesRestored uint64  `json:"bytes_restored"`
 	DurationSecs  float64 `json:"duration_seconds"`
@@ -155,8 +161,10 @@ type EnrolResponse struct {
 // It is generated per job and carries resolved secrets, so it is never
 // logged and never written to the agent's disk.
 type JobAssignment struct {
-	JobID     string `json:"job_id"`
-	AccountID string `json:"account_id"`
+	JobID string `json:"job_id"`
+	// ClaimToken identifies this lease attempt; see RestoreAssignment.
+	ClaimToken string `json:"claim_token"`
+	AccountID  string `json:"account_id"`
 
 	CPanelUser string   `json:"cpanel_user"`
 	HomeDir    string   `json:"home_dir"`
@@ -215,8 +223,10 @@ type TargetReport struct {
 // JobReport closes out a job. The controller derives the job's status from
 // the target reports rather than trusting an agent-supplied rollup.
 type JobReport struct {
-	JobID   string         `json:"job_id"`
-	Targets []TargetReport `json:"targets"`
+	JobID string `json:"job_id"`
+	// ClaimToken is the token from the assignment this report answers.
+	ClaimToken string         `json:"claim_token"`
+	Targets    []TargetReport `json:"targets"`
 	// StagingError describes a failure before any target was attempted,
 	// such as insufficient disk for pkgacct.
 	StagingError string `json:"staging_error,omitempty"`

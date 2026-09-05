@@ -29,7 +29,10 @@ type RestoreRequest struct {
 
 // ClaimedRestore is a restore leased to an agent.
 type ClaimedRestore struct {
-	JobID          string
+	JobID string
+	// ClaimToken identifies this attempt, and has to come back with the
+	// report; see migrations/0006_claim_tokens.sql.
+	ClaimToken     string
 	LeaseExpiresAt time.Time
 	Account        Account
 	SnapshotID     string
@@ -107,7 +110,8 @@ func (s *Store) ClaimNextRestore(ctx context.Context, serverID string, lease tim
 			    status = 'running',
 			    started_at = coalesce(started_at, now()),
 			    lease_expires_at = now() + $2::interval,
-			    attempt = attempt + 1
+			    attempt = attempt + 1,
+			    claim_token = gen_random_uuid()
 			 WHERE id = (
 			     SELECT rj.id
 			       FROM restore_jobs rj
@@ -122,12 +126,14 @@ func (s *Store) ClaimNextRestore(ctx context.Context, serverID string, lease tim
 			      ORDER BY rj.created_at
 			      FOR UPDATE OF rj SKIP LOCKED
 			      LIMIT 1)
-			 RETURNING id::text, lease_expires_at, account_id::text, repository_id::text,
-			           snapshot_id, kind::text, include_paths, coalesce(target_dir, ''), apply`,
+			 RETURNING id::text, claim_token::text, lease_expires_at, account_id::text,
+			           repository_id::text, snapshot_id, kind::text, include_paths,
+			           coalesce(target_dir, ''), apply`,
 			serverID, lease.String())
 
 		var repositoryID string
-		err := row.Scan(&claimed.JobID, &claimed.LeaseExpiresAt, &claimed.Account.ID,
+		err := row.Scan(&claimed.JobID, &claimed.ClaimToken, &claimed.LeaseExpiresAt,
+			&claimed.Account.ID,
 			&repositoryID, &claimed.SnapshotID, &claimed.Kind,
 			&claimed.IncludePaths, &claimed.TargetDir, &claimed.Apply)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -177,12 +183,16 @@ type RestoreOutcome struct {
 }
 
 // ApplyRestoreReport records a restore's result.
-func (s *Store) ApplyRestoreReport(ctx context.Context, serverID, jobID string, outcome RestoreOutcome) error {
+func (s *Store) ApplyRestoreReport(ctx context.Context, serverID, jobID, claimToken string, outcome RestoreOutcome) error {
 	// Only the server the restore belongs to, and only while it is the
 	// one running it. Otherwise any agent that could name a job id could
 	// mark another server's restore successful -- and a restore reported
 	// successful is a restore that stops being queued, so it would never
 	// be done by the server that was supposed to do it.
+	//
+	// And only the attempt that holds the lease now: an abandoned attempt
+	// reporting late would otherwise close a restore that a second agent
+	// is still writing into the live account.
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE restore_jobs SET
 		    status = $2::job_status,
@@ -190,11 +200,13 @@ func (s *Store) ApplyRestoreReport(ctx context.Context, serverID, jobID string, 
 		    archive_path = nullif($4, ''),
 		    error = nullif($5, ''),
 		    lease_expires_at = NULL,
+		    claim_token = NULL,
 		    finished_at = now()
 		 WHERE id = $1 AND status = 'running'
-		   AND account_id IN (SELECT id FROM accounts WHERE server_id = $6)`,
+		   AND account_id IN (SELECT id FROM accounts WHERE server_id = $6)
+		   AND claim_token = $7::uuid`,
 		jobID, string(outcome.Status), int64(outcome.BytesRestored),
-		outcome.ArchivePath, outcome.Error, serverID)
+		outcome.ArchivePath, outcome.Error, serverID, claimToken)
 	if err != nil {
 		return fmt.Errorf("store: record restore result: %w", err)
 	}
@@ -208,7 +220,7 @@ func (s *Store) ApplyRestoreReport(ctx context.Context, serverID, jobID string, 
 func (s *Store) ReclaimExpiredRestoreLeases(ctx context.Context) (int, error) {
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE restore_jobs
-		   SET status = 'pending', lease_expires_at = NULL
+		   SET status = 'pending', lease_expires_at = NULL, claim_token = NULL
 		 WHERE status = 'running'
 		   AND lease_expires_at IS NOT NULL
 		   AND lease_expires_at < now()`)

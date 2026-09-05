@@ -192,11 +192,12 @@ func TestJobLifecycle(t *testing.T) {
 	}
 
 	// One destination is unreachable; the other holds a good copy.
-	status, err := f.db.ApplyReport(ctx, f.serverID, jobID, []store.TargetReport{
-		{RepositoryID: f.repoA.ID, Status: job.TargetSuccess,
-			SnapshotID: "40dc1520", BytesAdded: 1024, BytesProcessed: 4096, DurationSecs: 1.5},
-		{RepositoryID: f.repoB.ID, Status: job.TargetFailed, Error: "connection timeout"},
-	}, "")
+	status, err := f.db.ApplyReport(ctx, f.serverID, jobID, claimed.ClaimToken,
+		[]store.TargetReport{
+			{RepositoryID: f.repoA.ID, Status: job.TargetSuccess,
+				SnapshotID: "40dc1520", BytesAdded: 1024, BytesProcessed: 4096, DurationSecs: 1.5},
+			{RepositoryID: f.repoB.ID, Status: job.TargetFailed, Error: "connection timeout"},
+		}, "")
 	if err != nil {
 		t.Fatalf("ApplyReport: %v", err)
 	}
@@ -241,13 +242,15 @@ func TestClaimRetriesOnlyFailedTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateJob: %v", err)
 	}
-	if _, err := f.db.ClaimNextJob(ctx, f.serverID, time.Millisecond); err != nil {
+	first, err := f.db.ClaimNextJob(ctx, f.serverID, time.Millisecond)
+	if err != nil {
 		t.Fatalf("ClaimNextJob: %v", err)
 	}
-	if _, err := f.db.ApplyReport(ctx, f.serverID, jobID, []store.TargetReport{
-		{RepositoryID: f.repoA.ID, Status: job.TargetSuccess, SnapshotID: "aaa"},
-		{RepositoryID: f.repoB.ID, Status: job.TargetFailed, Error: "timeout"},
-	}, ""); err != nil {
+	if _, err := f.db.ApplyReport(ctx, f.serverID, jobID, first.ClaimToken,
+		[]store.TargetReport{
+			{RepositoryID: f.repoA.ID, Status: job.TargetSuccess, SnapshotID: "aaa"},
+			{RepositoryID: f.repoB.ID, Status: job.TargetFailed, Error: "timeout"},
+		}, ""); err != nil {
 		t.Fatalf("ApplyReport: %v", err)
 	}
 
@@ -281,11 +284,13 @@ func TestStagingErrorFailsEveryTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateJob: %v", err)
 	}
-	if _, err := f.db.ClaimNextJob(ctx, f.serverID, time.Minute); err != nil {
+	claimed, err := f.db.ClaimNextJob(ctx, f.serverID, time.Minute)
+	if err != nil {
 		t.Fatalf("ClaimNextJob: %v", err)
 	}
 
-	status, err := f.db.ApplyReport(ctx, f.serverID, jobID, nil, "staging: need 8192 bytes free, have 512")
+	status, err := f.db.ApplyReport(ctx, f.serverID, jobID, claimed.ClaimToken, nil,
+		"staging: need 8192 bytes free, have 512")
 	if err != nil {
 		t.Fatalf("ApplyReport: %v", err)
 	}
@@ -422,10 +427,11 @@ func TestOnlyOneRunningJobPerAccount(t *testing.T) {
 	}
 
 	// Once the first finishes, the second policy's job runs.
-	if _, err := f.db.ApplyReport(ctx, f.serverID, first.JobID, []store.TargetReport{
-		{RepositoryID: f.repoA.ID, Status: job.TargetSuccess, SnapshotID: "aaa"},
-		{RepositoryID: f.repoB.ID, Status: job.TargetSuccess, SnapshotID: "bbb"},
-	}, ""); err != nil {
+	if _, err := f.db.ApplyReport(ctx, f.serverID, first.JobID, first.ClaimToken,
+		[]store.TargetReport{
+			{RepositoryID: f.repoA.ID, Status: job.TargetSuccess, SnapshotID: "aaa"},
+			{RepositoryID: f.repoB.ID, Status: job.TargetSuccess, SnapshotID: "bbb"},
+		}, ""); err != nil {
 		t.Fatalf("ApplyReport: %v", err)
 	}
 	if _, err := f.db.ClaimNextJob(ctx, f.serverID, time.Minute); err != nil {
@@ -476,10 +482,11 @@ func TestRestoreLifecycle(t *testing.T) {
 		t.Errorf("second claim gave %v, want ErrNoWork", err)
 	}
 
-	if err := f.db.ApplyRestoreReport(ctx, f.serverID, jobID, store.RestoreOutcome{
-		Status: job.StatusSuccess, BytesRestored: 4096,
-		ArchivePath: "/var/lib/cprest/staging/stage-restore-customer1/cpmove-customer1.tar",
-	}); err != nil {
+	if err := f.db.ApplyRestoreReport(ctx, f.serverID, jobID, claimed.ClaimToken,
+		store.RestoreOutcome{
+			Status: job.StatusSuccess, BytesRestored: 4096,
+			ArchivePath: "/var/lib/cprest/staging/stage-restore-customer1/cpmove-customer1.tar",
+		}); err != nil {
 		t.Fatalf("ApplyRestoreReport: %v", err)
 	}
 	restore, err := f.db.RestoreByID(ctx, jobID)
@@ -505,7 +512,8 @@ func TestRestoreWaitsForARunningBackup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateJob: %v", err)
 	}
-	if _, err := f.db.ClaimNextJob(ctx, f.serverID, time.Minute); err != nil {
+	claimed, err := f.db.ClaimNextJob(ctx, f.serverID, time.Minute)
+	if err != nil {
 		t.Fatalf("ClaimNextJob: %v", err)
 	}
 	if _, err := f.db.CreateRestore(ctx, store.RestoreRequest{
@@ -520,10 +528,11 @@ func TestRestoreWaitsForARunningBackup(t *testing.T) {
 		t.Fatalf("restore claim during a backup gave %v, want ErrNoWork", err)
 	}
 
-	if _, err := f.db.ApplyReport(ctx, f.serverID, backupID, []store.TargetReport{
-		{RepositoryID: f.repoA.ID, Status: job.TargetSuccess, SnapshotID: "aaa"},
-		{RepositoryID: f.repoB.ID, Status: job.TargetSuccess, SnapshotID: "bbb"},
-	}, ""); err != nil {
+	if _, err := f.db.ApplyReport(ctx, f.serverID, backupID, claimed.ClaimToken,
+		[]store.TargetReport{
+			{RepositoryID: f.repoA.ID, Status: job.TargetSuccess, SnapshotID: "aaa"},
+			{RepositoryID: f.repoB.ID, Status: job.TargetSuccess, SnapshotID: "bbb"},
+		}, ""); err != nil {
 		t.Fatalf("ApplyReport: %v", err)
 	}
 	if _, err := f.db.ClaimNextRestore(ctx, f.serverID, time.Minute); err != nil {

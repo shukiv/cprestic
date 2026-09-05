@@ -25,8 +25,11 @@ import (
 // account is not.
 func (a *Agent) RunRestore(ctx context.Context, assignment protocol.RestoreAssignment) protocol.RestoreReport {
 	report := protocol.RestoreReport{
-		JobID:  assignment.JobID,
-		Status: string(job.StatusFailed),
+		JobID: assignment.JobID,
+		// Which attempt this is; the controller refuses a report from
+		// an attempt whose lease it has already taken back.
+		ClaimToken: assignment.ClaimToken,
+		Status:     string(job.StatusFailed),
 	}
 	log := a.log.With("restore_job_id", assignment.JobID,
 		"account", assignment.CPanelUser, "snapshot", assignment.SnapshotID)
