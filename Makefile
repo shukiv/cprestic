@@ -18,8 +18,11 @@ VERSION             := $(shell git describe --tags --always --dirty 2>/dev/null 
 # not the moment of compilation, so two builds of one commit agree.
 BUILT_AT            := $(shell git log -1 --format=%cI 2>/dev/null || echo "")
 REST_SERVER_VERSION := v0.14.0
+# Pinned, like everything else a build downloads: a release gate that
+# fetches whatever is newest is a build step nobody reviewed.
+GOVULNCHECK         := golang.org/x/vuln/cmd/govulncheck@v1.7.0
 
-.PHONY: all build plugin release test cover e2e vet fmt tools clean
+.PHONY: all build plugin release provenance test cover e2e vet vuln fmt tools clean
 
 all: fmt vet test build
 
@@ -72,7 +75,25 @@ plugin:
 #
 # CPREST_SIGNING_KEY_FILE says where the private key is. It is never read
 # from the repository and never written into one.
+# What the artifact was really built from.
+#
+# govulncheck reads the source; this reads the binary. A build made by an
+# older toolchain carries that toolchain's standard library, and editing
+# go.mod does not repair an executable that already exists. So the version
+# stamped in the file has to be the one this checkout selects, or the
+# release is of something other than what was reviewed.
+provenance:
+	@built=$$(go version -m $(BIN)/cprest-plugin/cprest-agent | awk 'NR==1 {print $$2}'); \
+	want=$$(go env GOVERSION); \
+	if [ "$$built" != "$$want" ]; then \
+		echo "the plugin binary was built by $$built, but this tree builds with $$want" >&2; \
+		echo "run 'make plugin' again with the toolchain go.mod asks for" >&2; \
+		exit 1; \
+	fi; \
+	echo "$(BIN)/cprest-plugin/cprest-agent: built by $$built"
+
 release: plugin
+	$(MAKE) provenance
 	@[ -n "$(CPREST_SIGNING_KEY_FILE)" ] || { \
 		echo "set CPREST_SIGNING_KEY_FILE to the release key, e.g."; \
 		echo "  make release CPREST_SIGNING_KEY_FILE=~/.cprest/cprest-release.pem"; \
@@ -109,6 +130,15 @@ tools:
 vet:
 	go vet $(PKGS)
 	go vet -tags e2e ./internal/e2e/
+
+# Known vulnerabilities that this code actually reaches.
+#
+# A backup program is worth attacking, and the release is a static binary:
+# whatever the standard library and the dependencies were on the day it was
+# built is what every server runs until it is replaced. So this is a gate on
+# the release rather than something to run when somebody remembers.
+vuln:
+	go run $(GOVULNCHECK) ./...
 
 fmt:
 	gofmt -l -w .

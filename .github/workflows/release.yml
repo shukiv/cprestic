@@ -36,8 +36,21 @@ jobs:
       - name: Vet
         run: make vet
 
+      # A release is a static binary that sits on somebody's server until
+      # somebody replaces it, so a known hole in the standard library or a
+      # dependency ships for as long as the release lives. Fail here rather
+      # than publish one.
+      - name: Known vulnerabilities
+        run: make vuln
+
       - name: Build the plugin tarball
         run: make plugin
+
+      # And check the artifact itself, not only the source it was built
+      # from: the toolchain stamped in the binary is the standard library
+      # every server will run.
+      - name: What the binary was built from
+        run: make provenance
 
       # Signed with the release key, whose public half is in get.sh and in
       # the repository. The checksums say a download arrived whole; the
