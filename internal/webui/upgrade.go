@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/shuki/cprest/internal/agent"
@@ -79,11 +80,11 @@ func (s *Server) handleCheckUpdate(w http.ResponseWriter, r *http.Request) {
 		s.redirect(w, r, "/settings", "error", "Could not ask about newer versions: "+err.Error())
 	case state.Version == "":
 		s.redirect(w, r, "/settings", "warn", "GitHub answered, but named no release.")
-	case update.Newer(agent.Version, state.Version):
-		s.redirect(w, r, "/settings", "ok", "cP:Restic "+state.Version+" has been released.")
+	case s.engine.UpdateOffered(state):
+		s.redirect(w, r, "/settings", "ok", "cP:Restic "+state.Version+" is available to install.")
 	default:
 		s.redirect(w, r, "/settings", "ok",
-			"This server runs "+agent.Version+", and the newest release is "+state.Version+".")
+			"This server runs "+agent.Version+", and what is published is "+state.Version+".")
 	}
 }
 
@@ -198,11 +199,13 @@ func (s *Server) handleDismissUpgrade(w http.ResponseWriter, r *http.Request) {
 // discovering they have.
 func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 	version := r.PostFormValue("version")
-	if !update.IsRelease(version) {
-		// Nothing that is not a release version reaches the engine, and
-		// nothing reaches a page either: this is what the button carries,
-		// so an empty one is a request that did not come from it.
-		s.redirect(w, r, "/settings", "error", "That is not a released version of cP:Restic.")
+	if version == "" || strings.ContainsAny(version, " \t/\\") {
+		// What the button carries is a version this server was just told
+		// about; anything shaped otherwise did not come from the button.
+		// Which versions are installable is the engine's to say, since
+		// that depends on the channel: a release has a version number, a
+		// branch build has whatever git describe called it.
+		s.redirect(w, r, "/settings", "error", "That is not a build of cP:Restic.")
 		return
 	}
 	if !confirmed(r) {
