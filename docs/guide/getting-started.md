@@ -112,10 +112,11 @@ queued and run afterwards; a backup that is *running* is why the button
 refuses until it has finished, since a restart would fail it.
 
 The check asks GitHub once a day for a version number and installs nothing.
-Settings → **Check for new versions** turns it off, and turning it off hides
-the banner and the button with it; **Check now** asks straight away. A build
-that is not exactly a release — a working tree, `v0.1.0-3-gabc1234-dirty` — is
-never offered an upgrade.
+Settings → **Check for new versions** turns the daily ask off, and the banner
+above every page with it; this card stays, saying what was last found, and
+**Check now** asks again whenever you press it. A build that is not exactly a
+release — a working tree, `v0.1.0-3-gabc1234-dirty` — is never offered an
+upgrade.
 
 The install command still works. Upgrading by hand is the same thing without
 the button.
