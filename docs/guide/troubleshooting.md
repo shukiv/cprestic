@@ -1,5 +1,30 @@
 # Troubleshooting
 
+## Reporting a problem
+
+The bug icon at the foot of the rail — beside the documentation and GitHub
+links — opens a form: a subject, and what happened in your own words.
+
+Pressing **Show me what would be sent** gathers the rest and shows you the
+whole thing before anything leaves the server: versions and environment, the
+recent failures this server has recorded, its settings without any credential,
+and the last 200 lines the service logged. Passwords, keys, tokens and private
+keys are removed from those lines first, and each section is capped so a noisy
+week does not become a report nobody reads.
+
+Then it goes to GitHub one of two ways:
+
+- **With a token** (Settings → *GitHub token for reports*) the server opens the
+  issue itself and hands you the link. The token needs only permission to open
+  issues.
+- **Without one** — the default, and nothing to set up — the button opens
+  GitHub's own new-issue form in a new tab with the report filled in, and you
+  press Submit there under your own account. A report too long for a link says
+  so, and the whole text stays on the page to paste.
+
+An issue is public if the repository is. That is why the report is shown in
+full first, and why sending is a second, separate press.
+
 ## First three commands
 
 ```bash

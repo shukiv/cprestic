@@ -1,0 +1,74 @@
+{{define "content"}}
+{{$data := .Data}}
+<div class="cpr-page-head">
+  <h1>Report a problem</h1>
+  <p class="cpr-hint">What went wrong, in your words, with what this server can say about
+  itself attached. It becomes an issue on
+  <a class="cpr-link" href="https://github.com/{{$data.Repository}}/issues"
+     target="_blank" rel="noopener noreferrer">{{$data.Repository}}</a>, which anyone may
+  read — so the whole report is shown before anything is sent.</p>
+</div>
+
+{{if $data.IssueURL}}
+<div class="cpr-card"><div class="cpr-pad">
+  <div class="cpr-banner cpr-ok"><div class="cpr-body">
+    <strong>Sent.</strong> It is
+    <a class="cpr-link" href="{{$data.IssueURL}}" target="_blank" rel="noopener noreferrer">{{$data.IssueURL}}</a>.
+  </div></div>
+</div></div>
+{{else}}
+
+{{if $data.Error}}
+<div class="cpr-banner cpr-bad"><div class="cpr-body">{{$data.Error}}</div></div>
+{{end}}
+
+<div class="cpr-card" data-report-form>
+  <form method="post" action="?p=report/send">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <div class="cpr-pad cpr-formgrid">
+      <div>
+        <label for="report_subject">Subject</label>
+        <input type="text" id="report_subject" name="subject" required maxlength="200"
+               value="{{$data.Subject}}" placeholder="What went wrong, in a line">
+      </div>
+      <div>
+        <label for="report_body">What happened</label>
+        <textarea id="report_body" name="body" rows="8" required
+                  placeholder="What you did, what you expected, what happened instead.">{{$data.Body}}</textarea>
+        <small class="cpr-help">Versions, this server's recent failures, its settings without
+        credentials, and the last 200 lines the service logged are attached. Passwords, keys and
+        tokens are removed from those lines before they travel.</small>
+      </div>
+    </div>
+    <div class="cpr-pad cpr-bulkbar" style="border-top:1px solid var(--line)">
+      <span style="flex:1"></span>
+      <button class="cpr-btn" type="submit">Show me what would be sent</button>
+      {{if $data.Direct}}
+      <button class="cpr-btn cpr-primary" type="submit" name="send" value="1">Send it</button>
+      {{end}}
+    </div>
+  </form>
+</div>
+
+{{if $data.Preview}}
+<div class="cpr-card" style="margin-top:var(--s4)">
+  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
+    <h2 style="margin:0">What would be sent</h2>
+  </div>
+  <div class="cpr-pad">
+    <textarea rows="18" readonly class="cpr-mono"
+              aria-label="The whole report">{{$data.Preview}}</textarea>
+  </div>
+  {{if $data.Form}}
+  <div class="cpr-pad cpr-bulkbar" style="border-top:1px solid var(--line)">
+    <span class="cpr-hint" style="margin:0">This server has no GitHub token, so the report goes
+    through your own GitHub account: the form opens filled in, and you press Submit there.</span>
+    <span style="flex:1"></span>
+    <a class="cpr-btn cpr-primary" href="{{$data.Form}}" target="_blank" rel="noopener noreferrer">
+      Open the issue form</a>
+  </div>
+  {{end}}
+</div>
+{{end}}
+{{end}}
+{{end}}

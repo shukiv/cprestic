@@ -460,6 +460,13 @@ type Settings struct {
 	// of every customer who has ever left, forever. Zero means the
 	// default; a negative number keeps them until somebody says otherwise.
 	DeletedAccountDays int `json:"deleted_account_days,omitempty"`
+	// BugRepository is where a bug report becomes an issue, as
+	// owner/repository. Empty means this program's own.
+	BugRepository string `json:"bug_repository,omitempty"`
+	// BugTokenSecretID seals a GitHub token that may open issues there.
+	// Without one, reporting hands the browser a pre-filled issue form
+	// instead, which asks nothing of this server.
+	BugTokenSecretID string `json:"bug_token_secret_id,omitempty"`
 }
 
 // DefaultKeepOutputDays is a week: long enough that a restore taken on a

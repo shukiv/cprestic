@@ -2642,6 +2642,65 @@ func TestARestoreCanBeAskedForAsAtADate(t *testing.T) {
 	}
 }
 
+// Reporting a problem must work when the thing being reported is the
+// interface: the icon is a link to a page, the dialog is an enhancement,
+// and nothing is sent until the operator has seen the whole report.
+func TestAProblemIsReportedOnlyAfterItIsShown(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	_, page := get(t, client, "/")
+	if !strings.Contains(page, `href="?p=report"`) {
+		t.Error("no way to report a problem from the page")
+	}
+
+	_, form := get(t, client, "/report")
+	for _, want := range []string{`name="subject"`, `name="body"`, "shukiv/cprestic"} {
+		if !strings.Contains(form, want) {
+			t.Errorf("the report page does not carry %q", want)
+		}
+	}
+
+	// A report with nothing in it is refused rather than sent empty.
+	resp, err := client.PostForm("http://ui/report/send", map[string][]string{
+		"csrf": {csrfToken(t, form)}, "subject": {"  "}, "body": {""},
+	})
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	empty, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(empty), "needs a subject") {
+		t.Error("an empty report was accepted")
+	}
+
+	// Pressing the first button shows the report; it does not send it.
+	resp, err = client.PostForm("http://ui/report/send", map[string][]string{
+		"csrf": {csrfToken(t, form)}, "subject": {"A restore failed"},
+		"body": {"It said success and the account was not there."},
+	})
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	shown, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(shown)
+	for _, want := range []string{
+		"What would be sent", "It said success", "Versions and environment",
+		// No token on this server, so it is GitHub's own form that opens.
+		"github.com/shukiv/cprestic/issues/new?",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the preview does not carry %q", want)
+		}
+	}
+}
+
 func TestThePageOpensInLightUnlessToldOtherwise(t *testing.T) {
 	client, _, _ := newUI(t)
 

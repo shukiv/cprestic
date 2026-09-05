@@ -38,6 +38,21 @@
         after this they are swept. −1 keeps them until you delete them.</small>
       </div>
       <div>
+        <label for="bug_repository">Report problems to</label>
+        <input type="text" id="bug_repository" name="bug_repository"
+               value="{{$data.BugRepository}}" placeholder="owner/repository">
+        <small class="cpr-help">Where the Report a problem button opens an issue. An issue there
+        may be read by anybody, and the whole report is shown before it is sent.</small>
+      </div>
+      <div>
+        <label for="bug_token">GitHub token for reports</label>
+        <input type="password" id="bug_token" name="bug_token" autocomplete="off"
+               placeholder="{{if $data.BugToken}}stored — type to replace, or “forget” to remove{{else}}not set{{end}}">
+        <small class="cpr-help">Optional. With one, this server opens the issue itself and shows
+        you the link. Without one, the button hands your browser GitHub's own form with the report
+        filled in, and you press Submit there. Needs only permission to open issues.</small>
+      </div>
+      <div>
         <label for="deleted_account_days">Keep a deleted account's backups for</label>
         <select id="deleted_account_days" name="deleted_account_days">
           <option value="-1" {{if eq $data.DeletedPreset "-1"}}selected{{end}}>Until I remove them</option>

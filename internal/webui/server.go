@@ -220,6 +220,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /restore/items", s.guard(s.handleRestoreItems))
 	mux.HandleFunc("POST /restore/forget", s.guard(s.handleForgetAccount))
 
+	mux.HandleFunc("GET /report", s.handleReport)
+	mux.HandleFunc("POST /report/send", s.guard(s.handleSendReport))
+
 	mux.HandleFunc("GET /logs", s.handleLogs)
 	// The page was called History and lived at /jobs. Somebody's bookmark
 	// and somebody's runbook still say so.
