@@ -240,6 +240,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /settings/output/clear", s.guard(s.handleClearOutput))
 	mux.HandleFunc("POST /settings/update/check", s.guard(s.handleCheckUpdate))
 	mux.HandleFunc("POST /settings/update/install", s.guard(s.handleUpgrade))
+	mux.HandleFunc("POST /settings/update/dismiss", s.guard(s.handleDismissUpgrade))
+	mux.HandleFunc("POST /settings/uninstall", s.guard(s.handleUninstall))
 	mux.HandleFunc("POST /settings/channels/save", s.guard(s.handleSaveChannel))
 	mux.HandleFunc("POST /settings/channels/test", s.guard(s.handleTestChannel))
 	mux.HandleFunc("POST /settings/channels/delete", s.guard(s.handleDeleteChannel))

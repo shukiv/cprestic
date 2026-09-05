@@ -96,6 +96,9 @@ way.
 
 ### Removing it
 
+**Settings → Remove cP:Restic from this server**, at the bottom of the page.
+It asks first, and says what goes and what stays. Or, in a root shell:
+
 ```bash
 sh /usr/local/share/cprest/uninstall.sh
 ```

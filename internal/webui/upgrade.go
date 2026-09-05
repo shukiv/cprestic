@@ -78,6 +78,68 @@ func (s *Server) handleCheckUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleUninstall removes cP:Restic from this server.
+//
+// The command in a root shell is what this ran before, and it still works;
+// what it did not do was exist anywhere somebody looking at the interface
+// would find it. An administrator deciding to remove something should not
+// have to go and look up how.
+//
+// It asks first, and says the two things somebody about to press it needs
+// to know: this page goes with it, and the backups do not.
+func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
+	if !confirmed(r) {
+		s.askFirst(w, r, confirmation{
+			Title:   "Remove cP:Restic from this server?",
+			Section: "settings",
+			Warning: "This stops the service and unregisters the WHM plugin, the cPanel hooks " +
+				"and the account tile. This page goes with it: nothing here will answer " +
+				"afterwards, and what is left to run is the installer, in a root shell.",
+			Detail: []string{
+				"Backups already on their destinations are not touched, and neither is anything on this server outside cP:Restic.",
+				"/etc/cprest/master.key and /var/lib/cprest/state.db stay, so reinstalling comes back with the same destinations, schedules and history.",
+				"Nothing here will take backups afterwards: whatever this server was backing up stops being backed up.",
+			},
+			Tick:   "Yes, remove cP:Restic from this server",
+			Button: "Remove cP:Restic",
+			Cancel: linkTo("/settings"),
+		})
+		return
+	}
+	if err := s.engine.StartUninstall(); err != nil {
+		s.redirect(w, r, "/settings", "error", "Could not remove it: "+err.Error())
+		return
+	}
+	s.redirect(w, r, "/settings", "warn",
+		"Removing cP:Restic. This page stops answering in a few seconds. "+
+			"Reinstalling brings back the same destinations, schedules and history.")
+}
+
+// handleDismissUpgrade clears what the last upgrade left on the card.
+//
+// A failed upgrade stays on the page, because an operator who was not
+// looking when it happened still needs to find out. Once they have read
+// it, it is a line about something that is over, and the only thing that
+// would ever have replaced it is another upgrade.
+func (s *Server) handleDismissUpgrade(w http.ResponseWriter, r *http.Request) {
+	state, err := s.engine.UpgradeStatus()
+	if err != nil {
+		s.redirect(w, r, "/settings", "error", "Could not read the last upgrade: "+err.Error())
+		return
+	}
+	if !state.StartedAt.IsZero() && state.FinishedAt.IsZero() {
+		// Nothing is cleared out from under an upgrade that is running:
+		// the card is the only thing saying it is.
+		s.redirect(w, r, "/settings", "warn", "That upgrade has not finished yet.")
+		return
+	}
+	if err := s.engine.Store().SaveUpgradeState(nodestore.UpgradeState{}); err != nil {
+		s.redirect(w, r, "/settings", "error", "Could not clear it: "+err.Error())
+		return
+	}
+	s.redirect(w, r, "/settings", "ok", "Cleared.")
+}
+
 // handleUpgrade installs a released version over this one, once it has
 // been agreed to.
 //

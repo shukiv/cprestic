@@ -123,6 +123,15 @@ the button.
 
 ## Uninstalling
 
+**Settings → Remove cP:Restic from this server** is at the bottom of the
+settings page. It asks first, on a page that says the two things worth
+knowing: this removes the interface you are standing in, and it does not
+touch a single backup. What runs is the script below, started as a transient
+systemd unit a few seconds later — otherwise it would stop the service
+halfway through answering you.
+
+In a root shell it is:
+
 ```bash
 sh /usr/local/share/cprest/uninstall.sh
 ```

@@ -214,6 +214,49 @@ func (e *Engine) runUpgrade(state nodestore.UpgradeState) error {
 	return nil
 }
 
+// uninstaller is the copy of the uninstall script the installer leaves on
+// the server, so removing cP:Restic never means finding the package again.
+const uninstaller = "/usr/local/share/cprest/uninstall.sh"
+
+// StartUninstall removes cP:Restic from this server.
+//
+// It runs the same script an administrator would run in a root shell, and
+// for the same reason as an upgrade it runs outside this process: the
+// script stops and removes the service that is handling the click. It is
+// started a few seconds late so the page that asked for it is answered
+// before the thing answering it goes away.
+//
+// What it removes is the program. Backups on their destinations are not
+// touched, and neither are the master key or the state file, so a
+// reinstall comes back with the same destinations, schedules and history.
+func (e *Engine) StartUninstall() error {
+	if _, err := os.Stat(uninstaller); err != nil {
+		return fmt.Errorf("%s is not on this server, so there is nothing here to run; "+
+			"this copy was installed some other way", uninstaller)
+	}
+	if _, err := exec.LookPath("systemd-run"); err != nil {
+		return fmt.Errorf("systemd-run is not on this server, so this cannot be started "+
+			"from here; run %s in a root shell instead", uninstaller)
+	}
+	if busy, err := e.workInFlight(); err != nil {
+		return err
+	} else if busy != "" {
+		return fmt.Errorf("%s is being worked on now, and removing cP:Restic stops it "+
+			"halfway; try again when it has finished", busy)
+	}
+
+	unit := "cprest-uninstall-" + nodestore.NewID()[:8]
+	run := exec.Command("systemd-run", "--collect", "--unit="+unit,
+		"--on-active=5", "--timer-property=AccuracySec=1s",
+		"--description=Remove cP:Restic", "/bin/sh", uninstaller)
+	output, err := run.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("start the uninstaller: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	e.log.Warn("removing cP:Restic from this server", "unit", unit, "script", uninstaller)
+	return nil
+}
+
 // UpgradeStatus is the upgrade in flight, or the last one that ran.
 //
 // The process that started an upgrade is not the process that reports on

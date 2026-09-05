@@ -133,10 +133,18 @@
       <b>{{$update.Upgrade.Version}} was not installed.</b> {{$update.Upgrade.Error}}
       This server still runs {{$update.Running}} and nothing was changed.
       {{with $update.Upgrade.Log}}<div class="cpr-log" style="margin-top:var(--s2)">{{.}}</div>{{end}}
+      <form method="post" action="?p=settings/update/dismiss" style="margin-top:var(--s2)">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <button class="cpr-btn cpr-quiet" type="submit">Clear this</button>
+      </form>
     </div></div>
     {{else if $update.Installed}}
     <div class="cpr-banner cpr-ok"><div class="cpr-body">
       <b>{{$update.Upgrade.Version}} is installed.</b> It was {{$update.Upgrade.From}} before.
+      <form method="post" action="?p=settings/update/dismiss" style="margin-top:var(--s2)">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <button class="cpr-btn cpr-quiet" type="submit">Clear this</button>
+      </form>
     </div></div>
     {{end}}
 
@@ -387,6 +395,26 @@
     service starts.</p>
   </div>
   {{end}}
+</div>
+
+{{/* Last on the page, where something nobody does twice a year belongs.
+     Removing this was a command an administrator had to go and look up,
+     which is a strange thing to have to look up while standing in front of
+     the interface it removes. */}}
+<div class="cpr-danger-zone">
+  <h3>Remove cP:Restic from this server</h3>
+  <p>Stops the service and unregisters the WHM plugin, the cPanel hooks and the account tile.
+  This page goes with it. Backups already on their destinations are not touched, and neither is
+  anything on this server outside cP:Restic — but nothing here will take backups afterwards.</p>
+  <p><code class="cpr-mono">/etc/cprest/master.key</code> and
+  <code class="cpr-mono">/var/lib/cprest/state.db</code> stay, so reinstalling comes back with the
+  same destinations, schedules and history.</p>
+  <form method="post" action="?p=settings/uninstall">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <button class="cpr-btn cpr-danger" type="submit">Remove cP:Restic…</button>
+  </form>
+  <p class="cpr-hint" style="margin-top:var(--s3)">Or in a root shell:
+  <span class="cpr-mono">sh /usr/local/share/cprest/uninstall.sh</span></p>
 </div>
 {{end}}
 
