@@ -2330,12 +2330,14 @@ func TestSeveralAccountsCanBeRestoredAtOnce(t *testing.T) {
 		}
 	}
 
-	_, page := get(t, client, "/restore?tab=deleted")
+	_, page := get(t, client, "/restore")
 	for _, want := range []string{
 		`<input type="checkbox" name="account" value="gone1"`,
 		`<input type="checkbox" name="account" value="gone2"`,
 		`data-check-all`,
 		`action="?p=recover/accounts"`,
+		// One list, with the state on the row rather than in a tab.
+		`class="cpr-row-gone"`, ">deleted</span>",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the deleted accounts cannot be chosen in bulk: %s is missing", want)
@@ -2344,7 +2346,7 @@ func TestSeveralAccountsCanBeRestoredAtOnce(t *testing.T) {
 
 	// Nothing chosen must not read as "done": it is refused, and says so.
 	empty, err := client.PostForm("http://ui/recover/accounts", map[string][]string{
-		"csrf": {csrfToken(t, page)}, "from": {"deleted"}, "repository": {"repo"},
+		"csrf": {csrfToken(t, page)}, "repository": {"repo"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2395,7 +2397,6 @@ func TestRestoreCarriesItsThreeViewsAsTabs(t *testing.T) {
 	for _, want := range []string{
 		`<nav class="cpr-tabs" aria-label="Restore views">`,
 		`href="?p=restore" aria-current="page"`,
-		`href="?p=restore&amp;tab=deleted"`,
 		`href="?p=restore&amp;tab=server"`,
 		// The page restores accounts, one or several, and the third tab
 		// is for the day the machine is gone.
@@ -2407,15 +2408,14 @@ func TestRestoreCarriesItsThreeViewsAsTabs(t *testing.T) {
 		}
 	}
 
+	// The deleted accounts used to be a tab of their own. The address
+	// still works, and lands on the list they are now part of.
 	status, deleted := get(t, client, "/restore?tab=deleted")
 	if status != http.StatusOK {
 		t.Fatalf("GET /restore?tab=deleted = %d", status)
 	}
-	if !strings.Contains(deleted, "Accounts cPanel no longer has") {
-		t.Error("the deleted view does not list deleted accounts")
-	}
-	if !strings.Contains(deleted, `href="?p=restore&amp;tab=deleted" aria-current="page"`) {
-		t.Error("the deleted view does not mark its own tab")
+	if strings.Contains(deleted, "Deleted accounts</a>") {
+		t.Error("the deleted accounts still have a tab of their own")
 	}
 
 	// The whole-server view is the old recovery page, reached from here.
@@ -2514,7 +2514,7 @@ func TestForgettingADeletedAccountAsksFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, page := get(t, client, "/restore?tab=deleted")
+	_, page := get(t, client, "/restore")
 	if !strings.Contains(page, "forget=departed") {
 		t.Error("a deleted account cannot be forgotten from its row")
 	}
@@ -2522,7 +2522,7 @@ func TestForgettingADeletedAccountAsksFirst(t *testing.T) {
 		t.Error("the page offers to forget an account nobody asked about")
 	}
 
-	_, asked := get(t, client, "/restore?tab=deleted&forget=departed")
+	_, asked := get(t, client, "/restore?forget=departed")
 	for _, want := range []string{
 		"Forget departed?", "deletes every backup", `name="confirm"`,
 	} {
@@ -2531,7 +2531,7 @@ func TestForgettingADeletedAccountAsksFirst(t *testing.T) {
 		}
 	}
 	// A name nobody has retired is not something to offer at all.
-	_, other := get(t, client, "/restore?tab=deleted&forget=someoneelse")
+	_, other := get(t, client, "/restore?forget=someoneelse")
 	if strings.Contains(other, "Forget someoneelse?") {
 		t.Error("the page offers to forget an account it does not list")
 	}
@@ -2615,7 +2615,7 @@ func TestARestoreCanBeAskedForAsAtADate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, page := get(t, client, "/restore?tab=deleted")
+	_, page := get(t, client, "/restore")
 	if !strings.Contains(page, `name="asof"`) {
 		t.Error("the restore page does not ask which restore point")
 	}

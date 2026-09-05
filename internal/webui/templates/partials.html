@@ -62,7 +62,6 @@
 {{define "restoretabs"}}
 <nav class="cpr-tabs" aria-label="Restore views">
   <a href="?p=restore" {{if eq . "account"}}aria-current="page"{{end}}>Restore account(s)</a>
-  <a href="?p=restore&amp;tab=deleted" {{if eq . "deleted"}}aria-current="page"{{end}}>Deleted accounts</a>
   <a href="?p=restore&amp;tab=server" {{if eq . "server"}}aria-current="page"{{end}}>Disaster recovery</a>
 </nav>
 {{end}}

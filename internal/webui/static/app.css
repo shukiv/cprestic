@@ -45,6 +45,7 @@
   --good:#16794C; --good-soft:#E6F4EC;
   --warn:#8A5A00; --warn-soft:#FBF1DC;
   --bad:#A32017;  --bad-soft:#FBEAE8;
+  --row-gone:#F1F3F6;
   --shadow:0 1px 2px rgba(20,26,34,.06), 0 1px 8px rgba(20,26,34,.04);
   --r:3px;
   --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
@@ -58,6 +59,7 @@
     --good:#5DC08D; --good-soft:#14261E;
     --warn:#D9A441; --warn-soft:#2A2113;
     --bad:#E8776B;  --bad-soft:#2B1614;
+    --row-gone:#1C232C;
     --shadow:0 1px 2px rgba(0,0,0,.4), 0 1px 8px rgba(0,0,0,.25);
   }
 }
@@ -69,6 +71,7 @@
   --good:#5DC08D; --good-soft:#14261E;
   --warn:#D9A441; --warn-soft:#2A2113;
   --bad:#E8776B;  --bad-soft:#2B1614;
+  --row-gone:#1C232C;
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 1px 8px rgba(0,0,0,.25);
 }
 
@@ -439,6 +442,12 @@
 .cprest form * + fieldset { margin-top:var(--s4); }
 .cprest form .cpr-grid2 > div > label:first-child,
 .cprest form .cpr-grid3 > div > label:first-child { margin-top:0; }
+
+/* A row for an account this server does not have. Shaded and muted, with
+   a pill beside the name saying which: colour alone would say nothing to
+   somebody who cannot see this one, and nothing at all in print. */
+.cprest tbody tr.cpr-row-gone { background:var(--row-gone); }
+.cprest tbody tr.cpr-row-gone .cpr-acct { font-weight:500; }
 
 /* --- work in progress ------------------------------------------------ */
 /* A backup of a large account takes minutes. A pill that never changes

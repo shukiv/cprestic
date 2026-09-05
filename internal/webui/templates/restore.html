@@ -6,90 +6,6 @@
 </div>
 {{template "restoretabs" $data.Tab}}
 
-{{if eq $data.Tab "deleted"}}
-<div class="cpr-card">
-  <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
-    <h2 style="margin:0">Accounts cPanel no longer has</h2>
-  </div>
-  {{if $data.Deleted}}
-  <div class="cpr-pad">
-    <p class="cpr-hint" style="margin:0">Removed from this server, with backups still here. Restoring
-    one hands the archive to cPanel's own restore, which creates the account again.</p>
-  </div>
-  {{if $data.Forgetting}}
-  <div class="cpr-pad" style="border-top:1px solid var(--line)">
-    <div class="cpr-banner cpr-bad"><div class="cpr-body">
-      <strong>Forget {{$data.Forgetting}}?</strong>
-      <p style="margin:var(--s2) 0 0">This deletes every backup of {{$data.Forgetting}} from every
-      destination, and this server's record that the account ever existed — its backup and restore
-      history with it. Nothing here can bring any of it back. The space a backup used comes back at
-      the next prune, not now.</p>
-      <form method="post" action="?p=restore/forget" style="margin-top:var(--s3)">
-        <input type="hidden" name="csrf" value="{{.CSRF}}">
-        <input type="hidden" name="account" value="{{$data.Forgetting}}">
-        <label class="cpr-check"><input type="checkbox" name="confirm" value="1">
-          Yes, delete {{$data.Forgetting}}'s backups</label>
-        <div class="cpr-actions" style="margin-top:var(--s3)">
-          <button class="cpr-btn cpr-danger">Forget {{$data.Forgetting}}</button>
-          <a class="cpr-btn cpr-quiet" href="?p=restore&amp;tab=deleted">Cancel</a>
-        </div>
-      </form>
-    </div></div>
-  </div>
-  {{end}}
-  <form method="post" action="?p=recover/accounts" data-bulk>
-  <input type="hidden" name="csrf" value="{{.CSRF}}">
-  <input type="hidden" name="from" value="deleted">
-  <div class="cpr-tablewrap"><table data-sortable>
-    <thead><tr>
-      <th style="width:32px" data-nosort><input type="checkbox" data-check-all
-        aria-label="Choose every deleted account"></th>
-      <th>Account</th><th>Deleted</th><th>Last backup</th><th class="cpr-right" data-nosort>&nbsp;</th></tr></thead>
-    <tbody>
-    {{range $data.Deleted}}
-    <tr>
-      <td><input type="checkbox" name="account" value="{{.Account}}"
-        aria-label="Choose {{.Account}}"></td>
-      <td class="cpr-acct">{{.Account}}</td>
-      <td data-sort="{{unix .RetiredAt}}">{{ago .RetiredAt}}</td>
-      <td data-sort="{{unix .LastBackup}}">{{ago .LastBackup}}</td>
-      <td class="cpr-right"><div class="cpr-actions">
-        <a class="cpr-btn cpr-quiet" href="?p=restore&amp;account={{.Account}}">Open…</a>
-        <a class="cpr-btn cpr-quiet" href="?p=restore&amp;tab=deleted&amp;forget={{.Account}}">Forget…</a>
-      </div></td>
-    </tr>
-    {{end}}
-    </tbody>
-  </table></div>
-  <div class="cpr-pad cpr-bulkbar" style="border-top:1px solid var(--line)">
-    <span class="cpr-hint" style="margin:0" data-bulk-count>Nothing chosen</span>
-    <label class="cpr-pager-size" style="margin:0">Restore point
-      <input type="date" name="asof" aria-label="Newest backup on or before this date"
-             title="The newest backup taken on or before this date. Leave it empty for the most recent backup there is.">
-    </label>
-    <label class="cpr-pager-size" style="margin:0">From
-      <select name="repository" aria-label="Restore from">
-        {{range $data.Repositories}}{{if .Repository.InitialisedAt}}
-        <option value="{{.Repository.ID}}" {{if eq .Repository.ID $data.RepositoryID}}selected{{end}}>{{.Name}}</option>
-        {{end}}{{end}}
-      </select>
-    </label>
-    <span style="flex:1"></span>
-    <button class="cpr-btn" type="submit" data-bulk-submit disabled>Rebuild chosen</button>
-    <button class="cpr-btn cpr-danger" type="submit" name="apply" value="1"
-            data-bulk-submit disabled
-            data-confirm="Hand every chosen account to cPanel's own restore? Each one is created again with the files, databases, mail and settings its backup holds.">Restore chosen onto this server</button>
-  </div>
-  </form>
-  {{else}}
-  <div class="cpr-pad">
-    <p class="cpr-hint" style="margin:0">No account has been removed from this server since cP:Restic
-    started watching it. Backups made by a server that is gone are under
-    <a class="cpr-link" href="?p=restore&amp;tab=server">Disaster recovery</a>.</p>
-  </div>
-  {{end}}
-</div>
-{{else}}
 <div class="cpr-card">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Choose a backup</h2></div>
   <div class="cpr-pad">
@@ -115,8 +31,9 @@
           {{end}}
         </select>
         {{if $data.Deleted}}
-        <p class="cpr-sublabel">Deleted accounts are gone from cPanel but still have backups here. An account
-        this server never held is under <a class="cpr-link" href="?p=restore&amp;tab=server">Disaster recovery</a>.</p>
+        <p class="cpr-sublabel">Deleted accounts are gone from cPanel but still have backups here, and
+        are shaded in the list below. A backup made by a server that is gone is under
+        <a class="cpr-link" href="?p=restore&amp;tab=server">Disaster recovery</a>.</p>
         {{end}}
       </div>
       <div>
@@ -147,14 +64,39 @@
 {{end}}
 
 {{if eq $data.Tab "account"}}
+{{if $data.Forgetting}}
+<div class="cpr-card"><div class="cpr-pad">
+    <div class="cpr-banner cpr-bad"><div class="cpr-body">
+      <strong>Forget {{$data.Forgetting}}?</strong>
+      <p style="margin:var(--s2) 0 0">This deletes every backup of {{$data.Forgetting}} from every
+      destination, and this server's record that the account ever existed — its backup and restore
+      history with it. Nothing here can bring any of it back. The space a backup used comes back at
+      the next prune, not now.</p>
+      <form method="post" action="?p=restore/forget" style="margin-top:var(--s3)">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <input type="hidden" name="account" value="{{$data.Forgetting}}">
+        <label class="cpr-check"><input type="checkbox" name="confirm" value="1">
+          Yes, delete {{$data.Forgetting}}'s backups</label>
+        <div class="cpr-actions" style="margin-top:var(--s3)">
+          <button class="cpr-btn cpr-danger">Forget {{$data.Forgetting}}</button>
+          <a class="cpr-btn cpr-quiet" href="?p=restore">Cancel</a>
+        </div>
+      </form>
+    </div></div>
+</div></div>
+{{end}}
+
 {{if $data.ContentsErr}}
-<div class="cpr-flash cpr-error">Could not read that destination: {{$data.ContentsErr}}</div>
-{{else if $data.Contents}}
+<div class="cpr-flash cpr-error">Could not read that destination: {{$data.ContentsErr}}
+{{if $data.Contents}} What follows is what this server remembers, which is less than the
+destination knows.{{end}}</div>
+{{end}}
+{{if $data.Contents}}
 <div class="cpr-card">
   <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
     <h2 style="margin:0">Accounts in this destination</h2>
     <span class="cpr-hint" style="margin:0">Read from the backups themselves, so it includes
-    accounts this server no longer has.</span>
+    accounts this server no longer has &mdash; those rows are shaded and say so.</span>
   </div>
   <form method="post" action="?p=recover/accounts" data-bulk>
     <input type="hidden" name="csrf" value="{{.CSRF}}">
@@ -163,15 +105,19 @@
       <thead><tr>
         <th style="width:32px" data-nosort><input type="checkbox" data-check-all
           aria-label="Choose every account here"></th>
-        <th>Account</th><th>Backups</th><th>Most recent</th></tr></thead>
+        <th>Account</th><th>Backups</th><th>Most recent</th>
+        <th class="cpr-right" data-nosort>&nbsp;</th></tr></thead>
       <tbody>
         {{range $data.Contents}}
-        <tr>
+        <tr {{if .Gone}}class="cpr-row-gone"{{end}}>
           <td><input type="checkbox" name="account" value="{{.Account}}"
             aria-label="Choose {{.Account}}"></td>
-          <td class="cpr-acct">{{.Account}}</td>
-          <td class="cpr-num">{{.Snapshots}}</td>
+          <td class="cpr-acct">{{.Account}}
+            {{if .Gone}}<span class="cpr-pill cpr-idle" title="{{if eq .State "deleted"}}Removed from this server. Its backups are still here.{{else}}This server has never had this account: its backups were made by another server writing to the same destination.{{end}}"><span class="cpr-dot"></span>{{.StateTitle}}</span>{{end}}</td>
+          <td class="cpr-num">{{if .Snapshots}}{{.Snapshots}}{{else}}<span class="cpr-muted">—</span>{{end}}</td>
           <td data-sort="{{unix .Latest}}">{{stamp .Latest}}<div class="cpr-sublabel">{{ago .Latest}}</div></td>
+          <td class="cpr-right">{{if eq .State "deleted"}}<a class="cpr-btn cpr-quiet"
+            href="?p=restore&amp;forget={{.Account}}">Forget…</a>{{end}}</td>
         </tr>
         {{end}}
       </tbody>
@@ -198,7 +144,6 @@
     full, and a volume with room for one is not a volume with room for nineteen at once.</p>
   </div>
 </div>
-{{end}}
 {{end}}
 
 {{if $data.LookupError}}

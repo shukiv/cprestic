@@ -2257,7 +2257,7 @@ type restoreView struct {
 	// Contents is every account the chosen destination holds, which is
 	// not the same list as the accounts on this server: it includes ones
 	// deleted here and ones that were never here at all.
-	Contents     []node.AccountBackups
+	Contents     []storedAccount
 	ContentsErr  string
 	Repositories []destinationView
 	Account      string
@@ -2352,6 +2352,83 @@ func (v restoreView) KindTitle(k granular.Kind) string { return k.Title() }
 
 // Selected reports whether a kind is the one being picked.
 func (v restoreView) Selected(k granular.Kind) bool { return v.Kind == k }
+
+// storedAccount is one account a destination holds, and what this server
+// knows about it now.
+//
+// The three states used to be three places to look: a tab for the accounts
+// cPanel no longer has, and a page for the ones it never had. They are one
+// list with the state on the row, because "which of these is gone?" is a
+// question about a list and not a reason to make somebody navigate.
+type storedAccount struct {
+	node.AccountBackups
+	// State is "live", "deleted" or "elsewhere": on this server, removed
+	// from it, or belonging to a server that is not this one.
+	State string
+	// RetiredAt is when cPanel lost it, for the ones it lost.
+	RetiredAt time.Time
+}
+
+// Gone reports whether this account is not on the server, which is what
+// tints the row.
+func (a storedAccount) Gone() bool { return a.State != "live" }
+
+// StateTitle names the state in the words the page uses.
+func (a storedAccount) StateTitle() string {
+	switch a.State {
+	case "deleted":
+		return "deleted"
+	case "elsewhere":
+		return "another server"
+	}
+	return ""
+}
+
+// storedAccounts says, for each account a destination holds, whether this
+// server still has it.
+func storedAccounts(held []node.AccountBackups, live []accountView,
+	deleted []deletedAccount) []storedAccount {
+
+	here := make(map[string]bool, len(live))
+	for _, account := range live {
+		here[account.User] = true
+	}
+	retired := make(map[string]time.Time, len(deleted))
+	for _, account := range deleted {
+		retired[account.Account] = account.RetiredAt
+	}
+
+	rows := make([]storedAccount, 0, len(held)+len(deleted))
+	listed := make(map[string]bool, len(held))
+	for _, account := range held {
+		row := storedAccount{AccountBackups: account, State: "elsewhere"}
+		switch {
+		case here[account.Account]:
+			row.State = "live"
+		case !retired[account.Account].IsZero():
+			row.State, row.RetiredAt = "deleted", retired[account.Account]
+		}
+		listed[account.Account] = true
+		rows = append(rows, row)
+	}
+	// A deleted account this server knows about but the destination did
+	// not name. Reading a destination needs restic and a network; the
+	// records here need neither, and an account nobody can see is one
+	// nobody can restore or forget.
+	for _, account := range deleted {
+		if listed[account.Account] {
+			continue
+		}
+		rows = append(rows, storedAccount{
+			AccountBackups: node.AccountBackups{
+				Account: account.Account, Latest: account.LastBackup,
+			},
+			State: "deleted", RetiredAt: account.RetiredAt,
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Account < rows[j].Account })
+	return rows
+}
 
 // deletedAccount is an account cPanel no longer has, whose backups this
 // server still holds. JetBackup calls these orphans; this page calls them
@@ -2457,10 +2534,11 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// One list, with the state on the row. "Deleted accounts" was a tab of
+	// its own until the same question -- which of these is gone? -- turned
+	// out to be about a list rather than a reason to navigate. The old
+	// address still works and lands on the list.
 	tab := "account"
-	if r.URL.Query().Get("tab") == "deleted" {
-		tab = "deleted"
-	}
 	view := restoreView{
 		Tab:      tab,
 		Accounts: accounts, Deleted: deleted, Repositories: destinations,
@@ -2493,12 +2571,21 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	// off one list. It is read from the repository rather than from this
 	// server's records, because the whole point of restoring is that this
 	// server's records may be what was lost.
-	if tab == "account" && view.RepositoryID != "" {
-		if contents, err := s.engine.Contents(r.Context(), view.RepositoryID); err != nil {
-			view.ContentsErr = err.Error()
-		} else {
-			view.Contents = contents.Accounts
+	// What the chosen destination holds, and what this server remembers
+	// about accounts it has lost. Reading a destination needs restic and
+	// a network; the records here need neither, and an account nobody can
+	// see is one nobody can restore or forget -- so the list is built
+	// either way, and says when it is the smaller of the two.
+	if view.RepositoryID != "" || len(deleted) > 0 {
+		var held []node.AccountBackups
+		if view.RepositoryID != "" {
+			contents, err := s.engine.Contents(r.Context(), view.RepositoryID)
+			if err != nil {
+				view.ContentsErr = err.Error()
+			}
+			held = contents.Accounts
 		}
+		view.Contents = storedAccounts(held, accounts, deleted)
 	}
 	if view.Account != "" && view.RepositoryID != "" {
 		snapshots, err := s.engine.Snapshots(r.Context(), view.RepositoryID, view.Account)

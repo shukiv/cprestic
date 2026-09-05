@@ -45,8 +45,16 @@ Choose an account and a destination. The page then shows:
   not taken at the same minute; an account with nothing that old is named and
   the others still go.
 
+- **Accounts that are gone** are in the same list as the ones that are here,
+  shaded and labelled *deleted* — an account cPanel no longer has, whose backups
+  are still on the destination. One belonging to a different server altogether
+  reads *another server*. They used to be a tab of their own; which of these is
+  gone is a question about a list, not a reason to navigate. The list is drawn
+  from what this server remembers as well as what the destination says, so a
+  deleted account stays visible when the destination cannot be reached.
+
 - **Forgetting a deleted account** — a customer has gone and asked for their
-  backups to go with them. **Forget…** on a row of *Deleted accounts* removes
+  backups to go with them. **Forget…** on a shaded row removes
   every backup of that name from every destination, and this server's record
   that the account existed, its history with it. It asks first, on the page, and
   only for a name cPanel no longer has. Nothing here brings any of it back; the
