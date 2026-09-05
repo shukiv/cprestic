@@ -218,9 +218,17 @@ type TargetReport struct {
 // The rollup is computed here from the stored rows rather than taken from
 // the agent: a compromised or buggy agent must not be able to declare a
 // job successful.
-func (s *Store) ApplyReport(ctx context.Context, jobID string, reports []TargetReport, stagingError string) (job.Status, error) {
+func (s *Store) ApplyReport(ctx context.Context, serverID, jobID string, reports []TargetReport, stagingError string) (job.Status, error) {
 	var status job.Status
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		// Whose job this is, and whether that server is running it now.
+		// An agent's certificate says which server it is; without this,
+		// the job id was the only thing that decided whose results these
+		// were, and a job id is not a secret one server keeps from
+		// another.
+		if err := jobIsRunningOn(ctx, tx, serverID, jobID); err != nil {
+			return err
+		}
 		for _, report := range reports {
 			_, err := tx.Exec(ctx, `
 				UPDATE backup_job_targets SET
@@ -270,6 +278,29 @@ func (s *Store) ApplyReport(ctx context.Context, jobID string, reports []TargetR
 		return nil
 	})
 	return status, err
+}
+
+// jobIsRunningOn checks that a backup job belongs to a server and is
+// leased to it now, and locks the row for the rest of the transaction.
+//
+// A job that has been reclaimed, finished, or never claimed is not one
+// this server is entitled to report on: an outcome for it would be a
+// result nobody produced.
+func jobIsRunningOn(ctx context.Context, tx pgx.Tx, serverID, jobID string) error {
+	var found string
+	err := tx.QueryRow(ctx, `
+		SELECT bj.id::text
+		  FROM backup_jobs bj
+		  JOIN accounts a ON a.id = bj.account_id
+		 WHERE bj.id = $1 AND a.server_id = $2 AND bj.status = 'running'
+		 FOR UPDATE OF bj`, jobID, serverID).Scan(&found)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("store: check who owns job %s: %w", jobID, err)
+	}
+	return nil
 }
 
 func targetStatuses(ctx context.Context, tx pgx.Tx, jobID string) ([]job.TargetResult, error) {

@@ -121,7 +121,7 @@ func (s *Service) ReportRestore(ctx context.Context, serverID string, report pro
 		return fmt.Errorf("controller: restore report has invalid status %q", report.Status)
 	}
 
-	if err := s.store.ApplyRestoreReport(ctx, report.JobID, store.RestoreOutcome{
+	if err := s.store.ApplyRestoreReport(ctx, serverID, report.JobID, store.RestoreOutcome{
 		Status:        status,
 		BytesRestored: report.BytesRestored,
 		ArchivePath:   report.ArchivePath,
@@ -223,7 +223,7 @@ func (s *Service) Report(ctx context.Context, serverID string, report protocol.J
 		})
 	}
 
-	status, err := s.store.ApplyReport(ctx, report.JobID, targets, report.StagingError)
+	status, err := s.store.ApplyReport(ctx, serverID, report.JobID, targets, report.StagingError)
 	if err != nil {
 		return "", err
 	}

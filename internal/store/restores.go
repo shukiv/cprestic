@@ -177,7 +177,12 @@ type RestoreOutcome struct {
 }
 
 // ApplyRestoreReport records a restore's result.
-func (s *Store) ApplyRestoreReport(ctx context.Context, jobID string, outcome RestoreOutcome) error {
+func (s *Store) ApplyRestoreReport(ctx context.Context, serverID, jobID string, outcome RestoreOutcome) error {
+	// Only the server the restore belongs to, and only while it is the
+	// one running it. Otherwise any agent that could name a job id could
+	// mark another server's restore successful -- and a restore reported
+	// successful is a restore that stops being queued, so it would never
+	// be done by the server that was supposed to do it.
 	tag, err := s.pool.Exec(ctx, `
 		UPDATE restore_jobs SET
 		    status = $2::job_status,
@@ -186,9 +191,10 @@ func (s *Store) ApplyRestoreReport(ctx context.Context, jobID string, outcome Re
 		    error = nullif($5, ''),
 		    lease_expires_at = NULL,
 		    finished_at = now()
-		 WHERE id = $1`,
+		 WHERE id = $1 AND status = 'running'
+		   AND account_id IN (SELECT id FROM accounts WHERE server_id = $6)`,
 		jobID, string(outcome.Status), int64(outcome.BytesRestored),
-		outcome.ArchivePath, outcome.Error)
+		outcome.ArchivePath, outcome.Error, serverID)
 	if err != nil {
 		return fmt.Errorf("store: record restore result: %w", err)
 	}
