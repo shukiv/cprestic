@@ -98,10 +98,10 @@ installer unpacked there will not run otherwise.
 
 A tag beginning `v` builds and publishes that tarball, its checksums and
 `get.sh` as a GitHub release
-([the workflow](.github/workflows/release.yml)). The published build is what
-`make plugin` produces: statically linked, `-trimpath`, so the same tag gives
-the same bytes and a local build can be checked against the published
-checksum.
+([the workflow](.github/workflows/release.yml)). It runs the same
+`make plugin`, so the `cprest-agent` in a release is what that tag builds
+here: statically linked and `-trimpath`, with no path or host of the build
+machine in it.
 
 From there: add a destination, add a schedule, and the server backs itself
 up. Restores are on the Restore page — a whole account, or named files —

@@ -75,9 +75,9 @@ install_restic() {
 
     say "downloading restic $RESTIC_VERSION ($RESTIC_ARCH)"
     curl -fsSL -o "$RESTIC_TMP/$restic_file" "$restic_base/$restic_file" \
-        || die "could not download $restic_base/$restic_file"
+        || die "could not download $restic_base/$restic_file; install restic yourself and run this again"
     curl -fsSL -o "$RESTIC_TMP/SHA256SUMS" "$restic_base/SHA256SUMS" \
-        || die "could not download restic's checksums from $restic_base"
+        || die "could not download restic's checksums from $restic_base; install restic yourself and run this again"
 
     # Only the one line for the file actually downloaded: the rest of that
     # file names builds for platforms this machine does not have.

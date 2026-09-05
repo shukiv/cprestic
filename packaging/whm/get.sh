@@ -22,53 +22,60 @@ RELEASES=https://github.com/$REPO/releases
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-[ "$(id -u)" = 0 ] || die "run this as root"
-[ -d /usr/local/cpanel ] || die "this does not look like a cPanel server (/usr/local/cpanel is missing)"
+# Everything is inside main, called on the last line. Read from a pipe, a
+# download that stops half way through then runs nothing at all, rather than
+# running the half that arrived.
+main() {
+    [ "$(id -u)" = 0 ] || die "run this as root"
+    [ -d /usr/local/cpanel ] || die "this does not look like a cPanel server (/usr/local/cpanel is missing)"
 
-case "$(uname -m)" in
-    x86_64) ARCH=amd64 ;;
-    *)      die "the published builds are x86-64 only; on $(uname -m), build from source with 'make plugin'" ;;
-esac
-TARBALL=cprest-plugin-$ARCH.tar.gz
+    case "$(uname -m)" in
+        x86_64) arch=amd64 ;;
+        *)      die "the published builds are x86-64 only; on $(uname -m), build from source with 'make plugin'" ;;
+    esac
+    tarball=cprest-plugin-$arch.tar.gz
 
-if [ -n "${CPREST_VERSION:-}" ]; then
-    BASE=$RELEASES/download/$CPREST_VERSION
-else
-    BASE=$RELEASES/latest/download
-fi
+    if [ -n "${CPREST_VERSION:-}" ]; then
+        base=$RELEASES/download/$CPREST_VERSION
+    else
+        base=$RELEASES/latest/download
+    fi
 
-for tool in curl tar sha256sum; do
-    command -v "$tool" >/dev/null 2>&1 || die "$tool is needed; install it and run this again"
-done
+    for tool in curl tar sha256sum; do
+        command -v "$tool" >/dev/null 2>&1 || die "$tool is needed; install it and run this again"
+    done
 
-WORK=$(mktemp -d /var/tmp/cprest-install.XXXXXX)
-trap 'rm -rf -- "$WORK"' 0 1 2 15
+    work=$(mktemp -d /var/tmp/cprest-install.XXXXXX)
+    trap 'rm -rf -- "$work"' 0 1 2 15
 
-if [ -n "${CPREST_TARBALL:-}" ]; then
-    say "installing from $CPREST_TARBALL"
-    cp "$CPREST_TARBALL" "$WORK/$TARBALL"
-else
-    say "downloading $BASE/$TARBALL"
-    curl -fsSL -o "$WORK/$TARBALL" "$BASE/$TARBALL" \
-        || die "could not download $BASE/$TARBALL"
-    curl -fsSL -o "$WORK/SHA256SUMS" "$BASE/SHA256SUMS" \
-        || die "could not download $BASE/SHA256SUMS"
+    if [ -n "${CPREST_TARBALL:-}" ]; then
+        say "installing from $CPREST_TARBALL"
+        cp "$CPREST_TARBALL" "$work/$tarball"
+    else
+        say "downloading $base/$tarball"
+        curl -fsSL -o "$work/$tarball" "$base/$tarball" \
+            || die "could not download $base/$tarball"
+        curl -fsSL -o "$work/SHA256SUMS" "$base/SHA256SUMS" \
+            || die "could not download $base/SHA256SUMS"
 
-    # Only the line for the file actually downloaded: the rest of that file
-    # names things this machine did not fetch.
-    grep " $TARBALL\$" "$WORK/SHA256SUMS" > "$WORK/expected" \
-        || die "the published checksums do not mention $TARBALL"
-    ( cd "$WORK" && sha256sum -c expected ) >/dev/null \
-        || die "the download does not match its published checksum; nothing was installed"
-    say "checksum ok"
-fi
+        # Only the line for the file actually downloaded: the rest of that
+        # file names things this machine did not fetch.
+        grep " $tarball\$" "$work/SHA256SUMS" > "$work/expected" \
+            || die "the published checksums do not mention $tarball"
+        ( cd "$work" && sha256sum -c expected ) >/dev/null \
+            || die "the download does not match its published checksum; nothing was installed"
+        say "checksum ok"
+    fi
 
-tar -C "$WORK" -xzf "$WORK/$TARBALL"
-[ -f "$WORK/cprest-plugin/install.sh" ] || die "that tarball has no cprest-plugin/install.sh in it"
+    tar -C "$work" -xzf "$work/$tarball"
+    [ -f "$work/cprest-plugin/install.sh" ] || die "that tarball has no cprest-plugin/install.sh in it"
 
-# Run it through sh rather than as a program. cPanel mounts /tmp and /var/tmp
-# noexec, so a script unpacked there cannot be executed even by root even
-# though its mode says otherwise. Nothing in the package is executed from
-# here; the installer copies its files into place with install(1).
-say "running the installer"
-sh "$WORK/cprest-plugin/install.sh"
+    # Run it through sh rather than as a program. cPanel mounts /tmp and
+    # /var/tmp noexec, so a script unpacked there cannot be executed even by
+    # root, whatever its mode says. Nothing in the package is executed from
+    # here: the installer copies its files into place with install(1).
+    say "running the installer"
+    sh "$work/cprest-plugin/install.sh"
+}
+
+main "$@"

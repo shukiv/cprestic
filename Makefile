@@ -35,7 +35,8 @@ plugin:
 		$(BIN)/cprest-plugin/branding/
 	cp packaging/branding/png/cpr-badge-48.png $(BIN)/cprest-plugin/branding/
 	chmod +x $(BIN)/cprest-plugin/install.sh $(BIN)/cprest-plugin/uninstall.sh $(BIN)/cprest-plugin/cprest.cgi
-	tar -C $(BIN) -czf $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz cprest-plugin
+	tar -C $(BIN) --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w' \
+		-czf $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz cprest-plugin
 	cp packaging/whm/get.sh $(BIN)/get.sh
 	cd $(BIN) && sha256sum cprest-plugin-$(PLUGIN_ARCH).tar.gz get.sh > SHA256SUMS
 	@echo

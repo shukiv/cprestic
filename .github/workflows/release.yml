@@ -1,16 +1,20 @@
 # Publish the WHM plugin when a version tag is pushed.
 #
-# The tag is the publish: nothing here runs on a branch push, so a release
-# exists only because somebody named a version. The tarball is built the same
-# way `make plugin` builds it locally -- statically linked, -trimpath, no
-# build-time inputs from the runner -- so the same tag produces the same bytes
-# and the checksum published beside it can be checked against a local build.
+# The tag is the publish: a branch push builds nothing, so a release exists
+# only because somebody named a version. It runs the same `make plugin` that
+# builds the tarball locally -- statically linked, -trimpath, so no path or
+# host of the runner ends up in the binary.
+#
+# It can also be run by hand from the Actions tab, which builds and stops:
+# publishing is gated on the ref being a tag. That is how the build is
+# exercised before a version is named.
 name: release
 
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -36,6 +40,7 @@ jobs:
       # somebody pipes into a root shell is then a named version with its
       # checksum published beside it, not whatever master says today.
       - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
