@@ -87,6 +87,24 @@ history stay. Queued backups stay queued and run afterwards; one that is
 running is why the button refuses until it has finished. Nothing that the
 release key did not sign is unpacked, let alone run.
 
+**Settings → Where updates come from** offers a second channel: the **dist
+branch**, which carries whatever was last built rather than whatever was last
+released. Publishing to it is one command on the machine that holds the
+release key:
+
+```bash
+make release CPREST_SIGNING_KEY_FILE=~/.cprest/cprest-release.pem
+```
+
+That builds the plugin, signs the checksums, and pushes three files — the
+tarball, the checksums, the signature — to the `dist` branch. A server on that
+channel reads them over https and checks them exactly as it checks a release:
+same key, same signature, same refusal if either is wrong. What it saves is
+having to decide that a commit deserves a version number, not any of the
+checking. Builds of a branch carry the commit they were made from, and that is
+what says which of two is later; an older build put back on the branch is
+refused rather than installed backwards.
+
 The check reads a version number from GitHub once a day and installs nothing
 on its own — an update that arrives unattended is a way for whoever can
 publish a release to reach every server running this, as root, with nobody

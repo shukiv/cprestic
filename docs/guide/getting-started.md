@@ -111,6 +111,39 @@ installing restarts the service that started it. Backups already queued stay
 queued and run afterwards; a backup that is *running* is why the button
 refuses until it has finished, since a restart would fail it.
 
+### Following the work instead of the releases
+
+**Settings → Where updates come from** has two answers. *Published releases* is
+the default: versions somebody decided to make. *The dist branch* is whatever
+was built last.
+
+On the machine that holds the release key, publishing to it is one command:
+
+```bash
+make release CPREST_SIGNING_KEY_FILE=~/.cprest/cprest-release.pem
+```
+
+It builds the plugin, signs the checksums with that key, and pushes the
+tarball, the checksums and the signature to the `dist` branch — written with
+git's plumbing, so the working tree is untouched and no branch is checked out.
+`CPREST_DIST_PUSH=0` stops before the push if you would rather look first.
+
+Servers on that channel read those three files and check them exactly as they
+check a release. Nothing about the checking is relaxed; what is relaxed is
+having to tag. Two consequences worth knowing:
+
+- Builds of a branch have no version numbers that can be compared, so each one
+  carries the commit it was made from. That is what says which of two builds is
+  later, and it is why an older build put back on the branch is refused instead
+  of installed backwards.
+- A branch moves. What is published between the page being read and the button
+  being pressed is not what was agreed to, so the version is checked again at
+  the moment of fetching and the install stops rather than taking something
+  else.
+
+Changing the channel forgets what the other one had found, because that was
+about somewhere else. Press **Check now** afterwards.
+
 The check asks GitHub once a day for a version number and installs nothing.
 Settings → **Check for new versions** turns the daily ask off, and the banner
 above every page with it; this card stays, saying what was last found, and
