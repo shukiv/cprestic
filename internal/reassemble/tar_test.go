@@ -103,21 +103,20 @@ func TestTarRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSafeJoin(t *testing.T) {
-	root := "/srv/restore"
+func TestSafeName(t *testing.T) {
 	for _, name := range []string{"a/b", "./a", "a/../b"} {
-		got, err := safeJoin(root, name)
+		got, err := safeName(name)
 		if err != nil {
-			t.Errorf("safeJoin(%q) returned %v", name, err)
+			t.Errorf("safeName(%q) returned %v", name, err)
 			continue
 		}
-		if !strings.HasPrefix(got, root) {
-			t.Errorf("safeJoin(%q) = %q, outside the root", name, got)
+		if got == "" || strings.HasPrefix(got, "/") || strings.HasPrefix(got, "..") {
+			t.Errorf("safeName(%q) = %q, which is not inside the directory", name, got)
 		}
 	}
-	for _, name := range []string{"../x", "a/../../x"} {
-		if got, err := safeJoin(root, name); err == nil {
-			t.Errorf("safeJoin(%q) = %q, want an error", name, got)
+	for _, name := range []string{"../x", "a/../../x", "/etc/shadow"} {
+		if got, err := safeName(name); err == nil {
+			t.Errorf("safeName(%q) = %q, want an error", name, got)
 		}
 	}
 }

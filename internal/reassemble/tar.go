@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -79,6 +80,19 @@ func extractTarFiltered(archivePath, dir string, keep func(name string) bool) (i
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return written, fmt.Errorf("reassemble: create %s: %w", dir, err)
 	}
+	// Everything below is written through this, and os.Root resolves
+	// every path against the directory itself rather than against the
+	// string: a name that walks out through a symlink is refused by the
+	// operating system, not by this program's reading of the name.
+	//
+	// It is not spare belt and braces. The archive is what a backup of
+	// another server produced, and it is unpacked as root before cPanel's
+	// restore -- restricted or not -- has seen any of it.
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return written, fmt.Errorf("reassemble: open %s: %w", dir, err)
+	}
+	defer func() { _ = root.Close() }()
 
 	reader := tar.NewReader(file)
 	for {
@@ -94,49 +108,64 @@ func extractTarFiltered(archivePath, dir string, keep func(name string) bool) (i
 			continue
 		}
 
-		target, err := safeJoin(dir, header.Name)
+		name, err := safeName(header.Name)
 		if err != nil {
 			return written, err
+		}
+		if name == "" {
+			continue
 		}
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, entryMode(header, 0o700)); err != nil {
-				return written, fmt.Errorf("reassemble: create %s: %w", target, err)
+			if err := root.MkdirAll(name, entryMode(header, 0o700)); err != nil {
+				return written, fmt.Errorf("reassemble: create %s: %w", header.Name, err)
 			}
 		case tar.TypeReg:
 			if header.Size > maxEntrySize {
 				return written, fmt.Errorf("reassemble: entry %s is %d bytes, refusing to extract",
 					header.Name, header.Size)
 			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-				return written, fmt.Errorf("reassemble: create %s: %w", filepath.Dir(target), err)
+			if parent := path.Dir(name); parent != "." {
+				if err := root.MkdirAll(parent, 0o700); err != nil {
+					return written, fmt.Errorf("reassemble: create %s: %w", parent, err)
+				}
 			}
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, entryMode(header, 0o600))
+			out, err := root.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, entryMode(header, 0o600))
 			if err != nil {
-				return written, fmt.Errorf("reassemble: create %s: %w", target, err)
+				return written, fmt.Errorf("reassemble: create %s: %w", header.Name, err)
 			}
 			_, copyErr := io.Copy(out, io.LimitReader(reader, maxEntrySize))
 			closeErr := out.Close()
 			if copyErr != nil {
-				return written, fmt.Errorf("reassemble: write %s: %w", target, copyErr)
+				return written, fmt.Errorf("reassemble: write %s: %w", header.Name, copyErr)
 			}
 			if closeErr != nil {
-				return written, fmt.Errorf("reassemble: close %s: %w", target, closeErr)
+				return written, fmt.Errorf("reassemble: close %s: %w", header.Name, closeErr)
 			}
 			written++
 		case tar.TypeSymlink:
-			// A symlink is only recreated when it stays inside the tree.
-			// One pointing at /etc/shadow would turn a later write into a
-			// very bad day.
-			if _, err := safeJoin(dir, filepath.Join(filepath.Dir(header.Name), header.Linkname)); err != nil {
-				return written, fmt.Errorf("reassemble: symlink %s points outside the archive", header.Name)
+			// A link is recreated only where it cannot lead out of the
+			// tree. An absolute target used to pass this: joining it with
+			// the entry's own directory produced a path that read as
+			// being inside, while the link written to disk still pointed
+			// wherever it said. The next entry underneath it was then
+			// written through it, outside, as root.
+			if path.IsAbs(header.Linkname) || filepath.IsAbs(header.Linkname) {
+				return written, fmt.Errorf(
+					"reassemble: symlink %s points outside the archive", header.Name)
 			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-				return written, fmt.Errorf("reassemble: create %s: %w", filepath.Dir(target), err)
+			if _, err := safeName(path.Join(path.Dir(name), header.Linkname)); err != nil {
+				return written, fmt.Errorf(
+					"reassemble: symlink %s points outside the archive", header.Name)
 			}
-			if err := os.Symlink(header.Linkname, target); err != nil && !os.IsExist(err) {
-				return written, fmt.Errorf("reassemble: symlink %s: %w", target, err)
+			if parent := path.Dir(name); parent != "." {
+				if err := root.MkdirAll(parent, 0o700); err != nil {
+					return written, fmt.Errorf("reassemble: create %s: %w", parent, err)
+				}
+			}
+			if err := root.Symlink(header.Linkname, name); err != nil && !os.IsExist(err) {
+				return written, fmt.Errorf("reassemble: symlink %s: %w", header.Name, err)
 			}
 		default:
 			// Devices, fifos and hard links are not part of an account
@@ -213,13 +242,22 @@ func createTar(dir, archivePath string) error {
 }
 
 // safeJoin resolves name inside root and refuses anything that escapes it.
-func safeJoin(root, name string) (string, error) {
-	cleanRoot := filepath.Clean(root)
-	target := filepath.Clean(filepath.Join(cleanRoot, filepath.FromSlash(name)))
-	if target != cleanRoot && !strings.HasPrefix(target, cleanRoot+string(os.PathSeparator)) {
+// safeName is where an entry may be written, relative to the extraction
+// directory, or an error saying why it may not be written at all. An empty
+// name is the directory itself.
+//
+// os.Root refuses an escape whatever this returns; this is what turns that
+// refusal into a message naming the archive entry responsible, and what
+// keeps a link target from being judged by its spelling alone.
+func safeName(name string) (string, error) {
+	clean := path.Clean(strings.TrimPrefix(filepath.ToSlash(name), "./"))
+	if clean == "." || clean == "/" {
+		return "", nil
+	}
+	if path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
 		return "", fmt.Errorf("reassemble: archive entry %q escapes the extraction directory", name)
 	}
-	return target, nil
+	return clean, nil
 }
 
 // entryMode keeps an archive's permission bits within sane bounds.
