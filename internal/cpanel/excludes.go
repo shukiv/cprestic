@@ -2,9 +2,11 @@ package cpanel
 
 import (
 	"bufio"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // This file reads the exclusions cPanel's own backups obey.
@@ -34,10 +36,20 @@ func (r *Real) NativeExcludes(home string) []string {
 	if home == "" {
 		return nil
 	}
+	// The account's own list is a file the account writes, read by a
+	// process running as root. Whose it must be is therefore whoever owns
+	// the home directory it is in -- read from the directory rather than
+	// assumed, because that is the only thing here that says which
+	// customer this is.
+	owner, ownerKnown := ownerOf(home)
+
 	seen := map[string]bool{}
 	var excludes []string
-	for _, path := range []string{r.serverExcludes(), filepath.Join(home, ExcludeConfName)} {
-		for _, pattern := range readExcludeConf(path) {
+	for _, source := range []excludeFile{
+		{path: r.serverExcludes()},
+		{path: filepath.Join(home, ExcludeConfName), owner: owner, ownerKnown: ownerKnown},
+	} {
+		for _, pattern := range readExcludeConf(source) {
 			for _, mapped := range anchorExclude(home, pattern) {
 				if !seen[mapped] {
 					seen[mapped] = true
@@ -56,20 +68,64 @@ func (r *Real) serverExcludes() string {
 	return serverExcludeConf
 }
 
+// excludeFile is one list of exclusions and who is allowed to have
+// written it. The server-wide list has no owner named: it lives in /etc
+// and only root can write there.
+type excludeFile struct {
+	path       string
+	owner      uint32
+	ownerKnown bool
+}
+
+// What one of these files may be. cPanel's own is a few dozen lines; a
+// file larger than this is not somebody's exclusion list.
+const (
+	maxExcludeBytes = 256 << 10
+	maxExcludeLines = 2000
+)
+
 // readExcludeConf reads one file's worth of patterns.
 //
 // A missing file is not an error: most servers have no per-account list,
 // and an account that has never written one has excluded nothing.
-func readExcludeConf(path string) []string {
-	file, err := os.Open(path)
+//
+// The account's file is the one thing this program reads from a place its
+// own customers can write, as root, so it is opened the way anything from
+// there has to be. Not through a symlink, because a link to /root/.my.cnf
+// would put cPanel's MySQL password into the patterns this returns, and
+// from there into a command line. Not blocking, because a named pipe with
+// nobody at the other end would stop the open for ever, and the backup
+// engine works through accounts one at a time: one customer could hold up
+// every backup on the server. Only an ordinary file, only from the account
+// that owns the home directory, and only so much of it.
+func readExcludeConf(source excludeFile) []string {
+	file, err := os.OpenFile(source.path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil
 	}
 	defer file.Close()
 
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		// A directory, a device, a pipe: whatever it is, it is not the
+		// list of exclusions this is here to read.
+		return nil
+	}
+	if source.ownerKnown {
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok || (stat.Uid != source.owner && stat.Uid != 0) {
+			// A hard link to somebody else's file, put where this one
+			// belongs. What it says is not this account's to say.
+			return nil
+		}
+	}
+
 	var patterns []string
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(io.LimitReader(file, maxExcludeBytes))
 	for scanner.Scan() {
+		if len(patterns) >= maxExcludeLines {
+			break
+		}
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -77,6 +133,19 @@ func readExcludeConf(path string) []string {
 		patterns = append(patterns, line)
 	}
 	return patterns
+}
+
+// ownerOf is who a directory belongs to.
+func ownerOf(dir string) (uint32, bool) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return 0, false
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	return stat.Uid, true
 }
 
 // anchorExclude turns one cPanel pattern into restic patterns under the
