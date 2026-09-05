@@ -4,9 +4,13 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
+	"github.com/shuki/cprest/internal/granular"
 	"github.com/shuki/cprest/internal/job"
+	"github.com/shuki/cprest/internal/node"
 	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shuki/cprest/internal/protocol"
 )
 
 // runningWork is one backup or restore that is happening now, as the strip
@@ -93,7 +97,7 @@ func runningWorkFor(store *nodestore.Store, account string) ([]runningWork, erro
 		work := runningWork{
 			Account: run.Account, Doing: "Restoring",
 			Waiting: run.Status == job.StatusPending,
-			Detail:  restoreRow{Restore: run}.Parts(),
+			Detail:  askedFor(run),
 		}
 		if work.Waiting {
 			work.Doing = "Waiting to restore"
@@ -121,6 +125,30 @@ func runningWorkFor(store *nodestore.Store, account string) ([]runningWork, erro
 		return running[i].Account < running[j].Account
 	})
 	return running, nil
+}
+
+// askedFor says what a restore was asked for, in words a sentence can
+// carry.
+//
+// restoreRow.Parts() is written for a table column, where the bare kind
+// reads as a value under a heading. "Restoring rtflow — account" does not
+// read as anything.
+func askedFor(run nodestore.Restore) string {
+	if selections := (restoreRow{Restore: run}).Selections(); len(selections) > 0 {
+		named := make([]string, 0, len(selections))
+		for _, selection := range selections {
+			named = append(named, lowerFirst(granular.Kind(selection.Kind).Title()))
+		}
+		return strings.Join(named, ", ")
+	}
+	switch run.Kind {
+	case protocol.RestoreFiles:
+		return "files out of the backup"
+	case node.KindVerify:
+		return "a rehearsal, which touches nothing live"
+	default:
+		return "the whole account"
+	}
 }
 
 // stillGoing reports whether work has been asked for and is not over.

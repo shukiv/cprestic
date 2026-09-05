@@ -3050,7 +3050,8 @@ func TestWorkThatIsWaitingIsShownAsWaiting(t *testing.T) {
 
 	_, page := get(t, client, "/")
 	for _, want := range []string{
-		"Waiting to restore customer1", `data-running="1"`, `data-live="cpr-running"`,
+		"Waiting to restore customer1", "the whole account",
+		`data-running="1"`, `data-live="cpr-running"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the strip does not say %q", want)
