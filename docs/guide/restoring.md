@@ -12,7 +12,19 @@ Three tabs, because there are three different situations.
 
 By default a restore **rebuilds** the archive and leaves it on this server for
 you to inspect. Overwriting the live account, or handing the archive to
-cPanel's own restore, is a separate tick with its own confirmation.
+cPanel's own restore, is a separate tick.
+
+Every one of those goes through a confirmation page first. It names the
+account, the restore point, and what would be replaced — the databases you
+ticked, the accounts in a bulk restore, everything in a basket — and says
+plainly that there is no undo. Nothing runs until the box on that page is
+ticked. The tick is a form field the server requires, not a browser dialog,
+so it works with scripting switched off and a request that arrives another
+way is refused too.
+
+An account cPanel no longer has is the one case that reads differently: it
+says the account is created again, because there is nothing on this server
+to replace.
 
 ## Restore account(s)
 

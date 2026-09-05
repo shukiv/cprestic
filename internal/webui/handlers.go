@@ -2903,6 +2903,13 @@ func (s *Server) handleRestoreItems(w http.ResponseWriter, r *http.Request) {
 		s.redirect(w, r, back, "error", err.Error())
 		return
 	}
+	// Names are checked first, so the page an operator is asked to read
+	// back is the one the restore would actually run.
+	if restore.Apply && !confirmed(r) {
+		s.askFirst(w, r, confirmOnePart(restore.Account, granular.Kind(restore.ItemKind),
+			restore.ItemNames, restore.SnapshotID, linkTo(back)))
+		return
+	}
 
 	if _, err := s.engine.QueueRestore(restore); err != nil {
 		s.redirect(w, r, back, "error", err.Error())
@@ -2945,6 +2952,15 @@ func (s *Server) handleStartRestore(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		restore.TargetDir = strings.TrimSpace(r.PostFormValue("target"))
+	}
+
+	// Asked after the file list, because picking files turns this into a
+	// restore that overwrites nothing and needs no confirmation.
+	if restore.Apply && !confirmed(r) {
+		s.askFirst(w, r, confirmWholeAccount(restore.Account, restore.SnapshotID,
+			linkTo("/restore?account="+restore.Account),
+			s.accountIsGone(restore.Account), restore.Unrestricted))
+		return
 	}
 
 	queued, err := s.engine.QueueRestore(restore)
@@ -3731,6 +3747,17 @@ func (s *Server) handleRecoverAccount(w http.ResponseWriter, r *http.Request) {
 		snapshot = found
 	}
 
+	if apply && !confirmed(r) {
+		// The backup just resolved travels on to the confirmed request,
+		// so the operator runs the restore point they were shown rather
+		// than whatever is newest by the time they tick the box.
+		r.PostForm.Set("snapshot", snapshot)
+		s.askFirst(w, r, confirmWholeAccount(account, snapshot,
+			linkTo("/restore?tab=server"), s.accountIsGone(account),
+			r.PostFormValue("unrestricted") != ""))
+		return
+	}
+
 	queued, err := s.engine.QueueRestore(nodestore.Restore{
 		Account:      account,
 		RepositoryID: repository,
@@ -3811,6 +3838,13 @@ func (s *Server) handleRecoverAccounts(w http.ResponseWriter, r *http.Request) {
 	}
 	if repository == "" {
 		s.redirect(w, r, back, "error", "Choose which destination to restore from.")
+		return
+	}
+	// Asked after the list is known to be a list, so the page names the
+	// accounts rather than warning about a restore of nothing.
+	if apply && !confirmed(r) {
+		s.askFirst(w, r, confirmManyAccounts(accounts,
+			strings.TrimSpace(r.PostFormValue("asof")), linkTo(back), unrestricted))
 		return
 	}
 
@@ -4282,6 +4316,12 @@ func (s *Server) startBasket(w http.ResponseWriter, r *http.Request, back string
 		return
 	}
 	chosen := orderedSelections(basket, granular.Kinds)
+	if apply && !confirmed(r) {
+		s.askFirst(w, r, confirmBasket(account,
+			basketRows(basket, granular.Kinds, granular.Kind.Title),
+			snapshot, linkTo(back)))
+		return
+	}
 	restore := nodestore.Restore{
 		Account: account, RepositoryID: repository, SnapshotID: snapshot,
 		Kind: protocol.RestoreItems, Apply: apply,

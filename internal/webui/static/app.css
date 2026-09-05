@@ -443,6 +443,12 @@
 .cprest form .cpr-grid2 > div > label:first-child,
 .cprest form .cpr-grid3 > div > label:first-child { margin-top:0; }
 
+/* What a confirmation says would be replaced. Set as a list rather than a
+   paragraph because it is read to be checked, name by name, and a name in
+   a sentence is a name that gets skimmed. */
+.cprest .cpr-confirm-list { margin:var(--s3) 0 0; padding-left:var(--s5); font-size:14px; }
+.cprest .cpr-confirm-list li { margin:var(--s1) 0; }
+
 /* A row for an account this server does not have. Shaded and muted, with
    a pill beside the name saying which: colour alone would say nothing to
    somebody who cannot see this one, and nothing at all in print. */

@@ -133,8 +133,7 @@ destination knows.{{end}}</div>
         <input type="checkbox" name="unrestricted" value="1"><span>unrestricted</span></label>
       <button class="cpr-btn" type="submit" data-bulk-submit disabled>Rebuild chosen</button>
       <button class="cpr-btn cpr-danger" type="submit" name="apply" value="1"
-              data-bulk-submit disabled
-              data-confirm="Hand every chosen account to cPanel's own restore? An account of the same name on this server would be replaced. There is no undo.">Restore chosen onto this server</button>
+              data-bulk-submit disabled>Restore chosen onto this server…</button>
     </div>
   </form>
   <div class="cpr-pad" style="border-top:1px solid var(--line)">
@@ -319,7 +318,7 @@ destination knows.{{end}}</div>
           <input type="hidden" name="snapshot" value="{{$data.SnapshotID}}">
           <input type="hidden" name="basket" value="1">
           <button class="cpr-btn cpr-primary">Copy out the basket</button>
-          {{if $data.BasketCanApply}}<button class="cpr-btn cpr-danger" name="apply" value="1">Put the basket back into the account</button>
+          {{if $data.BasketCanApply}}<button class="cpr-btn cpr-danger" name="apply" value="1">Put the basket back into the account…</button>
           {{else}}<span class="cpr-hint" style="margin:0">{{$data.BasketBlocker}} cannot be written
           back, and a basket goes back whole or not at all.</span>{{end}}
         </form>
@@ -387,7 +386,7 @@ destination knows.{{end}}</div>
               <button class="cpr-btn" name="action" value="append" title="Choose it now, restore it with the rest">Add to basket</button>
               <button class="cpr-btn">Copy it out</button>
               {{if $data.Kind.CanApply}}<button class="cpr-btn cpr-danger" name="apply" value="1"
-                title="Replaces this in the live account">Put it back</button>{{end}}
+                title="Replaces this in the live account">Put it back…</button>{{end}}
             </form>
           </div>{{end}}</td>
         </tr>
@@ -426,7 +425,7 @@ destination knows.{{end}}</div>
       <div class="cpr-row">
         <button class="cpr-btn" name="action" value="add">{{if $data.InBasket $data.Kind}}Update the basket{{else}}Add to basket{{end}}</button>
         <button class="cpr-btn cpr-primary">Copy out {{$data.KindTitle $data.Kind}}</button>
-        {{if $data.Kind.CanApply}}<button class="cpr-btn cpr-danger" name="apply" value="1">Put it back into the account</button>{{end}}
+        {{if $data.Kind.CanApply}}<button class="cpr-btn cpr-danger" name="apply" value="1">Put it back into the account…</button>{{end}}
         <span class="cpr-hint" style="margin:0">Taken out of the account archive in that backup.</span>
       </div>
     </form>

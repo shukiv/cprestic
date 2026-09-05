@@ -1,0 +1,31 @@
+{{define "content"}}
+{{$data := .Data}}
+<div>
+  <h1>{{$data.Title}}</h1>
+  <p class="cpr-sub">Read what this replaces before it runs. Nothing has happened yet.</p>
+</div>
+
+<div class="cpr-card"><div class="cpr-pad">
+  <div class="cpr-banner cpr-bad"><div class="cpr-body">
+    <strong>{{$data.Title}}</strong>
+    <p style="margin:var(--s2) 0 0">{{$data.Warning}}</p>
+    {{if $data.Detail}}
+    <ul class="cpr-confirm-list">
+      {{range $data.Detail}}<li>{{.}}</li>{{end}}
+    </ul>
+    {{end}}
+
+    <form method="post" action="{{$data.Action}}" style="margin-top:var(--s3)">
+      <input type="hidden" name="csrf" value="{{$.CSRF}}">
+      {{range $data.Fields}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">
+      {{end}}
+      <label class="cpr-check"><input type="checkbox" name="confirm" value="1" required>
+        {{$data.Tick}}</label>
+      <div class="cpr-actions" style="margin-top:var(--s3)">
+        <button class="cpr-btn cpr-danger" type="submit">{{$data.Button}}</button>
+        <a class="cpr-btn cpr-quiet" href="{{$data.Cancel}}">Cancel</a>
+      </div>
+    </form>
+  </div></div>
+</div></div>
+{{end}}

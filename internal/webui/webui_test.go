@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/shuki/cprest/internal/cpanel"
+	"github.com/shuki/cprest/internal/granular"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/node"
 	"github.com/shuki/cprest/internal/nodestore"
@@ -2878,5 +2879,157 @@ func TestOneAccountGetsOneRequestAtATime(t *testing.T) {
 	busy.Leave("studio")
 	if !busy.Enter("studio") {
 		t.Error("the account is still held after its request finished")
+	}
+}
+
+// postForm submits a form and hands back what came out of it, which is a
+// page when the handler asked something and an empty body when it acted.
+func postForm(t *testing.T, client *http.Client, path string,
+	form map[string][]string) (int, string) {
+
+	t.Helper()
+	resp, err := client.PostForm("http://ui"+path, form)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(body)
+}
+
+// Putting part of an account back replaces what is live, and the operator's
+// side used to ask nothing at all: one button carried a window.confirm,
+// which is not there with scripting off, and every handler took apply=1 on
+// its own. The customer's side has required a tick since it was written.
+func TestPuttingAPartBackAsksFirst(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	_, page := get(t, client, "/restore")
+	form := map[string][]string{
+		"csrf": {csrfToken(t, page)}, "account": {"customer1"},
+		"repository": {"vault"}, "snapshot": {"abcdef0123456789"},
+		"item": {string(granular.KindDatabase)}, "name": {"customer1_shop"},
+		"apply": {"1"},
+	}
+
+	status, asked := postForm(t, client, "/restore/items", form)
+	if status != http.StatusOK {
+		t.Fatalf("the restore ran without asking: status %d", status)
+	}
+	for _, want := range []string{
+		"Put a database back into customer1?", "There is no undo",
+		"customer1_shop", `name="confirm"`,
+		// The held request comes back as hidden fields, so ticking the
+		// box runs the restore that was described and not another one.
+		`name="apply" value="1"`, `name="item" value="database"`,
+	} {
+		if !strings.Contains(asked, want) {
+			t.Errorf("the confirmation does not say %q", want)
+		}
+	}
+
+	restores, err := engine.Store().Restores(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restores) != 0 {
+		t.Fatalf("a restore was queued without a confirmation: %+v", restores)
+	}
+
+	// Ticked, it is no longer this page's business: the handler acts and
+	// redirects, whatever the engine then makes of the request.
+	form["confirm"] = []string{"1"}
+	status, _ = postForm(t, client, "/restore/items", form)
+	if status == http.StatusOK {
+		t.Error("the confirmation was shown again after it was given")
+	}
+}
+
+// The bulk restore is where a name nobody meant to tick is easiest to
+// miss, so the confirmation reads the names back.
+func TestRestoringSeveralAccountsAsksFirst(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	_, page := get(t, client, "/restore")
+	form := map[string][]string{
+		"csrf": {csrfToken(t, page)}, "repository": {"vault"},
+		"account": {"customer1", "customer2"}, "apply": {"1"},
+	}
+
+	status, asked := postForm(t, client, "/recover/accounts", form)
+	if status != http.StatusOK {
+		t.Fatalf("the restore ran without asking: status %d", status)
+	}
+	for _, want := range []string{
+		"Restore 2 accounts onto this server?", "There is no undo",
+		"customer1", "customer2", `name="confirm"`,
+	} {
+		if !strings.Contains(asked, want) {
+			t.Errorf("the confirmation does not say %q", want)
+		}
+	}
+
+	restores, err := engine.Store().Restores(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restores) != 0 {
+		t.Fatalf("a restore was queued without a confirmation: %+v", restores)
+	}
+}
+
+// Rebuilding an archive overwrites nothing, so it is not something to ask
+// about. Only handing that archive to cPanel's own restore is.
+func TestRebuildingAnArchiveIsNotAskedAbout(t *testing.T) {
+	client, _, _ := newUI(t)
+
+	_, page := get(t, client, "/restore")
+	status, body := postForm(t, client, "/recover/accounts", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "repository": {"vault"},
+		"account": {"customer1"},
+	})
+	if status == http.StatusOK && strings.Contains(body, `name="confirm"`) {
+		t.Error("rebuilding an archive asks a question it does not need to ask")
+	}
+}
+
+// An account cPanel no longer has is the same button and a different
+// question: there is nothing on this server to replace, and a warning that
+// says otherwise is a warning that gets read past.
+func TestRecreatingADeletedAccountSaysSo(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	seen := time.Now().Add(-2 * time.Hour)
+	retired := time.Now().Add(-time.Hour)
+	if _, err := engine.Store().PutIdentity(nodestore.AccountIdentity{
+		Account: "departed", UID: 1234, SinceAt: seen,
+		LastSeen: seen, CreatedAt: seen, RetiredAt: &retired,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, page := get(t, client, "/restore")
+	_, asked := postForm(t, client, "/restore/start", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "account": {"departed"},
+		"repository": {"vault"}, "snapshot": {"abcdef0123456789"},
+		"apply": {"1"},
+	})
+	if !strings.Contains(asked, "Create departed again?") {
+		t.Error("recreating a deleted account is described as an overwrite")
+	}
+	if strings.Contains(asked, "There is no undo") {
+		t.Error("a restore that replaces nothing warns that it cannot be undone")
+	}
+
+	// The same request for an account this server still has.
+	_, live := postForm(t, client, "/restore/start", map[string][]string{
+		"csrf": {csrfToken(t, page)}, "account": {"customer1"},
+		"repository": {"vault"}, "snapshot": {"abcdef0123456789"},
+		"apply": {"1"},
+	})
+	for _, want := range []string{"Overwrite customer1?", "There is no undo"} {
+		if !strings.Contains(live, want) {
+			t.Errorf("the confirmation does not say %q", want)
+		}
 	}
 }
