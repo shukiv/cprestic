@@ -36,6 +36,38 @@ remain readable for compatibility but are not used.
 Customers with no access to WHM can use the same form directly; it needs
 nothing installed.
 
+## Reading the log
+
+**Logs → Service log** is what the service itself wrote, read back from the
+journal without a shell. Four controls narrow it: a level, how far back to
+read, how many lines, and one account's name — which keeps only the lines
+that name that account, so a single backup's story is one filter away.
+
+**Keep up with it** re-reads every few seconds while you watch, and the box
+stays at the newest line. **Download all of it** hands over the whole of
+what the journal still keeps for the span chosen; the box on the page is the
+tail of that.
+
+Nothing on that page is filtered for secrets. It is this server's own log,
+behind the root-only socket, read by somebody who could run `journalctl`
+anyway — and a log read to debug a credential is no use with the credential
+taken out. A bug report is the other way round, and is redacted, because it
+leaves the server.
+
+### Log level
+
+**Settings → Log level** is how much the service writes: `error`, `warn`,
+`info` or `debug`, quietest first. It takes effect at once, with no restart,
+which is the point — the reason to turn `debug` on is usually something
+going wrong now, and a restart would end it. It is stored, so the service
+comes back at the level you chose.
+
+`debug` is loud. Turn it back down when you are done.
+
+The `-log-level` flag in the unit file is the level the service starts at
+before it reads its settings. The stored level wins, because it is the one
+that can be changed without editing a unit file.
+
 ## First three commands
 
 ```bash

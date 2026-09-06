@@ -90,6 +90,10 @@ type Engine struct {
 	// service was not running to hear. It is drained before anything
 	// infers who owns a name from the account list.
 	hookSpool string
+	// logLevel is what the service is logging at now. It is shared with
+	// the handler the loggers were built on, so changing it here changes
+	// what they write.
+	logLevel *slog.LevelVar
 }
 
 // Config assembles an Engine.
@@ -108,6 +112,10 @@ type Config struct {
 	// HookSpool is the directory cPanel lifecycle hooks write to when
 	// this service is not there to answer. Empty means hookspool.DefaultDir.
 	HookSpool string
+	// LogLevel is the level variable the process's logger was built on.
+	// Nil gets a private one, which is what a test wants; the service
+	// passes the one its own handler reads.
+	LogLevel *slog.LevelVar
 }
 
 // New builds an Engine from stored settings.
@@ -176,6 +184,10 @@ func New(cfg Config) (*Engine, error) {
 		log: log, settings: settings, lastProgress: map[string]progressMark{},
 		accountUID: uidLookup,
 		hookSpool:  spoolDir,
+		logLevel:   cfg.LogLevel,
+	}
+	if engine.logLevel == nil {
+		engine.logLevel = new(slog.LevelVar)
 	}
 	// A backup of a large account takes minutes, and an operator watching
 	// it deserves to see it move. restic reports about once a second per

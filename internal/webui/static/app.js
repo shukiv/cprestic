@@ -596,7 +596,12 @@
     Array.prototype.forEach.call(fresh.querySelectorAll("[data-live]"), function (node) {
       var here = document.querySelector('[data-live="' + node.dataset.live + '"]');
       if (here && here.innerHTML !== node.innerHTML) {
+        // A region asking to stay at its end is the service log: it is
+        // read at the newest line, and a swap that left the scroll where
+        // it was would show the oldest one every few seconds.
+        var atEnd = here.dataset.liveScroll === "end";
         here.innerHTML = node.innerHTML;
+        if (atEnd) { here.scrollTop = here.scrollHeight; }
         swapped = true;
       }
     });
@@ -645,6 +650,12 @@
     if (timer !== null || !running()) { return; }
     timer = window.setTimeout(tick, INTERVAL);
   }
+
+  // Open the log at its end for the same reason, whether or not anything
+  // is being followed.
+  document.querySelectorAll('[data-live-scroll="end"]').forEach(function (box) {
+    box.scrollTop = box.scrollHeight;
+  });
 
   schedule();
 })();

@@ -49,6 +49,9 @@ var fontFS embed.FS
 type Server struct {
 	engine *node.Engine
 	log    *slog.Logger
+	// journal reads the service log. It is a field so a test can answer
+	// with lines of its own rather than needing a systemd unit.
+	journal journalReader
 	// templates holds one set per page. Every page defines "content", so
 	// parsing them into a single set would leave only the last one.
 	templates map[string]*template.Template
@@ -89,7 +92,19 @@ type assets struct {
 }
 
 // New builds the interface.
-func New(engine *node.Engine, log *slog.Logger) (*Server, error) {
+// Option adjusts a server at construction. There is one, and it exists so
+// the service log can be answered from somewhere other than journalctl --
+// a machine with no systemd unit has no journal to read, and every other
+// route on this server can be exercised on one.
+type Option func(*Server)
+
+// WithJournal reads the service log with the given command instead of
+// journalctl.
+func WithJournal(read func(ctx context.Context, args ...string) ([]byte, error)) Option {
+	return func(s *Server) { s.journal = read }
+}
+
+func New(engine *node.Engine, log *slog.Logger, options ...Option) (*Server, error) {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -111,15 +126,19 @@ func New(engine *node.Engine, log *slog.Logger) (*Server, error) {
 	if _, err := rand.Read(raw); err != nil {
 		return nil, fmt.Errorf("webui: generate csrf token: %w", err)
 	}
-	return &Server{
-		engine: engine, log: log, templates: templates,
+	server := &Server{
+		engine: engine, log: log, templates: templates, journal: readJournal,
 		csrfToken:        hex.EncodeToString(raw[:32]),
 		userCSRFKey:      append([]byte(nil), raw[32:64]...),
 		assets:           assets{CSS: template.CSS(css), JS: template.JS(script)},
 		userFeatures:     newAccountFeatureGate(),
 		userAuth:         newAccountSessionAuth(raw[64:96]),
 		reportPreviewKey: append([]byte(nil), raw[96:]...),
-	}, nil
+	}
+	for _, option := range options {
+		option(server)
+	}
+	return server, nil
 }
 
 // userCSRFToken binds an account-facing form to the Unix peer identity that
@@ -228,6 +247,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /report/send", s.guard(s.handleSendReport))
 
 	mux.HandleFunc("GET /logs", s.handleLogs)
+	mux.HandleFunc("GET /logs/download", s.handleLogDownload)
 	// The page was called History and lived at /jobs. Somebody's bookmark
 	// and somebody's runbook still say so.
 	mux.HandleFunc("GET /jobs", s.handleLogs)

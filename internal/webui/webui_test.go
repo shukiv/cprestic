@@ -37,6 +37,18 @@ func newUI(t *testing.T) (*http.Client, string, *node.Engine) {
 // that has to see which commands the interface causes to be run.
 func newUIWithExec(t *testing.T, exec resticrun.Execer) (*http.Client, string, *node.Engine) {
 	t.Helper()
+	return newUIWithJournalAndExec(t, "", exec)
+}
+
+// newUIWithJournal answers the service log with lines of the test's own,
+// for a machine that has no systemd unit to read one from.
+func newUIWithJournal(t *testing.T, journal string) (*http.Client, string, *node.Engine) {
+	t.Helper()
+	return newUIWithJournalAndExec(t, journal, nil)
+}
+
+func newUIWithJournalAndExec(t *testing.T, journal string, exec resticrun.Execer) (*http.Client, string, *node.Engine) {
+	t.Helper()
 	root := t.TempDir()
 
 	store, err := nodestore.Open(filepath.Join(root, "state.db"))
@@ -85,7 +97,12 @@ func newUIWithExec(t *testing.T, exec resticrun.Execer) (*http.Client, string, *
 		t.Fatalf("build engine: %v", err)
 	}
 
-	server, err := webui.New(engine, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	options := []webui.Option{}
+	if journal != "" {
+		options = append(options, webui.WithJournal(
+			func(context.Context, ...string) ([]byte, error) { return []byte(journal), nil }))
+	}
+	server, err := webui.New(engine, slog.New(slog.NewTextHandler(io.Discard, nil)), options...)
 	if err != nil {
 		t.Fatalf("build ui: %v", err)
 	}

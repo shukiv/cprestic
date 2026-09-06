@@ -59,11 +59,15 @@ type config struct {
 	certifyArchive      string
 	certifyUser         string
 	certifyIsolatedHost bool
+	// level is the running log level, shared with the handler the logger
+	// was built on so the interface can move it.
+	level *slog.LevelVar
 }
 
 func main() {
 	cfg := parseFlags()
-	log := newLogger(cfg.logLevel)
+	log, logLevel := newLogger(cfg.logLevel)
+	cfg.level = logLevel
 	if cfg.cpanelHookDescribe {
 		if err := writeCPanelHookDescription(os.Stdout); err != nil {
 			log.Error("describe cPanel lifecycle hooks", "error", err)
@@ -383,10 +387,16 @@ func ensureDir(path string) error {
 	return nil
 }
 
-func newLogger(level string) *slog.Logger {
+// newLogger builds the process's logger on a level that can be moved
+// later. The variable is handed to the engine, so turning the log up in the
+// interface changes what this handler writes rather than what the next
+// process would write.
+func newLogger(level string) (*slog.Logger, *slog.LevelVar) {
 	var parsed slog.Level
 	if err := parsed.UnmarshalText([]byte(level)); err != nil {
 		parsed = slog.LevelInfo
 	}
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: parsed}))
+	current := new(slog.LevelVar)
+	current.Set(parsed)
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: current})), current
 }

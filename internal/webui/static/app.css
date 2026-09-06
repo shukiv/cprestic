@@ -1010,3 +1010,14 @@
   .gniza.cpr-user .cpr-recovery-actions .cpr-btn { width:100%; }
   .gniza.cpr-user .cpr-recovery-buttons { flex-direction:column; }
 }
+
+/* The service log. A log is read by eye at the last line, so the box is
+ * tall, scrolls on its own rather than growing the page, and does not wrap:
+ * a wrapped log line hides where one line ends and the next begins. */
+.gniza .cpr-logbox {
+  margin:0; max-height:60vh; overflow:auto; white-space:pre;
+  padding:var(--s3); border:1px solid var(--line); border-radius:var(--r);
+  background:var(--surface-2); color:var(--ink);
+  font-size:12px; line-height:1.55; tab-size:4;
+}
+.gniza .cpr-logbox:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }

@@ -74,11 +74,15 @@ func runStandalone(ctx context.Context, cfg config, log *slog.Logger) error {
 
 	engine, err := node.New(node.Config{
 		Store: store, Vault: v, Provider: provider, Log: log,
-		HookSpool: cfg.hookSpoolDir,
+		HookSpool: cfg.hookSpoolDir, LogLevel: cfg.level,
 	})
 	if err != nil {
 		return err
 	}
+	// The stored level is what the operator last chose, and the flag is
+	// what the unit file says. The stored one wins: it is the newer of the
+	// two, and it is the one they can change without editing a unit.
+	engine.ApplyStoredLogLevel()
 	if err := engine.ProbeCapabilities(ctx); err != nil {
 		// A host whose pkgacct cannot be probed can still be configured;
 		// the interface shows the gap.

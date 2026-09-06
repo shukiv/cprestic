@@ -53,8 +53,17 @@ func DefaultSettings() Settings {
 		ResticBinary:  "restic",
 		ResticCache:   "/var/cache/gniza/restic",
 		ConfigDir:     "/etc/gniza",
+		LogLevel:      DefaultLogLevel,
 	}
 }
+
+// LogLevels are what the service log can be turned down or up to, quietest
+// first. They are slog's own names, so the setting, the -log-level flag and
+// the level written into every line all spell a level the same way.
+var LogLevels = []string{"error", "warn", "info", "debug"}
+
+// DefaultLogLevel is what a server logs at until somebody changes it.
+const DefaultLogLevel = "info"
 
 // SaveSettings writes the node's configuration.
 func (s *Store) SaveSettings(settings Settings) error {

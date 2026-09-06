@@ -41,6 +41,16 @@
         after this they are swept. −1 keeps them until you delete them.</small>
       </div>
       <div>
+        <label for="log_level">Log level</label>
+        <select id="log_level" name="log_level">
+          {{range $data.LogLevels}}<option value="{{.}}" {{if eq . $data.Settings.LogLevel}}selected{{end}}>{{.}}</option>{{end}}
+        </select>
+        <small class="cpr-help">How much the service writes to its own log, readable under
+        <a class="cpr-link" href="?p=logs&amp;tab=service">Logs → Service log</a>. Takes effect at
+        once, without a restart: <b>debug</b> is for watching something that is going wrong now,
+        and is worth turning back down afterwards.</small>
+      </div>
+      <div>
         <label for="bug_intake">Where bug reports go</label>
         <input type="url" id="bug_intake" readonly value="{{$data.BugReportURL}}"
                aria-describedby="bug_intake_help">

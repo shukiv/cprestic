@@ -16,6 +16,64 @@
   </div>
 </div>
 {{template "jobtable" $data.SystemTable}}
+{{else if eq $data.Tab "service"}}
+{{$log := $data.Service}}
+<div class="cpr-card">
+  <form method="get" class="cpr-pad cpr-formgrid" style="border-bottom:1px solid var(--line)">
+    <input type="hidden" name="p" value="logs">
+    <input type="hidden" name="tab" value="service">
+    <div>
+      <label for="log_level_filter">Show</label>
+      <select id="log_level_filter" name="level">
+        {{range $log.Levels}}<option value="{{.}}" {{if eq . $log.Level}}selected{{end}}>{{.}} and above</option>{{end}}
+      </select>
+      <small class="cpr-help">What the service wrote, not what it was configured to write.
+      Turning the level up in <a class="cpr-link" href="?p=settings">Settings</a> is what makes
+      quieter lines exist in the first place.</small>
+    </div>
+    <div>
+      <label for="log_span">From</label>
+      <select id="log_span" name="span">
+        {{range $log.Spans}}<option value="{{.Key}}" {{if .Chosen}}selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+    </div>
+    <div>
+      <label for="log_size">At most</label>
+      <select id="log_size" name="size">
+        {{range $log.Sizes}}<option value="{{.Key}}" {{if .Chosen}}selected{{end}}>{{.Label}}</option>{{end}}
+      </select>
+    </div>
+    <div>
+      <label for="log_account">Account</label>
+      <input type="text" id="log_account" name="account" value="{{$log.Account}}"
+             placeholder="every account">
+      <small class="cpr-help">One account's name keeps only the lines that name it.</small>
+    </div>
+    <div>
+      <label class="cpr-check" for="log_follow">
+        <input type="checkbox" id="log_follow" name="follow" value="1" {{if $log.Follow}}checked{{end}}>
+        Keep up with it
+      </label>
+      <small class="cpr-help">Re-reads every few seconds while you watch.</small>
+    </div>
+    <div class="cpr-bulkbar" style="align-self:end">
+      <button class="cpr-btn cpr-primary" type="submit">Show</button>
+      <a class="cpr-btn" href="?p=logs/download&amp;level={{$log.Level}}&amp;span={{$log.Span}}&amp;account={{$log.Account}}">Download all of it</a>
+    </div>
+  </form>
+  {{if $log.Follow}}<span data-running="1" hidden></span>{{end}}
+  <div class="cpr-pad">
+    {{if $log.Error}}
+    <div class="cpr-banner cpr-bad" role="alert"><div class="cpr-body">{{$log.Error}}</div></div>
+    {{end}}
+    <pre class="cpr-mono cpr-logbox" data-live="servicelog" data-live-scroll="end"
+         tabindex="0" aria-label="The service log">{{if $log.Empty}}Nothing in the log matches that. Widen the span, or lower the level.{{else}}{{$log.Text}}{{end}}</pre>
+    <small class="cpr-help">The download is the whole of what the journal still keeps for the
+    span above; the box is the tail of it. Nothing here is filtered for secrets — it is this
+    server's own log, read by root. A bug report is redacted, because that leaves the server.</small>
+  </div>
+</div>
+
 {{else if eq $data.Tab "restores"}}
 <div class="cpr-card">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)"><h2 style="margin:0">Restores</h2></div>

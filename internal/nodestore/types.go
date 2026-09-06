@@ -513,6 +513,11 @@ type Settings struct {
 	// BugEmail is retained for settings-file compatibility only. Reports now
 	// go to the fixed bug tracker intake, never to the old email destination.
 	BugEmail string `json:"bug_email,omitempty"`
+	// LogLevel is how much the service writes to its own log: one of
+	// LogLevels. It is read while the service is running rather than only
+	// at startup, because the reason to turn debug on is usually something
+	// that is happening now and would not survive a restart.
+	LogLevel string `json:"log_level,omitempty"`
 	// SendmailPath is retained for compatibility; bug reporting no longer
 	// invokes sendmail. Notification channel settings are unaffected.
 	SendmailPath string `json:"sendmail_path,omitempty"`

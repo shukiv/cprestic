@@ -3305,6 +3305,10 @@ type logsView struct {
 	// Counts label the tabs, so an operator can see there is something
 	// under one without opening it.
 	Counts map[string]int
+	// Service is the service's own log, which is the one tab that is not
+	// built from what this server recorded about a job but read back from
+	// the journal it wrote as the job ran.
+	Service serviceLogView
 }
 
 // logTable is one tab's worth of backup rows. Backups of accounts and
@@ -3377,12 +3381,17 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		"restores":  len(view.Restores),
 		"lifecycle": len(view.Lifecycle),
 	}
+	// Reading the journal costs a process, so it happens for the tab that
+	// shows it and not for the four that do not.
+	if view.Tab == "service" {
+		view.Service = s.serviceLog(r.Context(), r)
+	}
 	s.render(w, r, "logs.html", "Logs", "logs", view)
 }
 
 func logTab(asked string) string {
 	switch asked {
-	case "system", "restores", "lifecycle":
+	case "system", "restores", "lifecycle", "service":
 		return asked
 	default:
 		return "backups"
@@ -3528,6 +3537,12 @@ func (s *Server) settingsPage() (settingsView, error) {
 		s.log.Error("read the upgrade in flight", "error", err)
 	}
 
+	// A server saved before this setting existed has no level stored. It
+	// is logging at info, so that is what the page must show selected --
+	// not an empty box that saves a level nobody chose.
+	if settings.LogLevel == "" {
+		settings.LogLevel = nodestore.DefaultLogLevel
+	}
 	return settingsView{
 		Settings:    settings,
 		StagingFree: free,
@@ -3536,6 +3551,7 @@ func (s *Server) settingsPage() (settingsView, error) {
 		KeepDays:    keepDays(settings),
 		DeletedDays: deletedDays(settings), DeletedPreset: deletedPreset(settings),
 		BugReportURL: bugreport.PublicReportURL, BugIntakeProgram: bugreport.IntakeProgram,
+		LogLevels: nodestore.LogLevels,
 		Version:     agent.Version,
 		LastChecked: lastChecked, CheckError: checkError,
 		Update:     panel,
@@ -3566,6 +3582,8 @@ type settingsView struct {
 	// they are shown so an operator knows where a report goes.
 	BugReportURL     string
 	BugIntakeProgram string
+	// LogLevels are what the log level can be set to, quietest first.
+	LogLevels []string
 	// Version is what this build calls itself, and LastChecked and
 	// CheckError are the last ask about a newer release. A check that has
 	// been failing for a month is worth seeing beside the tick that turns
@@ -3886,6 +3904,18 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	// server does unless somebody says not to.
 	settings.NoUpdateCheck = r.PostFormValue("update_check") != "1"
 	settings.BackupOnSuspension = r.PostFormValue("backup_on_suspension") == "1"
+	// The level is set through the engine rather than written here: it
+	// moves the running service as well as the stored setting, and a name
+	// it cannot read leaves both where they were.
+	if level := strings.TrimSpace(r.PostFormValue("log_level")); level != "" {
+		if err := s.engine.SetLogLevel(level); err != nil {
+			s.redirect(w, r, "/settings", "error", err.Error())
+			return
+		}
+		// SetLogLevel has already written the settings this handler read
+		// before it ran, so the copy in hand is one field out of date.
+		settings.LogLevel = level
+	}
 	if hostname := strings.TrimSpace(r.PostFormValue("hostname")); hostname != "" {
 		settings.Hostname = hostname
 	}
