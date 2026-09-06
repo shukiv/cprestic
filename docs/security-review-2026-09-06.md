@@ -28,6 +28,27 @@ The regression tests are permanent and live beside the code they cover:
 `internal/hookspool/hookspool_test.go`,
 `cmd/agent/hook_test.go`.
 
+A follow-up pass over the fixes themselves found three more things, fixed in
+`4647fb4` with the same regression discipline:
+
+- The spool stamped an event with the time the socket gave up rather than the
+  time cPanel ran the hook. A stopped service takes the full 30-second timeout
+  to answer, and a boundary recorded 30 seconds late files the new owner's
+  first backups under the customer before them.
+- A create spooled for a name that was removed again before the service came
+  back could never be recorded, so it was retried on every reconciliation for
+  ever. It is now discarded — a name with no holder has no boundary to protect,
+  and a name created later brings its own hook. A lookup that failed for any
+  other reason is still kept.
+- The destinations page offered Approve for a plan `ApproveRetention` refuses,
+  because the button asked only whether a plan existed. It now asks the same
+  question the approval does.
+
+The same pass found that the deployed hook binary at
+`/usr/local/cpanel/3rdparty/bin/cprest-hook` is a second copy of the agent and
+had not been replaced by the earlier deploys, so the spooling half of SEC-09
+was not yet live on `.144`. Both paths now hold the same build.
+
 Two things an operator has to know about the deployed server:
 
 - Retention approval now records the policy it was given for, so every
