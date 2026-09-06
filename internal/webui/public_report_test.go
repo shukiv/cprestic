@@ -151,3 +151,21 @@ func TestNothingAsksForAnIntakeKeyOnDisk(t *testing.T) {
 		t.Fatal("a leftover key file brought sending back")
 	}
 }
+
+// TestFilingItIsOnTheSamePageAsDownloadingIt keeps the two halves of the
+// one action together. The report is downloaded here and filed somewhere
+// else, so a page that hands over a file without saying where it goes has
+// only done half of it -- and an operator who has just pressed Download is
+// looking at the button bar, not at the paragraph above the form.
+func TestFilingItIsOnTheSamePageAsDownloadingIt(t *testing.T) {
+	client, _, _ := newUI(t)
+	_, form := get(t, client, "/report")
+
+	bar := form[strings.Index(form, `name="download"`):]
+	if end := strings.Index(bar, "</div>"); end >= 0 {
+		bar = bar[:end]
+	}
+	if !strings.Contains(bar, bugreport.PublicReportURL) {
+		t.Error("the button that downloads the report is not beside the one that opens the form")
+	}
+}

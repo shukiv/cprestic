@@ -3,9 +3,11 @@
 <div class="cpr-page-head">
   <h1>Report a problem</h1>
   <p class="cpr-hint">What went wrong, in your words, with what this server can say about itself
-  attached. Nothing leaves this server on its own: review the report, download it, and file it at
-  <a class="cpr-link" href="{{$data.ReportURL}}" target="_blank" rel="noopener noreferrer">{{$data.ReportURL}}</a>,
-  choosing <b>{{$data.Program}}</b> as the product. Email and notification channels are not used.</p>
+  attached. Nothing leaves this server on its own. Two steps: <b>Download it</b>, then
+  <b>File it at {{$data.Program}}</b> — which opens
+  <a class="cpr-link" href="{{$data.ReportURL}}" target="_blank" rel="noopener noreferrer">{{$data.ReportURL}}</a>
+  in a new tab, where you attach the file you just downloaded and pick <b>{{$data.Program}}</b> as
+  the product. Email and notification channels are not used.</p>
 </div>
 
 {{if $data.Error}}
@@ -39,6 +41,7 @@
       <span style="flex:1"></span>
       <button class="cpr-btn" type="submit">Show me the report</button>
       <button class="cpr-btn cpr-primary" type="submit" name="download" value="1">Download it</button>
+      <a class="cpr-btn" href="{{$data.ReportURL}}" target="_blank" rel="noopener noreferrer">File it at {{$data.Program}}</a>
     </div>
   </form>
 </div>
