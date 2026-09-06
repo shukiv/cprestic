@@ -134,9 +134,13 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
           <h3 style="margin:0; font-size:14px">Keeping backups tidy</h3>
           {{if keepsSet .Keeps}}
           <p class="cpr-hint" style="margin:var(--s1) 0 0">Keeps {{keepsSaid .Keeps}}, per account.
-          {{if .KeepsChanged}}<strong>The schedules changed since this was approved</strong>
-          — approved was {{keepsSaid .Repository.RetentionApprovedKeeps}}, so nothing is being
-          removed. Read the plan below and approve what it now says.
+          {{if .KeepsChanged}}
+          {{if keepsSet .Repository.RetentionApprovedKeeps}}<strong>The schedules changed since
+          this was approved</strong> — approved was {{keepsSaid .Repository.RetentionApprovedKeeps}},
+          so nothing is being removed. Read the plan below and approve what it now says.
+          {{else}}<strong>This needs approving once more.</strong> An approval now records the
+          keep policy it was given for, and this one was made before that, so nothing is being
+          removed until you have read the plan below and approved it.{{end}}
           {{else if .Repository.RetentionApprovedAt}}Approved {{ago .Repository.RetentionApprovedAt}}.
           {{else}}<strong>Nothing has been removed yet.</strong> Read the plan below first.{{end}}</p>
           {{else}}
