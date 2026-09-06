@@ -395,6 +395,14 @@ type Restore struct {
 	// Detail records what a rehearsal actually checked, so a passing
 	// drill says more than "success".
 	Detail string `json:"detail,omitempty"`
+	// PartialSource says the snapshot this was made from was taken of
+	// less than the whole account, because the schedule that wrote it
+	// leaves the databases, the home directory or the mail out. A
+	// rehearsal of one proves what it holds and nothing about the rest,
+	// so it must not read as the whole account having been verified.
+	PartialSource bool `json:"partial_source,omitempty"`
+	// SkippedParts names what that snapshot was taken without.
+	SkippedParts []string `json:"skipped_parts,omitempty"`
 	// Hint is what the person who asked for this restore can do about a
 	// failure. Error is written for whoever runs the server and names
 	// repositories, paths and commands; this is what a customer is shown

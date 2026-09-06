@@ -19,6 +19,19 @@ import (
 func Verify(rebuilt Result) ([]string, error) {
 	var passed []string
 
+	// A backup taken of less than the whole account is checked against
+	// what it claims to hold, and says so. Without this a schedule that
+	// skips databases rehearses clean every night and the outcome is
+	// indistinguishable from a full account that verified.
+	skipped := make(map[string]bool, len(rebuilt.Skipped))
+	for _, part := range rebuilt.Skipped {
+		skipped[part] = true
+	}
+	if len(rebuilt.Skipped) > 0 {
+		passed = append(passed, "taken without "+strings.Join(rebuilt.Skipped, ", ")+
+			", so this is not a backup of the whole account")
+	}
+
 	info, err := os.Stat(rebuilt.ArchivePath)
 	if err != nil {
 		return passed, fmt.Errorf("reassemble: rebuilt archive is missing: %w", err)
@@ -40,17 +53,22 @@ func Verify(rebuilt Result) ([]string, error) {
 	}
 	passed = append(passed, "account tree present")
 
-	homedir := filepath.Join(root, HomedirDir)
-	files, err := countFiles(homedir)
-	if err != nil {
-		return passed, fmt.Errorf("reassemble: home directory: %w", err)
+	if !skipped["homedir"] {
+		homedir := filepath.Join(root, HomedirDir)
+		files, err := countFiles(homedir)
+		if err != nil {
+			return passed, fmt.Errorf("reassemble: home directory: %w", err)
+		}
+		if files == 0 {
+			return passed, fmt.Errorf("reassemble: restored home directory is empty")
+		}
+		passed = append(passed, fmt.Sprintf("%d files in the home directory", files))
 	}
-	if files == 0 {
-		return passed, fmt.Errorf("reassemble: restored home directory is empty")
-	}
-	passed = append(passed, fmt.Sprintf("%d files in the home directory", files))
 
-	// Databases are optional: an account may genuinely have none.
+	// Databases are optional: an account may genuinely have none. What
+	// cannot be optional is a backup that was taken with databases and
+	// came back without them -- that is the case this used to read as
+	// "the account has none".
 	dumps, err := os.ReadDir(filepath.Join(root, DatabaseDir))
 	if err != nil && !os.IsNotExist(err) {
 		return passed, fmt.Errorf("reassemble: database directory: %w", err)
@@ -77,6 +95,9 @@ func Verify(rebuilt Result) ([]string, error) {
 	}
 	if checked > 0 {
 		passed = append(passed, fmt.Sprintf("%d database dumps parse", checked))
+	}
+	if checked == 0 && skipped["databases"] {
+		passed = append(passed, "no database dumps, which is what this backup was taken as")
 	}
 	return passed, nil
 }

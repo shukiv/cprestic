@@ -216,8 +216,37 @@ func (e *Engine) SnapshotAsOf(ctx context.Context, repositoryID, account string,
 	if err != nil {
 		return "", err
 	}
-	var chosen resticrun.Snapshot
-	held := 0
+	chosen, partial, held := newestForRecovery(snapshots, account, asOf)
+	switch {
+	case chosen.ID != "":
+		return chosen.ID, nil
+	case partial.ID != "":
+		return "", fmt.Errorf(
+			"node: every backup of %s here was taken without %s, so none of them "+
+				"holds the whole account -- the newest is %s from %s, and restoring "+
+				"it would give back an account missing that",
+			account, saidList(partial.Skipped()), snapshotName(partial),
+			partial.Time.Format("2006-01-02 15:04"))
+	case held > 0:
+		return "", fmt.Errorf(
+			"node: no backup of %s from %s or earlier -- the oldest here is newer",
+			account, asOf.Format("2006-01-02"))
+	default:
+		return "", fmt.Errorf("node: this destination holds no backup of %s", account)
+	}
+}
+
+// newestForRecovery separates the newest backup that holds the whole
+// account from the newest that does not.
+//
+// A schedule may leave the databases, the home directory or the mail out.
+// Putting an account back from one of those hands the customer an account
+// missing whatever was skipped, and the only sign of it is that the
+// restore finished. So whole-account recovery uses the complete one, and
+// the partial one is carried back only to be named.
+func newestForRecovery(snapshots []resticrun.Snapshot, account string,
+	asOf time.Time) (chosen, partial resticrun.Snapshot, held int) {
+
 	for _, snapshot := range snapshots {
 		if snapshot.Account() != account {
 			continue
@@ -226,18 +255,36 @@ func (e *Engine) SnapshotAsOf(ctx context.Context, repositoryID, account string,
 		if !asOf.IsZero() && snapshot.Time.After(asOf) {
 			continue
 		}
+		if !snapshot.Complete() {
+			if partial.ID == "" || snapshot.Time.After(partial.Time) {
+				partial = snapshot
+			}
+			continue
+		}
 		if chosen.ID == "" || snapshot.Time.After(chosen.Time) {
 			chosen = snapshot
 		}
 	}
-	switch {
-	case chosen.ID != "":
-		return chosen.ID, nil
-	case held > 0:
-		return "", fmt.Errorf(
-			"node: no backup of %s from %s or earlier -- the oldest here is newer",
-			account, asOf.Format("2006-01-02"))
+	return chosen, partial, held
+}
+
+// snapshotName is what to call a snapshot in a sentence: restic's short
+// id when it gave one, and the full id otherwise.
+func snapshotName(snapshot resticrun.Snapshot) string {
+	if snapshot.ShortID != "" {
+		return snapshot.ShortID
+	}
+	return snapshot.ID
+}
+
+// saidList joins names the way a sentence does.
+func saidList(names []string) string {
+	switch len(names) {
+	case 0:
+		return "anything"
+	case 1:
+		return names[0]
 	default:
-		return "", fmt.Errorf("node: this destination holds no backup of %s", account)
+		return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 	}
 }

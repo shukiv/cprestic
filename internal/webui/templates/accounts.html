@@ -65,7 +65,10 @@
               missing recent copy: {{range $i, $name := .MissingCopies}}{{if $i}}, {{end}}{{$name}}{{end}}</div>{{end}}
             {{if .Verified}}<div class="cpr-sublabel"
               title="A rehearsal rebuilt this account's backup and checked what came out. It is the only thing that shows a backup restores.">
-              {{if .VerifiedOK}}verified {{ago .Verified}}{{else}}rehearsal failed {{ago .Verified}}{{end}}</div>{{end}}
+              {{if .VerifiedOK}}verified {{ago .Verified}}
+              {{else if .VerifiedSkipped}}<span class="cpr-warntext">rehearsed {{ago .Verified}} without
+              {{range $i, $part := .VerifiedSkipped}}{{if $i}}, {{end}}{{$part}}</span>{{end}} — the rest of
+              the account is not proved{{else}}rehearsal failed {{ago .Verified}}{{end}}</div>{{end}}
           </td>
           <td>{{template "accountstate" .}}{{template "jobprogress" .}}
             {{with .RemovalSafety}}<div class="cpr-sublabel" title="{{.Detail}}">

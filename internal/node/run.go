@@ -569,9 +569,14 @@ func (e *Engine) runDrill(ctx context.Context, stored nodestore.Restore) error {
 		return err
 	}
 
-	checks, err := e.Drill(ctx, stored.RepositoryID, stored.Account)
+	checks, skipped, err := e.Drill(ctx, stored.RepositoryID, stored.Account)
 	finished := time.Now().UTC()
 	stored.FinishedAt = &finished
+	// A rehearsal of a backup taken without part of the account proves
+	// what that backup holds and nothing about the rest. Recorded so the
+	// page can say so rather than show the same tick a whole account gets.
+	stored.SkippedParts = skipped
+	stored.PartialSource = len(skipped) > 0
 	if err != nil {
 		stored.Status = job.StatusFailed
 		stored.Error = err.Error()
@@ -963,21 +968,29 @@ func (e *Engine) Check(ctx context.Context, repositoryID string, readDataSubsetP
 // Scratch space is allocated through the staging manager so the same disk
 // check that guards a backup guards this too. A rehearsal that filled the
 // volume would be worse than no rehearsal.
-func (e *Engine) Drill(ctx context.Context, repositoryID, account string) (checks []string, err error) {
+func (e *Engine) Drill(ctx context.Context, repositoryID, account string) (
+	checks []string, skipped []string, err error) {
 	repo, err := e.OpenRepository(repositoryID, false)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	snapshots, err := e.runner.Snapshots(ctx, repo, resticrun.SnapshotFilter{
-		Tags: []string{"account:" + account}, Latest: 1,
+		Tags: []string{"account:" + account},
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if len(snapshots) == 0 {
-		return nil, fmt.Errorf("node: no backup of %s to rehearse", account)
+	// The same choice a recovery would make, or the rehearsal answers a
+	// question about a snapshot nobody would restore. A partial backup is
+	// still rehearsed when it is all there is -- what it does not hold is
+	// then part of the answer rather than a silent pass.
+	newest, partial, _ := newestForRecovery(snapshots, account, time.Time{})
+	if newest.ID == "" {
+		newest = partial
 	}
-	newest := snapshots[len(snapshots)-1]
+	if newest.ID == "" {
+		return nil, nil, fmt.Errorf("node: no backup of %s to rehearse", account)
+	}
 
 	// The rehearsal writes about what the backup read.
 	estimate := newest.Summary.TotalBytesProcessed
@@ -986,7 +999,7 @@ func (e *Engine) Drill(ctx context.Context, repositoryID, account string) (check
 	}
 	dir, err := e.staging.Allocate("drill-"+account, estimate)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer func() {
 		if releaseErr := e.staging.Release(dir); releaseErr != nil {
@@ -1001,9 +1014,10 @@ func (e *Engine) Drill(ctx context.Context, repositoryID, account string) (check
 		Repo:       repo,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return reassemble.Verify(rebuilt)
+	checks, err = reassemble.Verify(rebuilt)
+	return checks, rebuilt.Skipped, err
 }
 
 // QueueDrill asks for a rehearsal of an account's newest backup.

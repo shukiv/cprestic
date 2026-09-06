@@ -456,6 +456,23 @@ func targetFor(assignment protocol.JobAssignment, repositoryID string) (protocol
 	return protocol.Target{}, false
 }
 
+// skipTags names the parts of an account a schedule asked to leave out,
+// in a fixed order: the tag set decides the retention group, and a set
+// that varied between runs of the same schedule would split it.
+func skipTags(assignment protocol.JobAssignment) []string {
+	var tags []string
+	if assignment.SkipHomedir {
+		tags = append(tags, resticrun.SkipTagPrefix+"homedir")
+	}
+	if assignment.SkipDatabases {
+		tags = append(tags, resticrun.SkipTagPrefix+"databases")
+	}
+	if assignment.SkipEmail {
+		tags = append(tags, resticrun.SkipTagPrefix+"email")
+	}
+	return tags
+}
+
 func (a *Agent) backupTarget(ctx context.Context, log *slog.Logger,
 	assignment protocol.JobAssignment, target protocol.Target,
 	payload pkgacct.Payload) protocol.TargetReport {
@@ -488,10 +505,16 @@ func (a *Agent) backupTarget(ctx context.Context, log *slog.Logger,
 		// by them, so a per-job tag would put every run in a group of its
 		// own and exempt it from pruning. The job a snapshot came from is
 		// recorded in the database against its snapshot id.
-		Tags: []string{
+		//
+		// What the schedule left out is tagged too, and for two reasons.
+		// A restore has to be able to tell a backup of the whole account
+		// from one taken without its databases, and retention groups by
+		// tags -- so a partial run lands in its own group instead of
+		// counting towards the keeps and evicting a complete backup.
+		Tags: append([]string{
 			"account:" + assignment.CPanelUser,
 			"mode:" + string(payload.Mode),
-		},
+		}, skipTags(assignment)...),
 		Exclude:        assignment.Excludes,
 		LimitUploadKiB: assignment.LimitUploadKiB,
 	})

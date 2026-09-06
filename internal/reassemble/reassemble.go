@@ -81,6 +81,16 @@ type Result struct {
 	Mode pkgacct.Mode
 	// BytesRestored is what restic reported across every part.
 	BytesRestored uint64
+	// Skipped is what the backup was taken without, in the words the
+	// snapshot's tags use ("databases", "homedir", "email"). Empty means
+	// the snapshot holds the whole account.
+	Skipped []string
+}
+
+// Complete says the snapshot this was rebuilt from holds the whole
+// account.
+func (r Result) Complete() bool {
+	return len(r.Skipped) == 0
 }
 
 // Restorer performs the restic side of a restore. The concrete
@@ -114,10 +124,21 @@ func Run(ctx context.Context, restorer Restorer, req Request) (Result, error) {
 		return Result{}, err
 	}
 
+	var result Result
 	if found.mode() == pkgacct.ModeMonolithic {
-		return restoreMonolithic(ctx, restorer, req, snapshot, found)
+		result, err = restoreMonolithic(ctx, restorer, req, snapshot, found)
+	} else {
+		result, err = restoreSplit(ctx, restorer, req, snapshot, found)
 	}
-	return restoreSplit(ctx, restorer, req, snapshot, found)
+	if err != nil {
+		return Result{}, err
+	}
+	// What the schedule left out, taken from the snapshot's own tags. A
+	// rehearsal has to check what this backup claims to hold: a snapshot
+	// taken without databases has no dumps in it, and reading that as
+	// "the account has none" is how a partial backup passes as a full one.
+	result.Skipped = snapshot.Skipped()
+	return result, nil
 }
 
 // FindSnapshot resolves the snapshot a request names, and checks it

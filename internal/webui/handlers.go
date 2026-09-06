@@ -1344,6 +1344,11 @@ type accountView struct {
 	// rebuilds, with VerifiedOK saying whether it passed.
 	Verified   *time.Time
 	VerifiedOK bool
+	// VerifiedSkipped names what the rehearsed backup was taken without.
+	// A rehearsal of a backup with no databases in it proves that backup
+	// and says nothing about the databases, so it does not count as the
+	// account having been verified.
+	VerifiedSkipped []string
 	// FreshCopies and MissingCopies compare successful target writes with
 	// what every enabled policy promises for this account. A healthy copy
 	// in one destination must not hide a missing second copy.
@@ -1796,8 +1801,9 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 		return nil, nil, err
 	}
 	type drill struct {
-		at time.Time
-		ok bool
+		at      time.Time
+		ok      bool
+		skipped []string
 	}
 	verified := map[string]drill{}
 	for _, restore := range restores {
@@ -1809,7 +1815,12 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 		}
 		verified[restore.Account] = drill{
 			at: *restore.FinishedAt,
-			ok: restore.Status == job.StatusSuccess,
+			// A rehearsal that passed on a backup taken without part of
+			// the account is not this account verified. Saying it is
+			// puts a tick beside a customer whose databases have never
+			// been proved to come back.
+			ok:      restore.Status == job.StatusSuccess && !restore.PartialSource,
+			skipped: restore.SkippedParts,
 		}
 	}
 
@@ -1827,6 +1838,7 @@ func (s *Server) accountViews(r *http.Request) ([]accountView, []string, error) 
 		if drilled, seen := verified[account.User]; seen {
 			at := drilled.at
 			view.Verified, view.VerifiedOK = &at, drilled.ok
+			view.VerifiedSkipped = drilled.skipped
 		}
 		if last, seen := latest[account.User]; seen {
 			view.Stored, view.Took = cost(last)

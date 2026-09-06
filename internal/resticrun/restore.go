@@ -50,6 +50,31 @@ func (s Snapshot) PayloadMode() string {
 	return ""
 }
 
+// SkipTagPrefix marks a snapshot that was taken of less than the whole
+// account. A schedule may leave the home directory, the databases or the
+// mail out, and the resulting snapshot is not interchangeable with a full
+// one: restoring it would silently hand back an account missing whatever
+// was skipped.
+const SkipTagPrefix = "skip:"
+
+// Skipped is what a backup deliberately left out, in the words the tag
+// uses ("databases", "homedir", "email"). A full backup returns nothing.
+func (s Snapshot) Skipped() []string {
+	var skipped []string
+	for _, tag := range s.Tags {
+		if part, found := strings.CutPrefix(tag, SkipTagPrefix); found && part != "" {
+			skipped = append(skipped, part)
+		}
+	}
+	return skipped
+}
+
+// Complete says the snapshot holds the whole account, so a whole-account
+// restore made from it gives back everything the account had.
+func (s Snapshot) Complete() bool {
+	return len(s.Skipped()) == 0
+}
+
 // SnapshotFilter narrows a snapshot listing.
 type SnapshotFilter struct {
 	Tags []string
