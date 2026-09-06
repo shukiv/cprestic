@@ -391,3 +391,86 @@ in tests with a fake cPanel and a fake mysql client, not against live accounts
 or databases on that server: creating and removing real cPanel accounts, and
 stopping the service to reproduce the outage, are the operator's call to make
 on a production host.
+
+## Round three — SEC-11 to SEC-13
+
+Three more findings, reported in conversation rather than as a file. Same
+treatment: reproduced, fixed, and a permanent regression test checked against
+the code as it was before the fix.
+
+| ID | Severity | What | Fixed in |
+| --- | --- | --- | --- |
+| SEC-11 | Critical | A backup of less than the whole account was indistinguishable from a full one | `44daf4e` |
+| SEC-12 | Critical (fleet) | A restore outliving its six-hour lease was reclaimed and the destructive attempt queued again | `5b13f64` |
+| SEC-13 | High | A granular restore that failed partway reported only the failure, not what it had already overwritten | `312a5e1` |
+
+### SEC-11 — partial backups could masquerade as full ones
+
+A schedule can leave the databases, the home directory or the mail out. The
+snapshot carried no sign of it, so three readers could not tell:
+whole-account recovery picks by account and date and took the newest, handing
+an operator rebuilding a customer an account with no databases and a restore
+that reported success; the nightly rehearsal read "no dumps" as "this account
+has no databases" and passed, lighting the same verified mark a whole account
+gets; and restic groups retention by tags, so a partial run counted towards
+the keeps and could evict a complete backup.
+
+The backup now tags the snapshot with what it was taken without
+(`skip:databases`, `skip:homedir`, `skip:email`), and all three use it.
+Recovery takes the newest backup that holds the whole account and names what
+is missing when there is none. The rehearsal checks a backup against what it
+claims to hold and records that the account is not proved. Partial runs land
+in a retention group of their own.
+
+Only what the schedule asked to skip is tagged — an account that simply has
+no databases is a full backup of that account. Snapshots written before this
+carry no tag and are read as complete; there is nothing in them to say
+otherwise. No policy on `.144` skips anything, so its existing history is all
+full.
+
+Tests: `internal/agent/skip_tags_test.go`, `internal/node/audit_bug_test.go`,
+`internal/reassemble/verify_scope_test.go`.
+
+### SEC-12 — a restore could outlive its lease and be run twice
+
+An agent now says it is still working, at half the remaining lease, and only
+the attempt holding the job may extend it: the renewal carries the claim
+token and is checked against the same server ownership a report is. A refusal
+cancels the work's context — continuing to write into a live account with no
+claim on it is what the token was added to forbid. An unreachable controller
+is not a refusal, and the work carries on.
+
+And if a lease does run out anyway, a restore that was writing into the live
+account is no longer requeued: it is marked failed, saying it may have partly
+run. A restore that only produces a copy is requeued as before.
+
+Tests: `internal/store/lease_test.go`, `internal/agent/hold_lease_test.go`
+(the last under `-race`).
+
+### SEC-13 — a half-finished restore disclosed nothing
+
+Writing part of an account back is not transactional and cannot be: cPanel
+has no way to undo a loaded database. Every failure path after the first
+write discarded what had already happened and reported only the error.
+
+What was written is now carried out of every failure path. The error names
+the item that failed and says the account has already been changed, the
+report carries the list in its detail, and `Applied` is true whenever the
+live account was touched. Migration 0007 adds the `detail` and `applied`
+columns fleet mode had nowhere to put them in; standalone has recorded both
+since it was written.
+
+Tests: `internal/agent/partial_putback_test.go`.
+
+### What an operator has to do
+
+- Fleet mode only: run migration 0007 before deploying a controller built
+  from this. `.144` is standalone and unaffected.
+- Rehearsals of accounts whose schedule skips part of the account will stop
+  showing as verified, and say what was left out instead. That is the true
+  state, not a regression.
+
+*Not exercised on the live host:* a restore that outlives its lease needs a
+controller and a fleet, which `.144` does not run; and overwriting a real
+customer's databases to watch a granular restore fail halfway is not a test
+to run on a production server.
