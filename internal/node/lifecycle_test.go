@@ -446,4 +446,32 @@ func TestAReplayedCreateForAVanishedAccountIsDiscarded(t *testing.T) {
 	if len(pending) != 1 {
 		t.Errorf("a second replay left %d events", len(pending))
 	}
+
+	// The whole sequence the discard exists for: made and removed again
+	// while the service was down. The remove is for a name this store has
+	// never recorded, and must not stick either -- there is nothing to
+	// retire, which is the answer, not a failure.
+	for _, event := range []hookspool.Event{
+		{At: time.Now().Add(-4 * time.Hour).UTC(), Event: "create", Account: "shortlived",
+			Payload: []byte(`{"data":{"user":"shortlived"}}`)},
+		{At: time.Now().Add(-3 * time.Hour).UTC(), Event: "remove", Account: "shortlived",
+			Payload: []byte(`{"data":{"user":"shortlived"}}`)},
+	} {
+		if _, err := hookspool.Write(engine.hookSpool, event); err != nil {
+			t.Fatalf("spool %s: %v", event.Event, err)
+		}
+	}
+	engine.accountUID = func(name string) (int, error) {
+		return 0, fmt.Errorf("node: %s is %w", name, ErrNoSuchAccount)
+	}
+	if err := engine.ReplayHookSpool(); err != nil {
+		t.Fatal(err)
+	}
+	pending, _ = hookspool.Pending(engine.hookSpool)
+	for _, entry := range pending {
+		if entry.Event.Account == "shortlived" {
+			t.Errorf("the %s for an account that was made and removed while the "+
+				"service was down is still in the spool", entry.Event.Event)
+		}
+	}
 }
