@@ -62,6 +62,20 @@ which is the point — the reason to turn `debug` on is usually something
 going wrong now, and a restart would end it. It is stored, so the service
 comes back at the level you chose.
 
+At `debug` the service writes down what it actually ran: every `pkgacct`,
+`mysqldump` and `restic` invocation with its arguments and how long it
+took, which schedule was due and which was not and why, which accounts a
+schedule resolved to, each destination probe, and the staging and upload of
+each account. That is enough to reproduce a failure by hand — copy the
+command out of the log and run it.
+
+What is never written down, at any level: restic's environment, which is
+where the backend credentials and the repository password file's path are;
+the value of any `-o` backend option, whose key is kept and whose value is
+not; and any login embedded in a repository address, which becomes
+`[credentials]`. There is a test that fails if any of those reach a log
+line.
+
 `debug` is loud. Turn it back down when you are done.
 
 The `-log-level` flag in the unit file is the level the service starts at

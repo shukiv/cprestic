@@ -248,6 +248,8 @@ func (e *Engine) runBackup(ctx context.Context, stored nodestore.Job) error {
 	// Making it here costs one store read on a run that has nothing to
 	// create, and the alternative is a server that says it is backing up
 	// and is not.
+	e.log.Debug("backup starting",
+		"job_id", stored.ID, "account", stored.Account, "policy_id", stored.PolicyID)
 	if created, err := e.EnsureProvisioned(ctx); err != nil {
 		e.log.Error("create a repository that is not there yet",
 			"job_id", stored.ID, "account", stored.Account, "error", err)
@@ -341,6 +343,14 @@ func (e *Engine) runBackup(ctx context.Context, stored nodestore.Job) error {
 	}
 	e.log.Info("backup finished",
 		"job_id", stored.ID, "account", stored.Account, "status", stored.Status)
+	for _, target := range stored.Targets {
+		e.log.Debug("backup copy",
+			"job_id", stored.ID, "account", stored.Account,
+			"repository_id", target.RepositoryID, "status", target.Status,
+			"snapshot", target.SnapshotID, "read", target.BytesProcessed,
+			"stored", target.BytesAdded, "seconds", target.DurationSecs,
+			"error", target.Error)
+	}
 	e.notifyBackup(ctx, stored)
 	return nil
 }
@@ -679,6 +689,13 @@ func (e *Engine) Schedule(ctx context.Context, now time.Time) (int, error) {
 	var queued int
 	for _, policy := range policies {
 		if !policy.Enabled || len(policy.RepositoryIDs) == 0 {
+			// Said at debug rather than not at all: "why did nothing run
+			// last night" is answered by a schedule that is switched off
+			// or has no destination, and neither is visible from a log
+			// that only records what did happen.
+			e.log.Debug("schedule skipped",
+				"policy", policy.Name, "enabled", policy.Enabled,
+				"destinations", len(policy.RepositoryIDs))
 			continue
 		}
 		schedule, err := cron.ParseStandard(policy.ScheduleCron)
@@ -695,7 +712,10 @@ func (e *Engine) Schedule(ctx context.Context, now time.Time) (int, error) {
 		if earliest := now.Add(-catchUpWindow); last.IsZero() || last.Before(earliest) {
 			last = earliest
 		}
-		if schedule.Next(last).After(now) {
+		if next := schedule.Next(last); next.After(now) {
+			e.log.Debug("schedule is not due",
+				"policy", policy.Name, "cron", policy.ScheduleCron,
+				"due", next.UTC().Format(time.RFC3339))
 			continue
 		}
 
@@ -704,6 +724,10 @@ func (e *Engine) Schedule(ctx context.Context, now time.Time) (int, error) {
 			e.log.Error("resolve policy accounts", "policy", policy.Name, "error", err)
 			continue
 		}
+		e.log.Debug("schedule is due",
+			"policy", policy.Name, "cron", policy.ScheduleCron,
+			"accounts", len(accounts), "include_system", policy.IncludeSystem,
+			"destinations", len(policy.RepositoryIDs))
 		if err := e.store.SetPolicyLastRun(policy.ID, now); err != nil {
 			return queued, err
 		}
@@ -894,7 +918,16 @@ func (e *Engine) probeDestinations(ctx context.Context, now time.Time) {
 	}
 	for _, dest := range destinations {
 		// TestDestination records the result and says so if it changed.
-		if err := e.TestDestination(ctx, dest.ID); err != nil {
+		// A probe that succeeded says nothing above debug on purpose: it
+		// happens every few minutes, and a log of things that are fine is
+		// a log nobody reads. At debug it is how an operator sees the
+		// probe is running at all.
+		started := time.Now()
+		err := e.TestDestination(ctx, dest.ID)
+		e.log.Debug("probed a destination", "destination", dest.Name,
+			"kind", dest.Type, "took", time.Since(started).Round(time.Millisecond).String(),
+			"error", errorText(err))
+		if err != nil {
 			e.log.Warn("destination unreachable", "destination", dest.Name, "error", err)
 		}
 	}
@@ -1369,4 +1402,14 @@ func restoreSelections(stored nodestore.Restore) []protocol.RestoreSelection {
 		})
 	}
 	return selections
+}
+
+// errorText is an error as a log value, and the empty string for no error.
+// A log line whose error field is always present is one that can be read
+// the same way whether the thing worked or not.
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

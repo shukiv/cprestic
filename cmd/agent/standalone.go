@@ -67,7 +67,7 @@ func runStandalone(ctx context.Context, cfg config, log *slog.Logger) error {
 		return err
 	}
 
-	provider, err := buildProvider(cfg)
+	provider, err := buildProvider(cfg, log)
 	if err != nil {
 		return err
 	}

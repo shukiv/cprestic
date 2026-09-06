@@ -1,11 +1,13 @@
 package cpanel
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	osuser "os/user"
@@ -25,6 +27,12 @@ import (
 // cPanel server. Everything it depends on — flag probing, payload planning,
 // staging, restic execution — is tested independently.
 type Real struct {
+	// Log is where this provider says what it ran. Everything it writes is
+	// at debug, so a server at the default level pays nothing for it, and
+	// a server being debugged gets the commands themselves -- which is the
+	// difference between "exit status 2" and something reproducible by
+	// hand. Nil is a provider that says nothing.
+	Log *slog.Logger
 	// PkgacctPath is the pkgacct script. Empty means the standard location.
 	PkgacctPath string
 	// MysqldumpPath is the dump utility. Empty means "mysqldump" on PATH.
@@ -82,6 +90,32 @@ func (r *Real) pkgacct() string {
 		return r.PkgacctPath
 	}
 	return "/scripts/pkgacct"
+}
+
+// debug writes one line, if anybody is listening. Every caller passes
+// arguments it already has, so a provider with no logger costs a nil check.
+func (r *Real) debug(msg string, args ...any) {
+	if r.Log == nil {
+		return
+	}
+	r.Log.Debug(msg, args...)
+}
+
+// ranCommand is the line every external command gets at debug: what was
+// run, with its arguments, and how long it took. It is what makes a
+// failure reproducible -- an operator can copy the command out of the log
+// and run it themselves, which is how the first real MySQL corruption on
+// one of these servers was found.
+func (r *Real) ranCommand(what string, cmd *exec.Cmd, started time.Time, err error) {
+	if r.Log == nil {
+		return
+	}
+	args := []any{"command", cmd.Path, "args", strings.Join(cmd.Args[1:], " "),
+		"took", time.Since(started).Round(time.Millisecond).String()}
+	if err != nil {
+		args = append(args, "error", err.Error())
+	}
+	r.Log.Debug(what, args...)
 }
 
 func (r *Real) mysqldump() string {
@@ -315,6 +349,11 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 	if err != nil {
 		return pkgacct.Payload{}, err
 	}
+	r.debug("staging an account",
+		"account", req.Account.User, "dir", req.StagingDir, "mode", mode,
+		"databases", len(req.Account.Databases),
+		"skip_homedir", req.SkipHomedir, "skip_databases", req.SkipDatabases,
+		"skip_email", req.SkipEmail)
 	payload, err := pkgacct.Plan(pkgacct.PlanRequest{
 		Account:       req.Account.User,
 		HomeDir:       req.Account.HomeDir,
@@ -367,7 +406,9 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 
 	args := pkgacct.CommandArgs(req.Account.User, req.StagingDir, mode, caps, req.SkipEmail)
 	cmd := exec.CommandContext(ctx, r.pkgacct(), args...)
+	started := time.Now()
 	output, err := cmd.CombinedOutput()
+	r.ranCommand("packaged an account", cmd, started, err)
 	if err != nil {
 		return pkgacct.Payload{}, fmt.Errorf("cpanel: pkgacct failed: %w: %s",
 			err, pkgacctFailure(output))
@@ -658,10 +699,15 @@ func (r *Real) dumpDatabaseCreate(ctx context.Context, name, dumpPath string) er
 	cmd := exec.CommandContext(ctx, r.mysqldump(),
 		"--no-data", "--no-create-info", "--databases", name)
 	cmd.Stdout = file
+	var complaint bytes.Buffer
+	cmd.Stderr = &complaint
+	started := time.Now()
 	err = cmd.Run()
+	r.ranCommand("dumped a database definition", cmd, started, err)
 	closeErr := file.Close()
 	if err != nil {
-		return fmt.Errorf("cpanel: dump the definition of %s: %w", name, err)
+		return fmt.Errorf("cpanel: dump the definition of %s: %w%s",
+			name, err, saidOnStderr(complaint.String()))
 	}
 	if closeErr != nil {
 		return fmt.Errorf("cpanel: close %s: %w", path, closeErr)
@@ -698,10 +744,20 @@ func (r *Real) dumpDatabases(ctx context.Context, req StageRequest, payload pkga
 		cmd := exec.CommandContext(ctx, r.mysqldump(),
 			"--single-transaction", "--quick", "--routines", "--events", name)
 		cmd.Stdout = file
+		// mysqldump says why it stopped on stderr, and this used to throw
+		// that away: a backup failed with "exit status 2" and finding out
+		// what that meant took running the same command by hand on the
+		// server. It had already said "Lost connection to MySQL server
+		// during query" the first time.
+		var complaint bytes.Buffer
+		cmd.Stderr = &complaint
+		started := time.Now()
 		err = cmd.Run()
+		r.ranCommand("dumped a database", cmd, started, err)
 		closeErr := file.Close()
 		if err != nil {
-			return fmt.Errorf("cpanel: mysqldump %s: %w", name, err)
+			return fmt.Errorf("cpanel: mysqldump %s: %w%s",
+				name, err, saidOnStderr(complaint.String()))
 		}
 		if closeErr != nil {
 			return fmt.Errorf("cpanel: close dump %s: %w", path, closeErr)
@@ -973,3 +1029,30 @@ func lastLine(output []byte) string {
 	}
 	return strings.TrimSpace(lines[len(lines)-1])
 }
+
+// saidOnStderr renders what a command complained about, for appending to
+// the error that reports it. It keeps the last lines rather than the first:
+// a tool that fails after a page of warnings fails on the last one. Empty
+// stderr adds nothing, so an error that was already clear stays that way.
+func saidOnStderr(complaint string) string {
+	complaint = strings.TrimSpace(complaint)
+	if complaint == "" {
+		return ""
+	}
+	lines := strings.Split(complaint, "\n")
+	if len(lines) > stderrLinesKept {
+		lines = lines[len(lines)-stderrLinesKept:]
+	}
+	said := strings.Join(lines, "; ")
+	if len(said) > stderrBytesKept {
+		said = said[len(said)-stderrBytesKept:]
+	}
+	return ": " + said
+}
+
+// stderrLinesKept and stderrBytesKept hold the quoted complaint to a size
+// that fits on a page beside the failure it explains.
+const (
+	stderrLinesKept = 3
+	stderrBytesKept = 400
+)

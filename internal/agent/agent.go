@@ -362,6 +362,9 @@ func (a *Agent) RunJob(ctx context.Context, assignment protocol.JobAssignment) p
 	// Staged under the account, not the job: the paths restic records
 	// must be identical every night, or each run becomes its own
 	// retention group and nothing is ever pruned.
+	log.Debug("staging an account",
+		"size", size, "estimate", estimate, "mode", assignment.PayloadMode,
+		"targets", len(assignment.Targets))
 	dir, err := a.staging.Allocate(assignment.CPanelUser, estimate)
 	if err != nil {
 		log.Error("allocate staging", "error", err)
@@ -400,6 +403,9 @@ func (a *Agent) RunJob(ctx context.Context, assignment protocol.JobAssignment) p
 		log.Warn("the payload is not quite what the schedule asked for",
 			"reason", payload.Reason)
 	}
+	log.Debug("staged an account", "dir", dir.Path, "mode", mode,
+		"parts", len(payload.Parts), "dumps", len(payload.DumpPaths),
+		"degraded", payload.Degraded)
 	// restic treats a path it cannot read as a warning and carries on, so
 	// a missing part would become a snapshot that looks fine and restores
 	// an incomplete account. It has to stop the job instead.
@@ -592,6 +598,9 @@ func (a *Agent) backupTarget(ctx context.Context, log *slog.Logger,
 	targetCtx, cancel := context.WithTimeout(ctx, a.TargetTimeout)
 	defer cancel()
 
+	log.Debug("uploading to a destination",
+		"repository_id", target.RepositoryID, "path", target.RepoPath,
+		"timeout", a.TargetTimeout.String())
 	started := time.Now()
 	backup, err := a.runner.Backup(targetCtx, resticrun.Repository{
 		Dest:     dest,

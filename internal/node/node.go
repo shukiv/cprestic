@@ -146,6 +146,7 @@ func New(cfg Config) (*Engine, error) {
 	}
 
 	runner := resticrun.New(resticrun.Config{
+		Log:        log,
 		Binary:     settings.ResticBinary,
 		RuntimeDir: settings.StagingRoot,
 		CacheDir:   settings.ResticCache,

@@ -150,7 +150,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if cfg.certifyArchive != "" {
-		report, err := runLiveCertification(ctx, cfg)
+		report, err := runLiveCertification(ctx, cfg, log)
 		if encodeErr := json.NewEncoder(os.Stdout).Encode(report); encodeErr != nil {
 			log.Error("write live certification report", "error", encodeErr)
 			os.Exit(1)
@@ -236,7 +236,7 @@ type liveCertificationReport struct {
 	Error          string    `json:"error,omitempty"`
 }
 
-func runLiveCertification(ctx context.Context, cfg config) (report liveCertificationReport, returnErr error) {
+func runLiveCertification(ctx context.Context, cfg config, log *slog.Logger) (report liveCertificationReport, returnErr error) {
 	report.Archive = filepath.Clean(cfg.certifyArchive)
 	report.DisposableUser = cfg.certifyUser
 	report.StartedAt = time.Now().UTC()
@@ -253,7 +253,7 @@ func runLiveCertification(ctx context.Context, cfg config) (report liveCertifica
 	if cfg.certifyUser == "" {
 		return report, errors.New("-certify-user is required")
 	}
-	provider, err := buildProvider(cfg)
+	provider, err := buildProvider(cfg, log)
 	if err != nil {
 		return report, err
 	}
@@ -295,7 +295,7 @@ func run(ctx context.Context, cfg config, log *slog.Logger) error {
 		return err
 	}
 
-	provider, err := buildProvider(cfg)
+	provider, err := buildProvider(cfg, log)
 	if err != nil {
 		return err
 	}
@@ -334,6 +334,7 @@ func run(ctx context.Context, cfg config, log *slog.Logger) error {
 	}
 
 	runner := resticrun.New(resticrun.Config{
+		Log:        log,
 		Binary:     cfg.resticBinary,
 		RuntimeDir: cfg.runtimeDir,
 		CacheDir:   cfg.resticCache,
@@ -359,9 +360,12 @@ func run(ctx context.Context, cfg config, log *slog.Logger) error {
 	return worker.Run(ctx)
 }
 
-func buildProvider(cfg config) (cpanel.Provider, error) {
+func buildProvider(cfg config, log *slog.Logger) (cpanel.Provider, error) {
 	if cfg.fakeRoot == "" {
-		return &cpanel.Real{}, nil
+		// The provider writes only at debug, so this costs nothing until
+		// somebody turns the level up -- and then it is the commands
+		// themselves, which is what a failure on a real cPanel host needs.
+		return &cpanel.Real{Log: log}, nil
 	}
 	// A synthetic provider makes the agent runnable on a developer
 	// machine and in the end-to-end suite, where no cPanel exists.

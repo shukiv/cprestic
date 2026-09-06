@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/shukiv/gniza/internal/destination"
 )
@@ -44,6 +47,11 @@ type Config struct {
 	// rather than inheriting the agent's, so a poisoned PATH in the
 	// agent's environment cannot redirect the backend's helper binaries.
 	PathEnv string
+	// Log is where each restic invocation is written down. Everything it
+	// writes is at debug. The environment is never logged: it is where the
+	// backend credentials are, and the password file's path is in there
+	// too. Nil says nothing.
+	Log *slog.Logger
 }
 
 // Runner executes restic against a repository.
@@ -270,7 +278,68 @@ func (r *Runner) run(ctx context.Context, repo Repository, args []string, extra 
 	if len(stream) == 1 {
 		command.Stdout = stream[0]
 	}
-	return r.exec.Exec(ctx, command)
+	started := time.Now()
+	result, err := r.exec.Exec(ctx, command)
+	r.logRun(command, uri, started, result, err)
+	return result, err
+}
+
+// logRun writes down what restic was asked to do and what came back.
+//
+// Two things are kept out of it deliberately. The environment, because
+// that is where the backend credentials and the password file's path are.
+// And the values of the -o options, because a backend option can carry a
+// path or a token and none of them is worth a leak -- the key alone says
+// which option was set, which is what a reader needs.
+func (r *Runner) logRun(command Command, uri string, started time.Time,
+	result CommandResult, err error) {
+	if r.Log() == nil {
+		return
+	}
+	args := []any{
+		"restic", command.Path,
+		"args", strings.Join(elideOptionValues(command.Args), " "),
+		"repository", safeURI(uri),
+		"took", time.Since(started).Round(time.Millisecond).String(),
+		"exit", result.ExitCode,
+	}
+	if err != nil {
+		args = append(args, "error", err.Error())
+	}
+	r.Log().Debug("ran restic", args...)
+}
+
+// Log is the runner's logger, or nil.
+func (r *Runner) Log() *slog.Logger { return r.cfg.Log }
+
+// elideOptionValues keeps "-o key" and drops what it was set to.
+func elideOptionValues(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		out = append(out, args[i])
+		if args[i] != "-o" || i+1 >= len(args) {
+			continue
+		}
+		key, _, _ := strings.Cut(args[i+1], "=")
+		out = append(out, key+"=[set]")
+		i++
+	}
+	return out
+}
+
+// safeURI removes a user and password some backends allow in the
+// repository address. A repository nobody can name is no use in a log, and
+// a password in one is a leak, so the host and path stay and the rest goes.
+func safeURI(uri string) string {
+	at := strings.LastIndex(uri, "@")
+	if at < 0 {
+		return uri
+	}
+	scheme := strings.Index(uri, ":")
+	if scheme < 0 || scheme > at {
+		return uri
+	}
+	return uri[:scheme+1] + "[credentials]@" + uri[at+1:]
 }
 
 // mergeOptions combines two sets of restic extended options. Restic applies
