@@ -2,7 +2,39 @@
 
 Date: 2026-09-06  
 Revision reviewed: `e5ac8040094af2f03a5f8126b4434f1cc5c83d68`  
-Status: **open findings; no fixes are included in this report**
+Status: **all five findings fixed**, each with a regression test. The report
+below is kept as it was written, as the record of what was found; the table
+under [What was done](#what-was-done) says where each one was fixed.
+
+## What was done
+
+Each finding was reproduced first, then fixed, and each regression test was
+run against the code as it was before the fix to confirm it catches the
+defect rather than merely passing.
+
+| ID | Fixed in | How |
+| --- | --- | --- |
+| SEC-06 | `d047677` | The mysql client is run with `--binary-mode` and `--local-infile=0`, so a dump cannot reach `\!`, `system`, `source` or a local file read. |
+| SEC-07 | `043bd3a` | Every claim generates a token that travels in the assignment and must come back in the report; a report is applied only for the attempt that holds the job, and the token is cleared on requeue and on finish. |
+| SEC-08 | `de59eaa` | A plan records the keep policy it was taken under, approval copies it, and a destructive forget runs only while the policy in force still equals the one approved. The page says what changed. |
+| SEC-09 | `f9ec10d` | Account creations and removals the hook could not deliver are written to a root-only spool before it reports success, and replayed idempotently at startup and before every reconciliation. |
+| SEC-10 | `5813c3f` | go 1.26.0 with toolchain go1.26.8 and `golang.org/x/crypto` v0.56.0; `make vuln` and `make provenance` gate the release, the second by reading the toolchain stamped in the built binary. |
+
+The regression tests are permanent and live beside the code they cover:
+`internal/cpanel/putback_sql_test.go`,
+`internal/store/claim_token_test.go`,
+`internal/node/retention_test.go`,
+`internal/node/lifecycle_test.go`,
+`internal/hookspool/hookspool_test.go`,
+`cmd/agent/hook_test.go`.
+
+Two things an operator has to know about the deployed server:
+
+- Retention approval now records the policy it was given for, so every
+  destination approved before this asks to be planned and approved once more.
+  Nothing is deleted until it is, which is the safe direction.
+- The claim-token migration returns anything then running to the queue, since
+  work claimed before there were tokens has no attempt to be told apart from.
 
 ## Executive summary
 
@@ -330,3 +362,11 @@ a permanent negative regression test, build a signed candidate, and exercise
 the cPanel create/remove/recreate and granular database-restore paths using
 disposable accounts and databases. Do not test SEC-06 against a live account or
 with a command that changes real system state.
+
+*Afterwards:* the five fixes were made in that order and each regression test
+was checked against the unfixed code. The `.144` server runs the rebuilt agent.
+The create/remove/recreate and granular database-restore paths were exercised
+in tests with a fake cPanel and a fake mysql client, not against live accounts
+or databases on that server: creating and removing real cPanel accounts, and
+stopping the service to reproduce the outage, are the operator's call to make
+on a production host.
