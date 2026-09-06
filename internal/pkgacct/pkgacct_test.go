@@ -333,9 +333,9 @@ func TestSkipEmailAlsoLeavesOutTheMailConfiguration(t *testing.T) {
 		t.Errorf("SkipMailFlag = %q", caps.SkipMailFlag)
 	}
 	if caps.SkipMailConfigFlag != "--skipmailconfig" {
-		t.Errorf("SkipMailConfigFlag = %q -- the mailbox password hashes are in "+
-			"the configuration, and this is the flag that leaves it out",
-			caps.SkipMailConfigFlag)
+		t.Errorf("SkipMailConfigFlag = %q -- the addresses, forwarders and "+
+			"filters are configuration, and this is the flag that leaves "+
+			"them out", caps.SkipMailConfigFlag)
 	}
 
 	args := strings.Join(CommandArgs("customer1", "/var/cprest/staging/job-42",
@@ -362,5 +362,64 @@ func TestSkipEmailAlsoLeavesOutTheMailConfiguration(t *testing.T) {
 	if strings.Contains(strings.Join(CommandArgs("customer1", "/tmp/x",
 		ModeSplit, older, true), " "), "--skipmailconfig") {
 		t.Error("a flag the host does not support was passed anyway")
+	}
+}
+
+// TestMonolithicSkipEmailSaysThePasswordsAreStillInTheArchive covers a
+// promise this program cannot keep on an old cPanel.
+//
+// The mailbox names and their password hashes are under ~/etc. There is
+// no pkgacct flag for it: --skipmail leaves out ~/mail and
+// --skipmailconfig leaves out the addresses, forwarders and filters. In
+// split mode the home directory is backed up as files, so an exclude
+// keeps ~/etc out. In monolithic mode cPanel packs the whole home
+// directory into its own archive, where no exclude here can reach, and
+// the hashes go with it. A backup that says it left email out and
+// carries every mailbox password is worse than one that admits it.
+func TestMonolithicSkipEmailSaysThePasswordsAreStillInTheArchive(t *testing.T) {
+	caps := ProbeCapabilities(helpLive136)
+
+	monolithic, err := Plan(PlanRequest{
+		Account: "c1", StagingDir: "/var/cprest/staging/job-42",
+		Mode: ModeMonolithic, Caps: caps, SkipEmail: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !monolithic.Degraded {
+		t.Fatal("a monolithic backup that leaves email out is reported as " +
+			"exactly what was asked for, and it still holds every mailbox password")
+	}
+	for _, want := range []string{"~/etc", "password"} {
+		if !strings.Contains(monolithic.Reason, want) {
+			t.Errorf("the reason does not mention %s: %q", want, monolithic.Reason)
+		}
+	}
+
+	// The same run without the skip has nothing to say.
+	kept, err := Plan(PlanRequest{
+		Account: "c1", StagingDir: "/var/cprest/staging/job-42",
+		Mode: ModeMonolithic, Caps: caps,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kept.Degraded {
+		t.Errorf("a monolithic backup that keeps email is reported as degraded: %q",
+			kept.Reason)
+	}
+
+	// And split mode, where the exclude does reach ~/etc, is not degraded
+	// for this.
+	split, err := Plan(PlanRequest{
+		Account: "c1", StagingDir: "/var/cprest/staging/job-42", HomeDir: "/home/c1",
+		Mode: ModeSplit, Caps: caps, SkipEmail: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if split.Degraded {
+		t.Errorf("a split backup that leaves email out is reported as degraded: %q",
+			split.Reason)
 	}
 }

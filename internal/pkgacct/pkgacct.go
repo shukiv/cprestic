@@ -177,9 +177,14 @@ type PlanRequest struct {
 	SkipHomedir   bool
 	SkipDatabases bool
 	// SkipEmail leaves the account's mail out: the messages under the
-	// home directory, and the mail configuration -- the mailbox names
-	// and password hashes with it -- that pkgacct would otherwise pack
-	// into its archive.
+	// home directory, and the mail configuration -- the addresses,
+	// forwarders and filters -- that pkgacct would otherwise copy into
+	// its archive.
+	//
+	// It does not reach the mailbox password hashes in every mode. They
+	// live in ~/etc, which pkgacct has no flag for: in split mode the
+	// home directory is backed up as files and an exclude keeps them
+	// out, and in monolithic mode they stay in cPanel's own archive.
 	SkipEmail bool
 }
 
@@ -246,11 +251,26 @@ func planMonolithic(req PlanRequest) (Payload, error) {
 			Path: filepath.Join(req.StagingDir, "cpmove-"+req.Account+".tar"),
 		}},
 	}
+	var reasons []string
 	if req.Caps.NoCompressFlag == "" {
-		payload.Degraded = true
-		payload.Reason = "pkgacct on this server cannot disable compression; " +
-			"restic deduplication will be close to zero and every run stores a full copy"
 		payload.Parts[0].Path += ".gz"
+		reasons = append(reasons, "pkgacct on this server cannot disable compression; "+
+			"restic deduplication will be close to zero and every run stores a full copy")
+	}
+	if req.SkipEmail {
+		// pkgacct's own copy of the home directory leaves out ~/mail and
+		// nothing else, and it has no flag for ~/etc, where cPanel keeps
+		// the mailbox names and their password hashes. In split mode the
+		// home directory is backed up as files and an exclude keeps them
+		// out; here there is no way in, and saying the mail was left out
+		// would not be true of the credentials.
+		reasons = append(reasons, "pkgacct packs the whole home directory into its "+
+			"archive apart from ~/mail, so leaving email out does not remove ~/etc -- "+
+			"the mailbox names and password hashes are in this backup")
+	}
+	if len(reasons) > 0 {
+		payload.Degraded = true
+		payload.Reason = strings.Join(reasons, "; ")
 	}
 	return payload, nil
 }
@@ -271,8 +291,9 @@ func CommandArgs(account, stagingDir string, mode Mode, caps Capabilities, skipE
 		// An exclude given to restic cannot reach inside pkgacct's own
 		// archive, so leaving mail out has to be said here as well --
 		// twice, because cPanel counts the messages and the mail
-		// configuration as separate things and the passwords are in the
-		// second one.
+		// configuration as separate things. The second one is the
+		// addresses, forwarders and filters; the mailbox passwords are
+		// in ~/etc, which neither flag touches.
 		if caps.SkipMailFlag != "" {
 			args = append(args, caps.SkipMailFlag)
 		}

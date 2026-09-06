@@ -395,7 +395,10 @@ func (a *Agent) RunJob(ctx context.Context, assignment protocol.JobAssignment) p
 		return report
 	}
 	if payload.Degraded {
-		log.Warn("payload will deduplicate poorly", "reason", payload.Reason)
+		// Not only about deduplication: this is also where a skip that
+		// the host cannot honour in full is said out loud.
+		log.Warn("the payload is not quite what the schedule asked for",
+			"reason", payload.Reason)
 	}
 	// restic treats a path it cannot read as a warning and carries on, so
 	// a missing part would become a snapshot that looks fine and restores
