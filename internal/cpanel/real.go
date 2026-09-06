@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	osuser "os/user"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -347,12 +348,29 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 		}
 	}
 
+	// cPanel keeps one file per account, and that file is what makes a
+	// name an account here. A name can have one and no unix user behind
+	// it -- cPanel's own support tooling leaves such a user file behind,
+	// and so does a removal that got half way -- and pkgacct cannot
+	// package a name it cannot resolve to a uid. Said here, because what
+	// pkgacct does about it is print its own usage and exit 2.
+	if _, err := osuser.Lookup(req.Account.User); err != nil {
+		var unknown osuser.UnknownUserError
+		if errors.As(err, &unknown) {
+			return pkgacct.Payload{}, fmt.Errorf(
+				"cpanel: %s has a cPanel user file but no user on this server, "+
+					"so cPanel cannot package it", req.Account.User)
+		}
+		return pkgacct.Payload{}, fmt.Errorf("cpanel: look up %s on this server: %w",
+			req.Account.User, err)
+	}
+
 	args := pkgacct.CommandArgs(req.Account.User, req.StagingDir, mode, caps, req.SkipEmail)
 	cmd := exec.CommandContext(ctx, r.pkgacct(), args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return pkgacct.Payload{}, fmt.Errorf("cpanel: pkgacct failed: %w: %s",
-			err, lastLine(output))
+			err, pkgacctFailure(output))
 	}
 
 	if mode == pkgacct.ModeSplit {
@@ -844,6 +862,41 @@ func (r *Real) Certify(ctx context.Context, archivePath, disposableUser string) 
 func (r *Real) accountRegistered(user string) bool {
 	info, err := os.Stat(filepath.Join(r.usersDir(), user))
 	return err == nil && !info.IsDir()
+}
+
+// pkgacctFailure picks the line an operator needs out of pkgacct's output.
+//
+// pkgacct answers a refusal by printing its own message, then its whole
+// usage block and every option it knows. The last line of that is
+// "--stdout-archive  output the cpmove file to STDOUT and disable all
+// other output", which is how "Unable to get user id for user
+// "cptktjyvhbvisx9x"" reached the interface as a sentence about STDOUT.
+func pkgacctFailure(output []byte) string {
+	var reason string
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		// The usage block itself: the options, their descriptions, and
+		// the headings above them.
+		if line == "" || strings.HasPrefix(line, "-") || strings.HasPrefix(line, "Usage:") ||
+			strings.HasPrefix(line, "Options:") || strings.HasPrefix(line, "/usr/local/cpanel") ||
+			!strings.Contains(line, " ") {
+			continue
+		}
+		lower := strings.ToLower(line)
+		switch {
+		case strings.Contains(lower, "unable to"), strings.Contains(lower, "unrecognized"),
+			strings.Contains(lower, "is required"), strings.Contains(lower, "cannot"),
+			strings.Contains(lower, "invalid"), strings.Contains(lower, "failed"),
+			strings.Contains(lower, "error"), strings.Contains(lower, "no such"):
+			if reason == "" {
+				reason = line
+			}
+		}
+	}
+	if reason != "" {
+		return reason
+	}
+	return lastLine(output)
 }
 
 // restoreFailure picks the line an operator needs out of restorepkg's
