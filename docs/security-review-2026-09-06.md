@@ -580,16 +580,18 @@ the webmail databases.
 So a backup taken deliberately without email carried the credentials to read
 all of it, to whatever destination was chosen because it would not hold email.
 
-Both halves are fixed. The file backup excludes `~/etc` as well as `~/mail` —
-the whole directory rather than the credential files by name, because a
-pattern that misses one ships the hashes, and the rest of it is cPanel's own
-bookkeeping (`cacheid`, `ftpquota`, the webmail databases), which is either
-regenerated or mail data in its own right. pkgacct is passed
-`--skipmailconfig` alongside `--skipmail`; cPanel's own help says which is
-which. The flag is probed like the others, so a version without it is not
-handed an argument it would reject — and the settings page now lists both
-flags and what they mean, because a host missing `--skipmailconfig` cannot
-honour the choice inside pkgacct's archive.
+The file backup excludes `~/etc` as well as `~/mail` — the whole directory
+rather than the credential files by name, because a pattern that misses one
+ships the hashes, and the rest of it is cPanel's own bookkeeping (`cacheid`,
+`ftpquota`, the webmail databases), which is either regenerated or mail data
+in its own right. pkgacct is passed `--skipmailconfig` alongside `--skipmail`,
+which leaves the addresses, forwarders and filters out of its archive. The
+flag is probed like the others, so a version without it is not handed an
+argument it would reject, and the settings page lists both flags and what they
+mean.
+
+That covers split mode, which is what `.144` runs. It does not cover
+monolithic mode; see the amendment below.
 
 Tests: `internal/node/audit_email_bug_test.go`,
 `internal/pkgacct/pkgacct_test.go` (against the help text from cPanel
@@ -631,11 +633,73 @@ hook. Test: `TestAReplayedCreateQueuesTheInitialBackup`.
 
 - Nothing for SEC-14, SEC-15 and SEC-17: they take effect with the new binary.
 - SEC-16 changes what a skip-email backup contains. Snapshots taken before it
-  still hold the hashes; forget them if that matters. Check the settings page
-  says the host has `--skipmailconfig` before relying on a skip-email schedule
-  in monolithic mode.
+  still hold the hashes; forget them if that matters. A skip-email schedule on
+  a host that only supports the monolithic archive still carries them, and the
+  run says so in a warning — read the amendment below before relying on one.
+- SEC-15 fails a restore that does not put a database back. Restricted restore
+  mode declines a database whose name does not carry the account's prefix, so
+  on a server with legacy unprefixed databases a restore that used to report
+  success now fails and names them. That is the check working: the databases
+  really were not restored. Rerun unrestricted if that is the reason.
 
 *Not exercised on the live host:* a failing restore module, which means
 breaking a real customer's restore to watch it; and a create hook answered
 with 500, which means taking the service's store out from under a real account
 creation. Both are covered by tests, one of which runs the hook binary itself.
+
+## Amendments to round four
+
+Two things the round-four write-up got wrong or left open, found while
+checking the claims it makes rather than the code it changed.
+
+### SEC-16 — `--skipmailconfig` is not what leaves out the hashes (`e5f52cf`)
+
+The operator note said to check the host has `--skipmailconfig` before
+relying on skip-email in monolithic mode. That advice was only good if the
+flag removes the mailbox credentials from pkgacct's archive, which was never
+verified. It does not.
+
+Read in `/usr/local/cpanel/scripts/pkgacct` on the live host: the only
+excludes applied to its copy of the home directory are `~/mail` and
+`~/public_html` (lines 891–899), and `--skipmailconfig` guards a single call,
+`perform_component('MailConfig')` (line 739), whose component copies
+`/etc/valiases/<domain>`, `/etc/vdomainaliases/<domain>` and
+`/etc/vfilters/<domain>` into the archive. Nothing there touches `~/etc`.
+
+So:
+
+- **Split mode** — the home directory is backed up as files and the exclude on
+  `~/etc` keeps the hashes out. Skip-email means what it says. This is what
+  `.144` runs.
+- **Monolithic mode** — cPanel packs the whole home directory into its own
+  archive and there is no flag for `~/etc`. The hashes are in the backup, and
+  no change here can take them out.
+
+A backup that says it left email out and carries every mailbox password is
+worse than one that admits it, so the monolithic plan now reports itself
+degraded with that reason, and the schedule page says which of the two the
+operator gets. `--skipmailconfig` is still passed: the addresses, forwarders
+and filters are mail data and a schedule that skips email should not carry
+them. The comments that credited it with the passwords are corrected.
+
+The warning an operator sees for a degraded payload also stopped talking only
+about deduplication, which is what it used to be the only reason for.
+
+Test: `TestMonolithicSkipEmailSaysThePasswordsAreStillInTheArchive`.
+
+### SEC-17 — the superseding prefix could match a neighbour (`72369e9`)
+
+The key of a restore's output was `restore-<account>-<restore id>`, and a new
+restore removes every retained output whose key starts with
+`restore-<account>-`. A hyphen is a character an account name may itself
+contain — `validateUser` allows it — so the prefix for `c1` also matched every
+output belonging to `c1-x`. Restoring one customer would have removed
+another's rebuilt archive, leaving that restore's record pointing at a file
+that was no longer there.
+
+The account and the restore's id are now joined with `@`, which no cPanel
+account name contains and which `validateKey` already allows for exactly this
+reason. Outputs staged by the previous binary keep their old keys and are not
+superseded by prefix any more; they fall to retention instead.
+
+Test: `TestSupersedingOneAccountsRestoreLeavesAnotherAccountsAlone`.
