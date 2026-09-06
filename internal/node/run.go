@@ -211,6 +211,27 @@ func (e *Engine) RunOnce(ctx context.Context) (bool, error) {
 }
 
 func (e *Engine) runBackup(ctx context.Context, stored nodestore.Job) error {
+	// A destination whose repository was never created is not a
+	// destination yet. It is created when one is added, but only on the
+	// branch where the login was proved in the same request -- a host key
+	// confirmed in a second step, or a login that came back with a
+	// warning, left the destination saved and the repository missing, and
+	// nothing made it again until the service restarted. Between those
+	// two, every backup failed with restic's own words for it:
+	//
+	//	Fatal: repository does not exist: unable to open config file
+	//
+	// Making it here costs one store read on a run that has nothing to
+	// create, and the alternative is a server that says it is backing up
+	// and is not.
+	if created, err := e.EnsureProvisioned(ctx); err != nil {
+		e.log.Error("create a repository that is not there yet",
+			"job_id", stored.ID, "account", stored.Account, "error", err)
+	} else if created > 0 {
+		e.log.Warn("created a repository that had not been created when its "+
+			"destination was added", "count", created)
+	}
+
 	policy, err := e.store.Policy(stored.PolicyID)
 	if err != nil {
 		return e.failJob(stored, fmt.Sprintf("policy: %v", err))
