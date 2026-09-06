@@ -85,6 +85,13 @@ type Repository struct {
 	// picture, and this is the one thing the program does that cannot be
 	// undone.
 	RetentionApprovedAt *time.Time `json:"retention_approved_at,omitempty"`
+	// RetentionApprovedKeeps is the keep policy that approval was for.
+	// Approving is approving something in particular: a repository whose
+	// schedules have since been edited to keep a tenth as much is not
+	// what the operator read, and nothing may be deleted under it until
+	// they have read the new one. Zero means an approval recorded before
+	// this was stored, which counts as unapproved.
+	RetentionApprovedKeeps Retention `json:"retention_approved_keeps,omitempty"`
 	// Retention records what the last plan said and what the last run
 	// did.
 	Retention RetentionState `json:"retention,omitempty"`
@@ -101,8 +108,11 @@ type RetentionState struct {
 	// changes what the next real run removes.
 	PlannedAt *time.Time       `json:"planned_at,omitempty"`
 	Plan      []RetentionGroup `json:"plan,omitempty"`
-	WouldKeep int              `json:"would_keep,omitempty"`
-	WouldDrop int              `json:"would_drop,omitempty"`
+	// PlannedKeeps is the keep policy the plan was taken under, which is
+	// what an operator approves when they approve the plan.
+	PlannedKeeps Retention `json:"planned_keeps,omitempty"`
+	WouldKeep    int       `json:"would_keep,omitempty"`
+	WouldDrop    int       `json:"would_drop,omitempty"`
 	// AppliedAt and Dropped are the last run that actually removed
 	// something.
 	AppliedAt *time.Time `json:"applied_at,omitempty"`

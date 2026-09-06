@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/shuki/cprest/internal/nodestore"
@@ -102,6 +103,7 @@ func (e *Engine) PlanRetention(ctx context.Context, repositoryID string) (nodest
 	var recorded nodestore.RetentionState
 	err = e.recordRetention(repositoryID, func(state *nodestore.RetentionState) {
 		state.PlannedAt = &now
+		state.PlannedKeeps = keeps
 		state.Plan = planGroups(plan)
 		state.WouldKeep, state.WouldDrop = plan.Kept, plan.Removed
 		state.LastError = ""
@@ -129,6 +131,18 @@ func (e *Engine) ApplyRetention(ctx context.Context, repositoryID string) (int, 
 	keeps, err := e.retentionFor(repositoryID)
 	if err != nil {
 		return 0, err
+	}
+	// Approval is approval of something in particular. Between the plan
+	// an operator read and this run, a schedule can be edited, disabled,
+	// deleted, or pointed somewhere else, and the merged policy that
+	// comes out the other side can be far less generous than the one they
+	// agreed to. Deleting backups is the one thing here that cannot be
+	// undone, so a policy they have not seen does not run.
+	if keeps != stored.RetentionApprovedKeeps {
+		return 0, fmt.Errorf(
+			"node: what would be kept here has changed since it was approved (%s, "+
+				"and approved was %s), so plan it again and approve what it now says",
+			describeKeeps(keeps), describeKeeps(stored.RetentionApprovedKeeps))
 	}
 	repo, err := e.OpenRepository(repositoryID, true)
 	if err != nil {
@@ -177,8 +191,23 @@ func (e *Engine) ApproveRetention(repositoryID string) error {
 			"node: nothing has been planned for this destination yet, so there is " +
 				"nothing to approve")
 	}
+	keeps, err := e.retentionFor(repositoryID)
+	if err != nil {
+		return err
+	}
+	// A schedule edited between reading the plan and pressing approve
+	// would otherwise be approved sight unseen. Refuse now rather than
+	// store an approval that the next run has to reject anyway.
+	if keeps != stored.Retention.PlannedKeeps {
+		return fmt.Errorf(
+			"node: the schedules changed while this plan was on screen (they now keep "+
+				"%s, and the plan was taken with %s), so plan it again and approve "+
+				"what it says",
+			describeKeeps(keeps), describeKeeps(stored.Retention.PlannedKeeps))
+	}
 	now := time.Now().UTC()
 	stored.RetentionApprovedAt = &now
+	stored.RetentionApprovedKeeps = keeps
 	_, err = e.store.PutRepository(stored)
 	return err
 }
@@ -191,8 +220,42 @@ func (e *Engine) WithdrawRetention(repositoryID string) error {
 		return err
 	}
 	stored.RetentionApprovedAt = nil
+	stored.RetentionApprovedKeeps = nodestore.Retention{}
 	_, err = e.store.PutRepository(stored)
 	return err
+}
+
+// describeKeeps says a keep policy in the words the interface uses, so a
+// refusal can name what changed rather than only that something did.
+func describeKeeps(keeps nodestore.Retention) string {
+	parts := make([]string, 0, 5)
+	for _, part := range []struct {
+		count int
+		said  string
+	}{
+		{keeps.KeepLast, "the last %d"},
+		{keeps.KeepDaily, "%d daily"},
+		{keeps.KeepWeekly, "%d weekly"},
+		{keeps.KeepMonthly, "%d monthly"},
+		{keeps.KeepYearly, "%d yearly"},
+	} {
+		if part.count > 0 {
+			parts = append(parts, fmt.Sprintf(part.said, part.count))
+		}
+	}
+	if len(parts) == 0 {
+		return "nothing"
+	}
+	return strings.Join(parts, ", ")
+}
+
+// RetentionApprovalCovers says whether what would be deleted from a
+// repository now is what an operator approved for it. A repository that
+// was never approved answers false, and so does one whose schedules have
+// been edited since: both mean nothing may be deleted until somebody
+// reads a fresh plan.
+func (e *Engine) RetentionApprovalCovers(repo nodestore.Repository, keeps nodestore.Retention) bool {
+	return repo.RetentionApprovedAt != nil && repo.RetentionApprovedKeeps == keeps
 }
 
 // retentionFailed records why an attempt did not finish and hands the
@@ -295,10 +358,18 @@ func (e *Engine) sweepRetention(ctx context.Context, now time.Time) {
 			continue
 		}
 
-		if repo.RetentionApprovedAt == nil {
-			// Never approved: take a plan so the operator has something
-			// to read, and stop there. Nothing is deleted from a
-			// repository until somebody has seen what would go.
+		keeps, err := e.retentionFor(repo.ID)
+		if err != nil {
+			// No enabled schedule writing here says how much to keep.
+			// The page says so; there is nothing for the sweep to do.
+			continue
+		}
+		if !e.RetentionApprovalCovers(repo, keeps) {
+			// Either nobody has approved this repository, or the
+			// schedules have changed since they did. Take a plan so the
+			// operator has the current one to read, and stop there.
+			// Nothing is deleted from a repository until somebody has
+			// seen what would go under the policy that is in force now.
 			if _, err := e.PlanRetention(ctx, repo.ID); err != nil {
 				e.log.Warn("plan retention", "repository", repo.ID, "error", err)
 			}

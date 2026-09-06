@@ -3,6 +3,7 @@ package node_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -162,5 +163,95 @@ func TestARetentionFailureIsReportedAndBacksOff(t *testing.T) {
 	}
 	if !engine.RetentionIsThrottledForTest(after) {
 		t.Error("a repository that has just failed is due again immediately")
+	}
+}
+
+// TestApprovalDoesNotSurviveAPolicyChange is the finding from the second
+// security review: approval was one timestamp, so it outlived the policy
+// it was given for. Approve a plan that keeps thirty daily backups, edit
+// the same schedule down to one, and the next run would delete twenty-nine
+// days of backups under a policy nobody had read.
+func TestApprovalDoesNotSurviveAPolicyChange(t *testing.T) {
+	root := t.TempDir()
+	store, err := nodestore.Open(filepath.Join(root, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	settings := nodestore.DefaultSettings()
+	settings.StagingRoot = filepath.Join(root, "staging")
+	settings.ResticCache = filepath.Join(root, "cache")
+	settings.ConfigDir = filepath.Join(root, "config")
+	if err := store.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+
+	// A restic that answers every forget with a plan, and records what it
+	// was asked to keep and whether the call was a dry run.
+	var forgets []string
+	recording := resticrun.ExecFunc(func(_ context.Context, cmd resticrun.Command) (resticrun.CommandResult, error) {
+		if len(cmd.Args) > 0 && cmd.Args[0] == "forget" {
+			forgets = append(forgets, strings.Join(cmd.Args, " "))
+		}
+		return resticrun.CommandResult{Stdout: []byte(
+			`[{"host":"cp01","keep":[{"id":"aaa"}],"remove":[{"id":"bbb"}]}]`)}, nil
+	})
+	engine := newEngineWithExec(t, store, root, recording)
+
+	repo := attachedRepository(t, store, engine)
+	policy, err := store.PutPolicy(nodestore.Policy{
+		Name: "Nightly", ScheduleCron: "0 2 * * *", Enabled: true,
+		RepositoryIDs: []string{repo.ID},
+		Retention:     nodestore.Retention{KeepDaily: 30},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	if _, err := engine.PlanRetention(ctx, repo.ID); err != nil {
+		t.Fatalf("PlanRetention: %v", err)
+	}
+	if err := engine.ApproveRetention(repo.ID); err != nil {
+		t.Fatalf("ApproveRetention: %v", err)
+	}
+
+	// The operator edits the schedule afterwards -- a typo, or a change
+	// meant for somewhere else.
+	policy.Retention = nodestore.Retention{KeepDaily: 1}
+	if _, err := store.PutPolicy(policy); err != nil {
+		t.Fatal(err)
+	}
+
+	before := len(forgets)
+	if _, err := engine.ApplyRetention(ctx, repo.ID); err == nil {
+		t.Fatal("backups were deleted under a policy the operator never approved")
+	}
+	for _, forget := range forgets[before:] {
+		if !strings.Contains(forget, "--dry-run") {
+			t.Errorf("a destructive forget ran anyway: restic %s", forget)
+		}
+	}
+
+	// The interface says so rather than only refusing when the button is
+	// pressed, and the sweep leaves it alone until it is approved again.
+	stored, err := store.Repository(repo.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if engine.RetentionApprovalCovers(stored, nodestore.Retention{KeepDaily: 1}) {
+		t.Error("the changed policy still counts as approved")
+	}
+
+	// Reading the new plan and approving it puts the repository back in
+	// service, under the policy that was actually read this time.
+	if _, err := engine.PlanRetention(ctx, repo.ID); err != nil {
+		t.Fatalf("PlanRetention: %v", err)
+	}
+	if err := engine.ApproveRetention(repo.ID); err != nil {
+		t.Fatalf("ApproveRetention after a fresh plan: %v", err)
+	}
+	if _, err := engine.ApplyRetention(ctx, repo.ID); err != nil {
+		t.Fatalf("ApplyRetention after a fresh approval: %v", err)
 	}
 }

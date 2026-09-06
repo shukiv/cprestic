@@ -134,7 +134,10 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
           <h3 style="margin:0; font-size:14px">Keeping backups tidy</h3>
           {{if keepsSet .Keeps}}
           <p class="cpr-hint" style="margin:var(--s1) 0 0">Keeps {{keepsSaid .Keeps}}, per account.
-          {{if .Repository.RetentionApprovedAt}}Approved {{ago .Repository.RetentionApprovedAt}}.
+          {{if .KeepsChanged}}<strong>The schedules changed since this was approved</strong>
+          — approved was {{keepsSaid .Repository.RetentionApprovedKeeps}}, so nothing is being
+          removed. Read the plan below and approve what it now says.
+          {{else if .Repository.RetentionApprovedAt}}Approved {{ago .Repository.RetentionApprovedAt}}.
           {{else}}<strong>Nothing has been removed yet.</strong> Read the plan below first.{{end}}</p>
           {{else}}
           <p class="cpr-hint" style="margin:var(--s1) 0 0">No enabled schedule writing here says
@@ -148,7 +151,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
             <input type="hidden" name="repository" value="{{.Repository.ID}}">
             <button class="cpr-btn">{{if $r.PlannedAt}}Check again{{else}}Show what would go{{end}}</button>
           </form>
-          {{if .Repository.RetentionApprovedAt}}
+          {{if and .Repository.RetentionApprovedAt (not .KeepsChanged)}}
           <form method="post" action="?p=destinations/retention/run" class="cpr-inline"
                 data-confirm="Remove the backups the policy says to remove? This cannot be undone.">
             <input type="hidden" name="csrf" value="{{$.CSRF}}">

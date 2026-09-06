@@ -238,6 +238,10 @@ type destinationView struct {
 	// Keeps is the retention this destination would apply: the most
 	// generous of every enabled schedule that writes here.
 	Keeps nodestore.Retention
+	// KeepsChanged says the schedules have been edited since retention
+	// was approved here, so nothing will be deleted until the new plan
+	// has been read. What was approved is on the repository.
+	KeepsChanged bool
 }
 
 // TypeName is the destination's type in the words the form used to offer
@@ -304,6 +308,8 @@ func (s *Server) destinationViews() ([]destinationView, error) {
 		}
 		if view.Repository.ID != "" {
 			view.Keeps = node.MergedRetention(policies, view.Repository.ID)
+			view.KeepsChanged = view.Repository.RetentionApprovedAt != nil &&
+				!s.engine.RetentionApprovalCovers(view.Repository, view.Keeps)
 		}
 		views = append(views, view)
 	}
