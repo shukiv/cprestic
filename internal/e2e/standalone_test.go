@@ -371,12 +371,17 @@ func TestStandaloneDrill(t *testing.T) {
 
 	// Scratch space comes from the staging manager now, so the same disk
 	// check that guards a backup guards the rehearsal.
-	checks, err := s.engine.Drill(s.ctx, repositories[0].ID, "customer1")
+	checks, skipped, err := s.engine.Drill(s.ctx, repositories[0].ID, "customer1")
 	if err != nil {
 		t.Fatalf("drill: %v", err)
 	}
 	if len(checks) < 3 {
 		t.Errorf("the drill made only %d checks: %v", len(checks), checks)
+	}
+	// This schedule leaves nothing out, so the rehearsal has nothing to
+	// say about parts that were not in the snapshot.
+	if len(skipped) != 0 {
+		t.Errorf("the drill reported parts as skipped for a full backup: %v", skipped)
 	}
 }
 
