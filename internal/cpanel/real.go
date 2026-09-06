@@ -722,20 +722,20 @@ func (r *Real) removeacct() string {
 // have left something in there for this moment. Restricted mode is
 // cPanel's answer to exactly that, and an operator who needs the archive
 // restored whole can say so.
-func (r *Real) Apply(ctx context.Context, archivePath string, options ApplyOptions) error {
+func (r *Real) Apply(ctx context.Context, archivePath string, options ApplyOptions) (string, error) {
 	info, err := os.Stat(archivePath)
 	if err != nil {
-		return fmt.Errorf("cpanel: restore archive: %w", err)
+		return "", fmt.Errorf("cpanel: restore archive: %w", err)
 	}
 	if info.IsDir() {
-		return fmt.Errorf("cpanel: restore archive %s is a directory", archivePath)
+		return "", fmt.Errorf("cpanel: restore archive %s is a directory", archivePath)
 	}
 	if options.NewUser != "" {
 		if err := validateUser(options.NewUser); err != nil {
-			return err
+			return "", err
 		}
 		if options.Overwrite {
-			return fmt.Errorf("cpanel: a restore cannot overwrite and use a new username")
+			return "", fmt.Errorf("cpanel: a restore cannot overwrite and use a new username")
 		}
 	}
 
@@ -772,9 +772,10 @@ func (r *Real) Apply(ctx context.Context, archivePath string, options ApplyOptio
 		// restorepkg's last line is a column of module names, so the
 		// last line alone says nothing. The reason is the first line
 		// that reads like one.
-		return fmt.Errorf("cpanel: restorepkg failed: %w: %s", err, restoreFailure(output))
+		return string(output), fmt.Errorf(
+			"cpanel: restorepkg failed: %w: %s", err, restoreFailure(output))
 	}
-	return nil
+	return string(output), nil
 }
 
 // Certify performs the destructive half of a restore drill on a dedicated
@@ -789,7 +790,7 @@ func (r *Real) Certify(ctx context.Context, archivePath, disposableUser string) 
 		return fmt.Errorf("cpanel: certification account %s already exists", disposableUser)
 	}
 
-	applyErr := r.Apply(ctx, archivePath, ApplyOptions{
+	_, applyErr := r.Apply(ctx, archivePath, ApplyOptions{
 		NewUser: disposableUser, SkipDNS: true,
 	})
 	created := r.accountRegistered(disposableUser)

@@ -11,6 +11,7 @@ import (
 	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/granular"
 	"github.com/shuki/cprest/internal/protocol"
+	"github.com/shuki/cprest/internal/reassemble"
 )
 
 // restoredTree is what restoreItems leaves behind before anything is done
@@ -345,7 +346,7 @@ func stagedCron(t *testing.T, out, user, body string) {
 func TestARestoreThatLeavesNoAccountIsNotASuccess(t *testing.T) {
 	agent := quietAgent(&cpanel.Fake{Gone: map[string]bool{"c1": true}})
 
-	err := agent.confirmRestored(context.Background(), agent.log, "c1")
+	err := agent.confirmRestored(context.Background(), agent.log, "c1", reassemble.Result{})
 	if err == nil {
 		t.Fatal("a restore that left no account was reported as successful")
 	}
@@ -355,7 +356,7 @@ func TestARestoreThatLeavesNoAccountIsNotASuccess(t *testing.T) {
 
 	// The account that is there passes, which is every other restore.
 	here := quietAgent(&cpanel.Fake{Root: t.TempDir()})
-	if err := here.confirmRestored(context.Background(), here.log, "c1"); err != nil {
+	if err := here.confirmRestored(context.Background(), here.log, "c1", reassemble.Result{}); err != nil {
 		t.Errorf("a restored account was reported as missing: %v", err)
 	}
 }

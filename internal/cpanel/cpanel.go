@@ -116,7 +116,13 @@ type Provider interface {
 	// Apply hands a rebuilt account archive to cPanel, overwriting the
 	// live account. Callers must only reach this when an operator has
 	// explicitly asked for it.
-	Apply(ctx context.Context, archivePath string, options ApplyOptions) error
+	//
+	// It returns what cPanel printed. A restore where a module failed
+	// still exits zero -- cPanel treats most of them as non-fatal and
+	// carries on -- so the transcript is the only account of what was
+	// actually put back, and throwing it away on success left nothing to
+	// read afterwards.
+	Apply(ctx context.Context, archivePath string, options ApplyOptions) (string, error)
 
 	// PutHomeDir copies a restored subtree back into an account's home
 	// directory, as that account.

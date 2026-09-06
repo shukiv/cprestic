@@ -9,6 +9,37 @@ import (
 	"github.com/shuki/cprest/internal/pkgacct"
 )
 
+// Databases names the account databases a rebuilt tree holds, read from
+// the dumps beside the archive.
+//
+// It reports what the archive is about to put back, so a caller can check
+// afterwards that cPanel actually did. Empty for a monolithic snapshot:
+// its databases are inside pkgacct's own archive, where nothing here can
+// see them without unpacking cPanel's format.
+func (r Result) Databases() []string {
+	if r.Mode == pkgacct.ModeMonolithic || r.TreeDir == "" {
+		return nil
+	}
+	root, err := soleDirectory(r.TreeDir)
+	if err != nil {
+		return nil
+	}
+	entries, err := os.ReadDir(filepath.Join(root, DatabaseDir))
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if name, found := strings.CutSuffix(entry.Name(), ".sql"); found && name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // Verify applies the structural checks a rehearsed restore must pass,
 // returning the ones that succeeded.
 //

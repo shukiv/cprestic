@@ -36,7 +36,7 @@ func TestApplyAsksForARestrictedRestore(t *testing.T) {
 	}
 	host := &Real{RestorepkgPath: script}
 
-	if err := host.Apply(context.Background(), archive, ApplyOptions{}); err != nil {
+	if _, err := host.Apply(context.Background(), archive, ApplyOptions{}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
 	args := readArgs(t, record)
@@ -59,7 +59,7 @@ func TestApplyAsksForARestrictedRestore(t *testing.T) {
 	// --force means once the account exists, by cPanel's own help. A live
 	// restore proved this: --restricted --force failed outright, so every
 	// apply would have.
-	if err := host.Apply(context.Background(), archive,
+	if _, err := host.Apply(context.Background(), archive,
 		ApplyOptions{Overwrite: true}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestAnOperatorCanStillAskForAnUnrestrictedRestore(t *testing.T) {
 	}
 	host := &Real{RestorepkgPath: script}
 
-	if err := host.Apply(context.Background(), archive,
+	if _, err := host.Apply(context.Background(), archive,
 		ApplyOptions{Unrestricted: true}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestAnOperatorCanStillAskForAnUnrestrictedRestore(t *testing.T) {
 
 	// --force is only available in unrestricted mode, so that is where
 	// an overwrite has to use it.
-	if err := host.Apply(context.Background(), archive,
+	if _, err := host.Apply(context.Background(), archive,
 		ApplyOptions{Unrestricted: true, Overwrite: true}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}

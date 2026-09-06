@@ -61,6 +61,10 @@ type Fake struct {
 	// way to undo those, so what the caller does about the failure is
 	// what matters.
 	RefuseLoadInto string
+	// ApplyOutput is what restorepkg is made to print. cPanel's restore
+	// exits zero with a module failed, so the transcript is the only
+	// thing that says so.
+	ApplyOutput string
 	// Gone marks accounts this server does not have, for the case where
 	// cPanel says it restored one and it is not there afterwards.
 	Gone map[string]bool
@@ -225,17 +229,17 @@ func (f *Fake) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 // to read them from.
 func (f *Fake) NativeExcludes(string) []string { return f.Excludes }
 
-func (f *Fake) Apply(_ context.Context, archivePath string, options ApplyOptions) error {
+func (f *Fake) Apply(_ context.Context, archivePath string, options ApplyOptions) (string, error) {
 	info, err := os.Stat(archivePath)
 	if err != nil {
-		return fmt.Errorf("cpanel: restore archive: %w", err)
+		return "", fmt.Errorf("cpanel: restore archive: %w", err)
 	}
 	if info.IsDir() {
-		return fmt.Errorf("cpanel: restore archive %s is a directory", archivePath)
+		return "", fmt.Errorf("cpanel: restore archive %s is a directory", archivePath)
 	}
 	f.AppliedWith = append(f.AppliedWith, options)
 	f.Applied = append(f.Applied, archivePath)
-	return nil
+	return f.ApplyOutput, nil
 }
 
 // PutHomeDir records that a restored tree would have been copied into an
@@ -344,7 +348,8 @@ func (f *Fake) owns(user, database string) bool {
 }
 
 func (f *Fake) Certify(ctx context.Context, archivePath, disposableUser string) error {
-	return f.Apply(ctx, archivePath, ApplyOptions{NewUser: disposableUser, SkipDNS: true})
+	_, err := f.Apply(ctx, archivePath, ApplyOptions{NewUser: disposableUser, SkipDNS: true})
+	return err
 }
 
 // cpmoveRoot is the top-level directory name inside a cPanel account

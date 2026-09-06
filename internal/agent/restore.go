@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/shuki/cprest/internal/cpanel"
@@ -209,20 +211,27 @@ func (a *Agent) restoreAccount(ctx context.Context, log *slog.Logger,
 	// The longest stage restic cannot count: cPanel's own restore reports
 	// nothing until it is finished.
 	watch.Stage("handing the archive to cPanel's restore")
-	if err := a.provider.Apply(ctx, result.ArchivePath, options); err != nil {
-		log.Error("restorepkg", "error", err)
+	transcript, err := a.provider.Apply(ctx, result.ArchivePath, options)
+	if err != nil {
+		log.Error("restorepkg", "error", err, "transcript", transcript)
 		return reassemble.Result{}, err
 	}
+	// Kept even when cPanel is happy. Most of its restore modules are
+	// not fatal: one can fail, be added to a list of skipped items, and
+	// the restore still finishes and exits zero. The transcript is then
+	// the only account of what was actually put back, and it used to be
+	// thrown away.
+	log.Info("cPanel finished the restore", "transcript", transcript)
 
-	if err := a.confirmRestored(ctx, log, assignment.CPanelUser); err != nil {
+	if err := a.confirmRestored(ctx, log, assignment.CPanelUser, result); err != nil {
 		return reassemble.Result{}, err
 	}
 	log.Info("account restored")
 	return result, nil
 }
 
-// confirmRestored checks that the account cPanel said it restored is
-// actually on the server.
+// confirmRestored checks that what cPanel said it restored is actually on
+// the server.
 //
 // cPanel's restore exits zero for things that are not a restored account.
 // Seen on a live server: an account terminated a moment before the restore
@@ -230,15 +239,69 @@ func (a *Agent) restoreAccount(ctx context.Context, log *slog.Logger,
 // afterwards -- the termination finished after the restore did. A restore
 // that reports success and leaves nothing is worse than one that fails,
 // because nobody looks again.
-func (a *Agent) confirmRestored(ctx context.Context, log *slog.Logger, user string) error {
-	if _, err := a.provider.Account(ctx, user); err != nil {
+//
+// The account being there is not enough on its own. Only two of cPanel's
+// restore modules treat their own failure as fatal; every other one --
+// the databases among them -- is recorded as a skipped item and the
+// restore carries on and exits zero. Into an account that already exists,
+// which is what a restore over a live account is, that came back as a
+// clean success with the databases never put back. So the databases the
+// archive holds are looked for on the account afterwards.
+//
+// What this cannot check is content: a database that was there before and
+// was not overwritten looks exactly like one that was. Proving that needs
+// something to compare against, and there is nothing here that has it.
+func (a *Agent) confirmRestored(ctx context.Context, log *slog.Logger, user string,
+	rebuilt reassemble.Result) error {
+
+	account, err := a.provider.Account(ctx, user)
+	if err != nil {
 		log.Error("restorepkg reported success but the account is not here",
 			"account", user, "error", err)
 		return fmt.Errorf(
 			"agent: cPanel reported the restore of %s as successful, but the "+
 				"account is not on this server afterwards: %w", user, err)
 	}
+	if missing := missingDatabases(rebuilt.Databases(), account.Databases); len(missing) > 0 {
+		log.Error("restorepkg reported success but did not put the databases back",
+			"account", user, "missing", strings.Join(missing, ","))
+		return fmt.Errorf(
+			"agent: cPanel reported the restore of %s as successful, but %s "+
+				"%s not on the account afterwards -- cPanel carries on when a "+
+				"restore module fails, so this restore is not the account back",
+			user, strings.Join(missing, ", "), plural(len(missing), "is", "are"))
+	}
 	return nil
+}
+
+// missingDatabases is what the archive holds and the account does not.
+//
+// cPanel lowercases nothing here: a database is named as it is named, and
+// the comparison is exact so a difference is reported rather than
+// explained away.
+func missingDatabases(archived, present []string) []string {
+	if len(archived) == 0 {
+		return nil
+	}
+	have := make(map[string]bool, len(present))
+	for _, name := range present {
+		have[name] = true
+	}
+	var missing []string
+	for _, name := range archived {
+		if !have[name] {
+			missing = append(missing, name)
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // restoreFiles pulls named paths out of a snapshot, keeping the paths they
