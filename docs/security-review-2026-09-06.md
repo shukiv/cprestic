@@ -507,3 +507,135 @@ as the hook. Test: `TestAReplayedCreateQueuesTheInitialBackup` in
 controller and a fleet, which `.144` does not run; and overwriting a real
 customer's databases to watch a granular restore fail halfway is not a test
 to run on a production server.
+
+## Round four — SEC-14 to SEC-18
+
+Five findings, again reported in conversation. One of them, SEC-18, had
+already been fixed in `82bef9b` before the report arrived; the rest were
+reproduced, fixed, and given a regression test checked against the code as it
+was before the fix.
+
+| ID | Severity | What | Fixed in |
+| --- | --- | --- | --- |
+| SEC-14 | Critical | A cPanel account boundary was dropped when the service answered HTTP 500 | `fcea194` |
+| SEC-15 | High | A restore that put nothing back reported success | `eff3546` |
+| SEC-16 | High | "Skip email" still shipped every mailbox password hash | `0ab15d2` |
+| SEC-17 | High | An old restore's id could hand over a newer archive | `42a354f` |
+| SEC-18 | High | A replayed account creation skipped the initial backup | `82bef9b` |
+
+### SEC-14 — a server error lost the ownership boundary
+
+The lifecycle hook split its failures two ways. A service that answered had
+reached a decision, and the hook reported it to WHM. A service that could not
+be reached had not, so a create or a remove — the two events that cannot be
+worked out again from the account list — was written down for replay.
+
+HTTP 500 fell on the wrong side of that line. A service whose store is busy or
+whose disk is full has decided nothing and recorded nothing; it is in the same
+position as one that is not running. The event was reported as a failed hook
+and dropped, and a username deleted and recreated onto the same uid during
+those minutes keeps the previous owner's boundary — which is the new customer
+being handed the last one's backups.
+
+Only a 4xx is the service's own answer. Everything else is written down.
+
+The create handler also no longer answers 500 when the boundary was recorded
+and only the initial backup could not be queued: the boundary is the part that
+cannot be reconstructed, and the schedule covers the backup either way.
+
+Tests: `cmd/agent/hook_test.go`, `cmd/agent/audit_bug_test.go` (which runs the
+hook binary against a socket answering 500).
+
+### SEC-15 — a restore that put nothing back reported success
+
+Read on the live server: `Whostmgr::Transfers::Systems` defines
+`failure_is_fatal` as false, and only `Account` and `Homedir` override it.
+Every other restore module — the databases among them — has its failure
+recorded as a skipped item, after which the restore carries on and returns
+"Account Restored" with exit zero.
+
+Restoring over an account that already exists, the only check afterwards was
+that the account was still on the server. It always was. The databases the
+rebuilt archive holds are now looked for on the account afterwards, and a
+restore missing any of them fails and names them.
+
+Two limits, stated rather than checked badly: content is not compared, so a
+database that was there before and was not overwritten looks exactly like one
+that was; and a monolithic snapshot keeps its databases inside cPanel's own
+archive, where they cannot be listed without unpacking it. The restorepkg
+transcript is now kept and logged on success as well as failure — it is the
+only record of which modules were skipped, and it was being discarded.
+
+Tests: `internal/agent/audit_bug_test.go`.
+
+### SEC-16 — "skip email" shipped the mailbox passwords
+
+A schedule set to skip email excluded `~/mail` and passed pkgacct
+`--skipmail`. Both of those are the messages. cPanel keeps the mail accounts
+themselves under `~/etc`, one directory per domain: `passwd` names every
+mailbox and `shadow` holds its password as a crypt hash. Confirmed on the live
+server — `$6$` hashes, one line per mailbox, alongside `quota`, `@pwcache` and
+the webmail databases.
+
+So a backup taken deliberately without email carried the credentials to read
+all of it, to whatever destination was chosen because it would not hold email.
+
+Both halves are fixed. The file backup excludes `~/etc` as well as `~/mail` —
+the whole directory rather than the credential files by name, because a
+pattern that misses one ships the hashes, and the rest of it is cPanel's own
+bookkeeping (`cacheid`, `ftpquota`, the webmail databases), which is either
+regenerated or mail data in its own right. pkgacct is passed
+`--skipmailconfig` alongside `--skipmail`; cPanel's own help says which is
+which. The flag is probed like the others, so a version without it is not
+handed an argument it would reject — and the settings page now lists both
+flags and what they mean, because a host missing `--skipmailconfig` cannot
+honour the choice inside pkgacct's archive.
+
+Tests: `internal/node/audit_email_bug_test.go`,
+`internal/pkgacct/pkgacct_test.go` (against the help text from cPanel
+136.0.38).
+
+*Existing snapshots are not changed by this.* Any snapshot already tagged
+`skip:email` still contains the hashes; nothing removes them but forgetting
+the snapshot. No policy on `.144` skips email, so nothing there is affected.
+
+### SEC-17 — an old restore's id could hand over a newer archive
+
+Rebuilt archives were keyed by account, so every restore of an account wrote
+to the same directory. The second one replaced the first one's file while the
+first one's record went on pointing at that path, and a download asked for by
+the older restore's id handed over the newer snapshot under the older one's
+date. An operator rebuilding a customer from before a bad change gets the bad
+change back, with nothing saying so. The download page even had the sentence
+for it — "the archive is gone, it is replaced when the account is rebuilt
+again" — which never fired, because a file with the same name was always
+there.
+
+Output is now keyed by the restore that produced it, and the superseded
+restore's output is removed. The older record's path stops resolving, so the
+page says what is true, and the disk still holds one archive per account and
+kind. Work in progress is never touched: a directory still being written in
+belongs to a restore that has not finished.
+
+Tests: `internal/agent/restore_supersede_test.go`.
+
+### SEC-18 — a replayed creation skipped the initial backup
+
+Already fixed in `82bef9b`, before this round was reported. An account created
+while the service was down had its ownership boundary recorded on replay and
+nothing else, so it waited for the next nightly run with no copy of it
+anywhere. The replay now queues the baseline on the same terms as the live
+hook. Test: `TestAReplayedCreateQueuesTheInitialBackup`.
+
+### What an operator has to do
+
+- Nothing for SEC-14, SEC-15 and SEC-17: they take effect with the new binary.
+- SEC-16 changes what a skip-email backup contains. Snapshots taken before it
+  still hold the hashes; forget them if that matters. Check the settings page
+  says the host has `--skipmailconfig` before relying on a skip-email schedule
+  in monolithic mode.
+
+*Not exercised on the live host:* a failing restore module, which means
+breaking a real customer's restore to watch it; and a create hook answered
+with 500, which means taking the service's store out from under a real account
+creation. Both are covered by tests, one of which runs the hook binary itself.
