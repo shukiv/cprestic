@@ -24,6 +24,8 @@ type page struct {
 	CSRF  string
 	Flash *flash
 	Data  any
+	// RunningVersion is this binary's build, not the latest published release.
+	RunningVersion string
 	// Running is every backup and restore happening now. It is on the
 	// page rather than in one place that lists runs, because somebody
 	// who has just asked for one and sees nothing asks again.
@@ -66,6 +68,7 @@ func (s *Server) renderWithCSRF(
 	view := page{
 		Title: title, Nav: nav, CSRF: csrf,
 		Flash: flashFrom(r), Data: data, Assets: s.assets,
+		RunningVersion: agent.Version,
 	}
 	// An account-facing request is confined to the account that opened
 	// the socket, here as everywhere: another customer's restore is not

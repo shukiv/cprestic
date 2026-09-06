@@ -552,6 +552,37 @@
 .cprest .cpr-sheet-body { padding:var(--s5); overflow:auto; flex:1; }
 .cprest .cpr-sheet-body form * + label { margin-top:var(--s4); }
 
+/* Reporting is a short, focused task; the destination editor keeps its
+   side sheet. Both remain native dialogs with Escape and focus containment. */
+.cprest .cpr-report-dialog {
+  inset:0; margin:auto; width:min(640px, calc(100vw - 32px)); height:fit-content;
+  max-height:min(720px, calc(100vh - 32px)); max-height:min(720px, calc(100dvh - 32px));
+  border:1px solid var(--line-strong); border-radius:var(--r);
+  box-shadow:0 16px 64px rgba(10,14,20,.28);
+}
+.cprest .cpr-report-dialog[open] { animation:none; }
+.cprest .cpr-report-dialog .cpr-sheet-head h2 {
+  margin:0; color:var(--ink); font-size:20px; text-transform:none; letter-spacing:-.01em;
+}
+.cprest .cpr-report-dialog .cpr-sheet-body {
+  min-height:0; scroll-padding-block:var(--s4); overscroll-behavior:contain;
+}
+.cprest .cpr-report-dialog .cpr-formgrid { display:grid; gap:var(--s4); }
+.cprest .cpr-report-dialog textarea { font:inherit; line-height:1.55; resize:vertical; min-height:160px; }
+.cprest .cpr-report-close { width:44px; min-height:44px; padding:0; flex:none; }
+.cprest .cpr-report-close svg {
+  width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.8;
+  stroke-linecap:round;
+}
+.cprest .cpr-report-intro { margin:0 0 var(--s5); color:var(--muted); }
+.cprest .cpr-report-privacy {
+  margin:var(--s4) 0; padding:var(--s3); border:1px solid var(--line);
+  border-radius:var(--r); background:var(--surface-2); color:var(--muted);
+  font-size:13px; line-height:1.6;
+}
+.cprest .cpr-report-actions { flex-wrap:wrap; gap:var(--s2); }
+.cprest .cpr-report-dialog textarea:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
 /* --- the name ------------------------------------------------------- */
 /* cP:Restic — cPanel's two letters in cPanel's orange, then what does the
    work. The colour is the product's own and does not come from the theme
@@ -684,6 +715,11 @@
   border-top:1px solid #2C4058; color:#A9BBCF; font-size:12px;
 }
 .cprest .cpr-rail-foot-row { display:flex; align-items:center; gap:10px; }
+.cprest .cpr-rail-version {
+  display:flex; flex-wrap:wrap; gap:4px; min-width:0; max-width:100%;
+  margin:4px 0 0; color:inherit; font-size:12px; line-height:1.5;
+  overflow-wrap:anywhere; font-variant-numeric:tabular-nums;
+}
 /* The switch used to sit in a bar across the top of the workspace, which
    spent 62px of every page on a breadcrumb WHM already draws. It lives in
    the rail now, on navy: its own tokens are for a light surface. */
@@ -737,9 +773,11 @@
   .cprest .cpr-nav a { justify-content:center; padding-inline:8px; }
   /* A 76px rail has no room for three buttons and two links side by side,
      so the footer stacks instead of scrolling sideways. */
-  .cprest .cpr-rail-foot { justify-items:center; }
+  .cprest .cpr-rail-foot { justify-items:center; padding-inline:0; }
+  .cprest .cpr-rail-foot-row { flex-direction:column; }
+  .cprest .cpr-rail-version { justify-content:center; text-align:center; }
   .cprest .cpr-rail-foot .cpr-theme { justify-self:center; flex-direction:column; }
-  .cprest .cpr-rail-links { margin:0 auto; }
+  .cprest .cpr-rail-links { margin:0 auto; flex-wrap:wrap; justify-content:center; }
 }
 
 @media (max-width:760px) {

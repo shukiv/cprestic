@@ -85,6 +85,7 @@
             </a>
           </span>
         </div>
+        <p class="cpr-rail-version"><span>Version</span> <bdi>{{.RunningVersion}}</bdi></p>
       </div>
     </aside>
 
@@ -116,33 +117,43 @@
       </main>
     </section>
   </div>
-</div>
 
-<dialog id="report-problem" class="cpr-sheet" aria-label="Report a problem">
+{{/* Keep dialogs inside .cprest: the browser top layer preserves DOM ancestry,
+     and both the dialog and its fields need the plugin's scoped styles. */}}
+<dialog id="report-problem" class="cpr-sheet cpr-report-dialog"
+        aria-labelledby="report-problem-title" aria-describedby="report-problem-intro">
   <div class="cpr-sheet-head">
-    <h2 style="margin:0">Report a problem</h2>
-    <button type="button" class="cpr-btn cpr-quiet" data-dialog-close aria-label="Close">✕</button>
+    <h2 id="report-problem-title">Report a problem</h2>
+    <button type="button" class="cpr-btn cpr-quiet cpr-report-close" data-dialog-close aria-label="Close report dialog">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+    </button>
   </div>
   <div class="cpr-sheet-body">
+    <p id="report-problem-intro" class="cpr-report-intro">Tell us what went wrong. You can review the full report on the next page before sending anything.</p>
     <form method="post" action="?p=report/send">
       <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <label for="sheet_report_subject">Subject</label>
-      <input type="text" id="sheet_report_subject" name="subject" required maxlength="200"
-             placeholder="What went wrong, in a line">
-      <label for="sheet_report_body">What happened</label>
-      <textarea id="sheet_report_body" name="body" rows="7" required
-                placeholder="What you did, what you expected, what happened instead."></textarea>
-      <small class="cpr-help">Versions, this server's recent failures, its settings without
-      credentials, and the last 200 lines the service logged travel with it. Nothing is sent
-      until you have seen the whole report on the next page, where you can also take it as a
-      file instead.</small>
-      <div class="cpr-actions" style="margin-top:var(--s4)">
-        <button class="cpr-btn cpr-primary" type="submit">Show me what would be sent</button>
-        <a class="cpr-btn cpr-quiet" href="?p=report">Open it as a page</a>
+      <div class="cpr-formgrid">
+        <div>
+          <label for="sheet_report_subject">Subject</label>
+          <input type="text" id="sheet_report_subject" name="subject" required maxlength="200"
+                 placeholder="A short summary of the problem">
+        </div>
+        <div>
+          <label for="sheet_report_body">What happened</label>
+          <textarea id="sheet_report_body" name="body" rows="7" required maxlength="20000"
+                    aria-describedby="report-problem-privacy"
+                    placeholder="What did you do? What did you expect? What happened instead?"></textarea>
+        </div>
+      </div>
+      <p id="report-problem-privacy" class="cpr-report-privacy">The preview includes versions, recent failures, selected settings and recent service logs. Automatic redaction is best-effort; check for sensitive information. You can download the report instead of sending it.</p>
+      <div class="cpr-actions cpr-report-actions">
+        <a class="cpr-btn cpr-quiet" href="?p=report">Open full page</a>
+        <button class="cpr-btn cpr-primary" type="submit">Preview report</button>
       </div>
     </form>
   </div>
 </dialog>
+</div>
 
 <script>{{.Assets.JS}}</script>
 {{end}}
