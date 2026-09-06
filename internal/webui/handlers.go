@@ -383,6 +383,70 @@ func (s *Server) handleRecoveryKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// withoutRecoveryKey names the destinations among these repositories whose
+// recovery key has never left this server.
+func (s *Server) withoutRecoveryKey(repositoryIDs []string) []string {
+	var names []string
+	for _, id := range repositoryIDs {
+		repo, err := s.engine.Store().Repository(id)
+		if err != nil || repo.RecoveryNotedAt != nil {
+			continue
+		}
+		name := repo.Path
+		if dest, err := s.engine.Store().Destination(repo.DestinationID); err == nil {
+			name = dest.Name
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+// repositoryOf is the repository kept at a destination.
+func (s *Server) repositoryOf(destinationID string) (string, bool) {
+	repositories, err := s.engine.Store().Repositories()
+	if err != nil {
+		s.log.Error("read the repositories", "error", err)
+		return "", false
+	}
+	for _, repo := range repositories {
+		if repo.DestinationID == destinationID {
+			return repo.ID, true
+		}
+	}
+	return "", false
+}
+
+// revealRecovery finishes adding a destination on its recovery key.
+//
+// The key is generated on this server and exists nowhere else. A
+// destination whose key was never taken off the machine is a destination
+// that cannot be restored from after the machine is lost, which is the
+// case backups are for -- so it is put in front of the operator as the
+// last step of adding one, rather than left behind a menu they have no
+// reason to open.
+func (s *Server) revealRecovery(w http.ResponseWriter, r *http.Request, repositoryID string) bool {
+	card, err := s.engine.Recovery(repositoryID)
+	if err != nil {
+		s.log.Error("show the recovery key for a new destination",
+			"repository_id", repositoryID, "error", err)
+		return false
+	}
+	views, err := s.destinationViews()
+	if err != nil {
+		s.log.Error("read the destinations", "error", err)
+		return false
+	}
+	s.render(w, r, "destinations.html", "Backup destinations", "destinations", destinationsView{
+		Destinations: views,
+		Hostname:     s.engine.Settings().Hostname,
+		Revealed:     &card,
+		RevealedID:   repositoryID,
+		Unnoted:      unnoted(views),
+		JustCreated:  true,
+	})
+	return true
+}
+
 // handleNoteRecovery records that the password has been written down
 // somewhere off this server, which is what stops the warning.
 func (s *Server) handleNoteRecovery(w http.ResponseWriter, r *http.Request) {
@@ -483,6 +547,14 @@ also the reason it belongs in a password manager rather than on a disk.
 Written %s
 `, card.Hostname, time.Now().UTC().Format("2006-01-02 15:04 MST"))
 
+	// Downloading it is having it. The warning exists to make sure the key
+	// leaves this server, and a file on the operator's machine is exactly
+	// that; making them press "I have stored it somewhere else" as well
+	// only teaches them to press it without reading.
+	if err := s.engine.NoteRecoveryKey(r.PostFormValue("repository")); err != nil {
+		s.log.Error("record that the recovery key was taken away", "error", err)
+	}
+
 	filename := fmt.Sprintf("cprest-recovery-%s-%s.txt", card.Hostname, card.Repository)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
@@ -531,6 +603,10 @@ type destinationsView struct {
 	// Unnoted are the destinations whose recovery key exists nowhere but
 	// this server.
 	Unnoted []string
+	// JustCreated says the destination on this page was made a moment
+	// ago, so the card is the last step of adding it rather than an
+	// answer to somebody asking to see the key.
+	JustCreated bool
 }
 
 // Field is what an input should show: what was submitted, else what is
@@ -767,7 +843,7 @@ func (s *Server) saveDestination(w http.ResponseWriter, r *http.Request,
 	dest nodestore.Destination, secrets map[string]string, repositoryPath string) {
 
 	name := dest.Name
-	stored, _, err := s.engine.AddDestination(dest, secrets, repositoryPath)
+	stored, created, err := s.engine.AddDestination(dest, secrets, repositoryPath)
 	if err != nil {
 		s.refuseDestination(w, r, err)
 		return
@@ -782,6 +858,9 @@ func (s *Server) saveDestination(w http.ResponseWriter, r *http.Request,
 	if _, err := s.engine.EnsureProvisioned(r.Context()); err != nil {
 		s.redirect(w, r, "/destinations", "warn",
 			fmt.Sprintf("Saved %q and reached it, but creating the repository failed: %v", name, err))
+		return
+	}
+	if s.revealRecovery(w, r, created.ID) {
 		return
 	}
 	s.redirect(w, r, "/destinations", "ok",
@@ -867,6 +946,9 @@ func (s *Server) finishSFTP(w http.ResponseWriter, r *http.Request, request node
 				"Logged in to %s, but creating the repository failed: %v", result.Destination.Name, err))
 			return
 		}
+		if s.revealRecovery(w, r, result.Repository.ID) {
+			return
+		}
 		if result.Created {
 			s.redirect(w, r, "/destinations", "ok", fmt.Sprintf(
 				"%s is ready. cprest created %s on that server, gave it a locked password so "+
@@ -884,6 +966,9 @@ func (s *Server) finishSFTP(w http.ResponseWriter, r *http.Request, request node
 		// where it works is the operator who put the key there already,
 		// and the warning is what they are shown either way.
 		if created, err := s.engine.EnsureProvisioned(r.Context()); err == nil && created > 0 {
+			if s.revealRecovery(w, r, result.Repository.ID) {
+				return
+			}
 			s.redirect(w, r, "/destinations", "warn",
 				result.Warning+" The repository is created.")
 			return
@@ -893,6 +978,9 @@ func (s *Server) finishSFTP(w http.ResponseWriter, r *http.Request, request node
 		if _, err := s.engine.EnsureProvisioned(r.Context()); err != nil {
 			s.redirect(w, r, "/destinations", "warn",
 				"Saved, but creating the repository failed: "+err.Error())
+			return
+		}
+		if s.revealRecovery(w, r, result.Repository.ID) {
 			return
 		}
 		s.redirect(w, r, "/destinations", "ok", "Saved, and the repository is created.")
@@ -1017,6 +1105,9 @@ func (s *Server) handleTestDestination(w http.ResponseWriter, r *http.Request) {
 		s.redirect(w, r, "/destinations", "warn",
 			"That server answered, but creating the repository failed: "+err.Error())
 	case created > 0:
+		if repo, found := s.repositoryOf(id); found && s.revealRecovery(w, r, repo) {
+			return
+		}
 		s.redirect(w, r, "/destinations", "ok",
 			"Destination reachable, and its repository is created.")
 	default:
@@ -1286,6 +1377,20 @@ func (s *Server) handleSaveSchedule(w http.ResponseWriter, r *http.Request) {
 		s.redirect(w, r, "/schedule", "error",
 			"Choose at least one destination, or nothing will be backed up.")
 		return
+	}
+	// A backup nobody can read is not a backup. The recovery key is made
+	// on this server and, until it has been taken off it, the only copy
+	// is on the machine the backups exist to survive -- so a schedule
+	// that would start writing there waits for it.
+	if policy.Enabled {
+		if names := s.withoutRecoveryKey(policy.RepositoryIDs); len(names) > 0 {
+			s.redirect(w, r, "/destinations", "error", fmt.Sprintf(
+				"Take the recovery key for %s off this server first: press "+
+					"\u201cRecovery key\u201d, then download it or say you have stored "+
+					"it. Without it, nothing can read what this schedule would "+
+					"write.", strings.Join(names, " and ")))
+			return
+		}
 	}
 	// Empty means every account, resolved when the schedule fires so new
 	// accounts are included without an edit.

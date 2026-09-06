@@ -111,6 +111,23 @@ func newUIWithExec(t *testing.T, exec resticrun.Execer) (*http.Client, string, *
 	return client, socket, engine
 }
 
+// noteRecoveryKeys marks every repository's recovery key as taken off this
+// server, which is what an operator does on the card at the end of adding
+// a destination. A schedule cannot be enabled until it has been, so a test
+// that is about schedules has to get past it first.
+func noteRecoveryKeys(t *testing.T, engine *node.Engine) {
+	t.Helper()
+	repositories, err := engine.Store().Repositories()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, repo := range repositories {
+		if err := engine.NoteRecoveryKey(repo.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func waitForSocket(t *testing.T, socket string, listenErrors <-chan error) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -422,6 +439,7 @@ func TestEditSchedule(t *testing.T) {
 	if err != nil || len(repos) != 1 {
 		t.Fatalf("repositories = %+v (%v)", repos, err)
 	}
+	noteRecoveryKeys(t, engine)
 
 	_, page = get(t, client, "/schedule")
 	saved, err := client.PostForm("http://ui/schedule/save", map[string][]string{
@@ -573,6 +591,7 @@ func TestRunScheduleNow(t *testing.T) {
 	if err != nil || len(repos) != 1 {
 		t.Fatalf("repositories = %+v (%v)", repos, err)
 	}
+	noteRecoveryKeys(t, engine)
 
 	_, page = get(t, client, "/schedule")
 	saved, err := client.PostForm("http://ui/schedule/save", map[string][]string{
@@ -1558,6 +1577,7 @@ func TestAScheduleCarriesWhatItLeavesOut(t *testing.T) {
 	if err != nil || len(repos) != 1 {
 		t.Fatalf("repositories = %+v (%v)", repos, err)
 	}
+	noteRecoveryKeys(t, engine)
 
 	_, page = get(t, client, "/schedule")
 	saved, err := client.PostForm("http://ui/schedule/save", map[string][]string{
@@ -1780,6 +1800,7 @@ func TestTheServersOwnSettingsCanBeScheduledAndRestored(t *testing.T) {
 	}
 	added.Body.Close()
 	repos, _ := engine.Store().Repositories()
+	noteRecoveryKeys(t, engine)
 
 	_, page = get(t, client, "/schedule")
 	saved, err := client.PostForm("http://ui/schedule/save", map[string][]string{

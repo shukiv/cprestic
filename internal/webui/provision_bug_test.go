@@ -64,9 +64,14 @@ func TestTestingADestinationCreatesTheRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = readBody(t, resp)
-	if resp.StatusCode != http.StatusSeeOther {
+	// The answer is the recovery key card for the repository it just
+	// created, rendered in place rather than a redirect.
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("testing the destination answered %d", resp.StatusCode)
+	}
+	if !strings.Contains(body, "Take its recovery") {
+		t.Error("creating the repository did not end on its recovery key")
 	}
 
 	stored, err := engine.Store().Repository(repo.ID)

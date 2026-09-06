@@ -7,7 +7,13 @@
 {{with $data.Revealed}}
 <div class="cpr-card" style="border-color:color-mix(in srgb, var(--warn) 45%, var(--line))">
   <div class="cpr-pad" style="border-bottom:1px solid var(--line)">
-    <h2 style="margin:0">Recovery key for {{.Destination}}</h2>
+    <h2 style="margin:0">{{if $data.JustCreated}}{{.Destination}} is ready. Take its recovery
+    key before you go on{{else}}Recovery key for {{.Destination}}{{end}}</h2>
+    {{if $data.JustCreated}}
+    <p class="cpr-hint" style="margin:var(--s1) 0 0">This is the last step of adding a
+    destination, and the only one that cannot be done later: the key is made here and exists
+    nowhere else yet.</p>
+    {{end}}
   </div>
   <div class="cpr-pad">
     <p class="cpr-hint" style="margin-top:0">This is the only thing that can read those backups.
@@ -39,7 +45,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
         <input type="hidden" name="repository" value="{{$data.RevealedID}}">
         <button class="cpr-btn cpr-primary">I have stored it somewhere else</button>
       </form>
-      <a class="cpr-btn cpr-quiet" href="?p=destinations">Hide it</a>
+      <a class="cpr-btn cpr-quiet" href="?p=destinations">{{if $data.JustCreated}}Not now{{else}}Hide it{{end}}</a>
     </div>
   </div>
 </div>
@@ -50,7 +56,9 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
   <b>{{len $data.Unnoted}} backup{{if ne (len $data.Unnoted) 1}}s have{{else}} has{{end}} a
   recovery key that exists only on this server.</b> The backups are encrypted before they leave
   it, so whoever holds the destination cannot read them — and neither can you, without the key.
-  Show it, then keep it somewhere that survives this machine.
+  Show it, then keep it somewhere that survives this machine. A schedule cannot be turned on
+  for {{if ne (len $data.Unnoted) 1}}these destinations{{else}}this destination{{end}} until it
+  has been: {{range $index, $name := $data.Unnoted}}{{if $index}}, {{end}}{{$name}}{{end}}.
 </div></div>
 {{end}}
 
