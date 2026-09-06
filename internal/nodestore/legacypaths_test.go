@@ -3,6 +3,9 @@ package nodestore
 import (
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/shukiv/gniza/internal/job"
 )
 
 // A server that was installed as cprest keeps its directories' old names
@@ -124,6 +127,84 @@ func TestAFreshServerIsNotGivenSettingsItNeverSaved(t *testing.T) {
 	}
 	if _, err := store.rawSettings(); err == nil {
 		t.Error("a settings record was written for a server that had none")
+	}
+}
+
+// The upgrade that installs the rename is still running when the
+// directories move. It is not this process that reports on it -- the
+// installer stops the old service -- so the new one reads the installer's
+// exit status back off disk, from the path the old one wrote down. That
+// path moved with everything else, and an upgrade whose status cannot be
+// found is one that says it is still installing for the next half hour,
+// which is half an hour in which no other upgrade can be started.
+func TestTheUpgradeThatMovedTheDirectoriesIsStillFound(t *testing.T) {
+	store := openTestStore(t)
+	if err := store.SaveUpgradeState(UpgradeState{
+		Version:   "v0.1.7",
+		From:      "v0.1.6",
+		Stage:     "installing",
+		StartedAt: time.Now().UTC(),
+		Dir:       "/var/lib/cprest/upgrade/v0.1.7",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := store.MigrateLegacyPaths()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed != 1 {
+		t.Errorf("changed %d records, want the upgrade", changed)
+	}
+
+	state, err := store.UpgradeState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Dir != "/var/lib/gniza/upgrade/v0.1.7" {
+		t.Errorf("the unpacked release is looked for at %q", state.Dir)
+	}
+	if state.Version != "v0.1.7" || state.Stage != "installing" {
+		t.Errorf("the rest of the record was not kept: %+v", state)
+	}
+}
+
+// A restore that was left to collect rather than applied records where the
+// archive is, and that is what the page tells the operator to fetch. It is
+// under the staging root, so it moved.
+func TestARestoreStillSaysWhereItLeftTheArchive(t *testing.T) {
+	store := openTestStore(t)
+	restore, err := store.PutRestore(Restore{
+		Account:      "jbali",
+		RepositoryID: "r1",
+		SnapshotID:   "9f2c1d40",
+		Kind:         "full",
+		Status:       job.StatusSuccess,
+		TargetDir:    "/var/lib/cprest/staging/restore-9f2c1d40",
+		ArchivePath:  "/var/lib/cprest/staging/restore-9f2c1d40/cpmove-jbali.tar.gz",
+		RestoredTo:   "/var/lib/cprest/staging/restore-9f2c1d40",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.MigrateLegacyPaths(); err != nil {
+		t.Fatal(err)
+	}
+
+	moved, err := store.Restore(restore.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.ArchivePath != "/var/lib/gniza/staging/restore-9f2c1d40/cpmove-jbali.tar.gz" {
+		t.Errorf("the archive is named at %q", moved.ArchivePath)
+	}
+	if moved.TargetDir != "/var/lib/gniza/staging/restore-9f2c1d40" ||
+		moved.RestoredTo != "/var/lib/gniza/staging/restore-9f2c1d40" {
+		t.Errorf("the restore still names the old directories: %+v", moved)
+	}
+	if moved.Account != "jbali" || moved.SnapshotID != "9f2c1d40" {
+		t.Errorf("the rest of the record was not kept: %+v", moved)
 	}
 }
 

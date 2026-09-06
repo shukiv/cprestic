@@ -81,6 +81,47 @@ func (s *Store) MigrateLegacyPaths() (int, error) {
 		}
 		changed++
 	}
+
+	// The upgrade that installs this release is still in flight while the
+	// directories move. The process that started it is stopped by the
+	// installer, so the one that replaces it reads the installer's exit
+	// status back off disk, at the path the old one wrote down -- and
+	// that path moved with everything else. An upgrade whose status
+	// cannot be found is one that reports itself as still installing
+	// until it times out half an hour later, and no other upgrade can be
+	// started while one says it is running.
+	upgrade, err := s.UpgradeState()
+	if err != nil {
+		return changed, err
+	}
+	if moved := underNewName(upgrade.Dir); moved != upgrade.Dir {
+		upgrade.Dir = moved
+		if err := s.SaveUpgradeState(upgrade); err != nil {
+			return changed, err
+		}
+		changed++
+	}
+
+	// Restore history says where an archive was left for the operator to
+	// collect, which is what the page tells them to fetch. Those are
+	// under the staging root, so they moved too.
+	restores, err := s.Restores(0)
+	if err != nil {
+		return changed, err
+	}
+	for _, restore := range restores {
+		target := underNewName(restore.TargetDir)
+		archive := underNewName(restore.ArchivePath)
+		to := underNewName(restore.RestoredTo)
+		if target == restore.TargetDir && archive == restore.ArchivePath && to == restore.RestoredTo {
+			continue
+		}
+		restore.TargetDir, restore.ArchivePath, restore.RestoredTo = target, archive, to
+		if _, err := s.PutRestore(restore); err != nil {
+			return changed, fmt.Errorf("nodestore: move restore %s to the new directory names: %w", restore.ID, err)
+		}
+		changed++
+	}
 	return changed, nil
 }
 
