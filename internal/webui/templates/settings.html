@@ -180,7 +180,7 @@
     </div>
     {{else if not $update.Installing}}
     {{if and $update.Unreleased (not $update.Dist)}}
-    <p class="cpr-hint" style="margin:0">This copy was not installed from a published
+    <p class="cpr-hint" style="margin:0">This copy did not come from a published
     release{{with $update.Latest}}; the newest one is {{.}}{{end}}. A build that is not a
     published version is never replaced from here, because whoever put it on this server is
     the only one who knows what is in it. To go back to published releases, install one over

@@ -294,7 +294,7 @@ func TestAHandInstalledBuildIsToldWhyItIsNotOffered(t *testing.T) {
 			"banner on the same page names the release that does")
 	}
 	for _, want := range []string{
-		"was not installed from a published",
+		"did not come from a published",
 		"v0.1.2",
 		"releases/latest/download/get.sh",
 	} {
