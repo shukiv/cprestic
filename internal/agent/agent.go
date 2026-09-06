@@ -61,6 +61,11 @@ type Agent struct {
 	// ResticVersion is reported at enrolment for fleet-wide version
 	// tracking: repository features depend on it.
 	ResticVersion string
+	// LeaseRenewEvery is how often work in progress tells the controller
+	// it is still going. Zero derives it from the lease the assignment
+	// carries, which is what a running agent does; it is set explicitly
+	// by tests that cannot wait for a heartbeat measured in minutes.
+	LeaseRenewEvery time.Duration
 	// TargetTimeout bounds one repository upload. restic retries a
 	// failing backend for a long time; without a bound, one unreachable
 	// destination consumes the window the reachable ones needed.
@@ -208,19 +213,111 @@ func (a *Agent) execute(ctx context.Context, assignment protocol.Assignment) {
 
 	switch assignment.Kind {
 	case protocol.KindBackup:
-		report := a.RunJob(ctx, *assignment.Backup)
+		job := *assignment.Backup
+		held, release := a.holdLease(ctx, job.JobID, job.ClaimToken, false, job.LeaseExpiresAt)
+		report := a.RunJob(held, job)
+		release()
 		if err := a.client.Report(reportCtx, report); err != nil {
 			// The lease will expire and the controller will re-queue it;
 			// restic tolerates the partial write.
 			a.log.Error("report backup", "job_id", report.JobID, "error", err)
 		}
 	case protocol.KindRestore:
-		report := a.RunRestore(ctx, *assignment.Restore)
+		restore := *assignment.Restore
+		held, release := a.holdLease(ctx, restore.JobID, restore.ClaimToken, true,
+			restore.LeaseExpiresAt)
+		report := a.RunRestore(held, restore)
+		release()
 		if err := a.client.ReportRestore(reportCtx, report); err != nil {
 			a.log.Error("report restore", "job_id", report.JobID, "error", err)
 		}
 	default:
 		a.log.Error("unknown work kind", "kind", assignment.Kind)
+	}
+}
+
+// leaseRenewBounds keep the heartbeat sensible whatever the lease is: often
+// enough that a job outliving its lease is renewed well before it expires,
+// rarely enough that a long job is not chattering at the controller.
+const (
+	leaseRenewAtLeastEvery = 30 * time.Second
+	leaseRenewAtMostEvery  = 15 * time.Minute
+)
+
+// holdLease keeps a claim alive while the work runs, and takes the work's
+// context away when the claim is gone.
+//
+// The lease is a fixed span; the work is not. A restore of a large account
+// over a slow link outlasts it, and the job is then handed to another
+// attempt while this one is still writing -- so the same destructive
+// restore runs twice, over an account the first one has half-rewritten.
+// Saying "still working" is what stops that.
+//
+// Losing the lease cancels the work. Continuing to write into a live
+// account with no claim on it is the thing the claim token was added to
+// forbid, and stopping is no worse than any other failure partway through:
+// what was already written is reported with the failure.
+//
+// Standalone has no controller and no lease, so this does nothing there.
+func (a *Agent) holdLease(ctx context.Context, jobID, claimToken string, restore bool,
+	expires time.Time) (context.Context, func()) {
+
+	if a.client == nil || jobID == "" || claimToken == "" {
+		return ctx, func() {}
+	}
+	every := a.LeaseRenewEvery
+	if every <= 0 {
+		every = leaseRenewAtMostEvery
+		if !expires.IsZero() {
+			every = time.Until(expires) / 2
+		}
+		every = min(max(every, leaseRenewAtLeastEvery), leaseRenewAtMostEvery)
+	}
+
+	held, cancel := context.WithCancel(ctx)
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(every)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-held.Done():
+				return
+			case <-ticker.C:
+			}
+			// Not held's context: a renewal has to be able to run even
+			// as the work is finishing, and it must not be cancelled by
+			// the cancellation it is deciding about.
+			renewCtx, cancelRenew := context.WithTimeout(
+				context.WithoutCancel(ctx), 30*time.Second)
+			_, err := a.client.RenewLease(renewCtx, protocol.LeaseRenewal{
+				JobID: jobID, ClaimToken: claimToken, Restore: restore,
+			})
+			cancelRenew()
+			switch {
+			case errors.Is(err, ErrLeaseLost):
+				a.log.Error("this job is no longer ours; stopping",
+					"job_id", jobID, "restore", restore)
+				cancel()
+				return
+			case err != nil:
+				// A controller that cannot be reached is not the same as
+				// one that refused. Keep working and try again: the lease
+				// has not been taken from us, it has only not been
+				// extended yet.
+				a.log.Warn("could not extend the lease on this job",
+					"job_id", jobID, "restore", restore, "error", err)
+			}
+		}
+	}()
+	return held, func() {
+		close(stop)
+		cancel()
+		<-done
 	}
 }
 

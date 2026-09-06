@@ -82,9 +82,14 @@ func TestALateRestoreReportCannotFinishTheNextAttempt(t *testing.T) {
 	if err := f.db.MarkRepositoryInitialised(ctx, f.repoA.ID); err != nil {
 		t.Fatalf("MarkRepositoryInitialised: %v", err)
 	}
+	// A restore that only produces a copy, because that is the one a lost
+	// lease still puts back on the queue: a restore writing into a live
+	// account is stopped instead of retried, which is
+	// TestARestoreThatWritesIntoTheAccountIsNotRequeuedWhenItsLeaseRunsOut.
+	// Two attempts at the same restore are what this is about either way.
 	jobID, err := f.db.CreateRestore(ctx, store.RestoreRequest{
 		AccountID: f.accountID, RepositoryID: f.repoA.ID,
-		SnapshotID: "40dc15203b1cf9", Apply: true,
+		SnapshotID: "40dc15203b1cf9",
 	})
 	if err != nil {
 		t.Fatalf("CreateRestore: %v", err)
@@ -107,7 +112,7 @@ func TestALateRestoreReportCannotFinishTheNextAttempt(t *testing.T) {
 	}
 
 	// This is the one that matters: a restore reported successful stops
-	// being queued, and this one is writing into a live account right now.
+	// being queued, and the second attempt is still running.
 	if err := f.db.ApplyRestoreReport(ctx, f.serverID, jobID, abandoned.ClaimToken,
 		store.RestoreOutcome{Status: job.StatusSuccess, BytesRestored: 4096},
 	); !errors.Is(err, store.ErrNotFound) {

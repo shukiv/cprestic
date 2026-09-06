@@ -55,6 +55,7 @@ func (a *API) Handler() http.Handler {
 	mux.Handle("GET "+protocol.PathNextJob, a.authenticated(a.handleNextJob))
 	mux.Handle("POST "+protocol.PathReport, a.authenticated(a.handleReport))
 	mux.Handle("POST "+protocol.PathRestoreReport, a.authenticated(a.handleRestoreReport))
+	mux.Handle("POST "+protocol.PathRenewLease, a.authenticated(a.handleRenewLease))
 	return mux
 }
 
@@ -188,6 +189,30 @@ func (a *API) handleRestoreReport(w http.ResponseWriter, r *http.Request, server
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": report.Status})
+}
+
+// handleRenewLease answers an agent that is still working. A renewal that
+// is refused is not an error the agent should retry: it means the job is
+// no longer theirs, and 409 says so distinctly from a controller that is
+// merely unwell.
+func (a *API) handleRenewLease(w http.ResponseWriter, r *http.Request, server store.Server) {
+	var req protocol.LeaseRenewal
+	if !decodeBody(w, r, &req) {
+		return
+	}
+	renewed, err := a.service.RenewLease(r.Context(), server.ID, req)
+	if errors.Is(err, store.ErrNotFound) {
+		a.log.Warn("refused a lease renewal for work this agent no longer holds",
+			"server_id", server.ID, "job_id", req.JobID, "restore", req.Restore)
+		writeError(w, http.StatusConflict, "this job is not leased to you")
+		return
+	}
+	if err != nil {
+		a.log.Error("renew lease", "server_id", server.ID, "job_id", req.JobID, "error", err)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, renewed)
 }
 
 func (a *API) handleReport(w http.ResponseWriter, r *http.Request, server store.Server) {

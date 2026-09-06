@@ -126,6 +126,33 @@ func (c *Client) ReportRestore(ctx context.Context, report protocol.RestoreRepor
 	return c.do(ctx, http.MethodPost, protocol.PathRestoreReport, report, nil)
 }
 
+// ErrLeaseLost says the controller no longer holds this job for this
+// agent. Whatever the agent is doing with it, it has to stop: the job may
+// already be running somewhere else, and for a restore that writes into a
+// live account two writers is the harm the lease exists to prevent.
+var ErrLeaseLost = errors.New("agent: this job is no longer leased to this server")
+
+// RenewLease tells the controller this agent is still working.
+func (c *Client) RenewLease(ctx context.Context, req protocol.LeaseRenewal) (protocol.LeaseRenewed, error) {
+	var renewed protocol.LeaseRenewed
+	err := c.do(ctx, http.MethodPost, protocol.PathRenewLease, req, &renewed)
+	var status *statusError
+	if errors.As(err, &status) && status.Code == http.StatusConflict {
+		return protocol.LeaseRenewed{}, ErrLeaseLost
+	}
+	return renewed, err
+}
+
+// statusError carries the HTTP status alongside the message, so a caller
+// can tell a definite refusal from a controller that is merely unwell.
+type statusError struct {
+	Code int
+	Err  error
+}
+
+func (e *statusError) Error() string { return e.Err.Error() }
+func (e *statusError) Unwrap() error { return e.Err }
+
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
 	var reader io.Reader
 	if body != nil {
@@ -154,7 +181,8 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		return nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("agent: %s %s: %w", method, path, decodeError(resp))
+		return fmt.Errorf("agent: %s %s: %w", method, path,
+			&statusError{Code: resp.StatusCode, Err: decodeError(resp)})
 	}
 	if out == nil {
 		return nil

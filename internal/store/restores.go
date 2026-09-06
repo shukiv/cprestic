@@ -227,18 +227,52 @@ func (s *Store) ApplyRestoreReport(ctx context.Context, serverID, jobID, claimTo
 	return nil
 }
 
-// ReclaimExpiredRestoreLeases returns abandoned restores to the queue.
+// leaseLostWhileApplying is what a restore that was writing into a live
+// account is told when its lease ran out. It is a dead end on purpose: the
+// account may already be half-restored, and running the same destructive
+// restore again unattended would write over whatever the first attempt
+// managed, possibly while it is still going.
+const leaseLostWhileApplying = "the lease ran out while this restore was writing into the " +
+	"live account, so it was taken back. It may have partly run: check the account " +
+	"before asking for it again."
+
+// ReclaimExpiredRestoreLeases takes back restores whose lease ran out.
+//
+// A restore that was only producing a copy goes back on the queue, because
+// running it again costs nothing but time. A restore that was writing into
+// the live account does not: it is marked failed and left for a person.
+// Requeuing it would start a second destructive restore over an account
+// the first one may have half-written, and possibly while the first is
+// still running -- the lease expiring is not the same as the work
+// stopping.
 func (s *Store) ReclaimExpiredRestoreLeases(ctx context.Context) (int, error) {
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE restore_jobs
-		   SET status = 'pending', lease_expires_at = NULL, claim_token = NULL
-		 WHERE status = 'running'
-		   AND lease_expires_at IS NOT NULL
-		   AND lease_expires_at < now()`)
-	if err != nil {
-		return 0, fmt.Errorf("store: reclaim restore leases: %w", err)
-	}
-	return int(tag.RowsAffected()), nil
+	var reclaimed int
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		requeued, err := tx.Exec(ctx, `
+			UPDATE restore_jobs
+			   SET status = 'pending', lease_expires_at = NULL, claim_token = NULL
+			 WHERE status = 'running'
+			   AND NOT apply
+			   AND lease_expires_at IS NOT NULL
+			   AND lease_expires_at < now()`)
+		if err != nil {
+			return fmt.Errorf("store: reclaim restore leases: %w", err)
+		}
+		stopped, err := tx.Exec(ctx, `
+			UPDATE restore_jobs
+			   SET status = 'failed', lease_expires_at = NULL, claim_token = NULL,
+			       error = $1, finished_at = now()
+			 WHERE status = 'running'
+			   AND apply
+			   AND lease_expires_at IS NOT NULL
+			   AND lease_expires_at < now()`, leaseLostWhileApplying)
+		if err != nil {
+			return fmt.Errorf("store: stop restores whose lease ran out: %w", err)
+		}
+		reclaimed = int(requeued.RowsAffected() + stopped.RowsAffected())
+		return nil
+	})
+	return reclaimed, err
 }
 
 // Restore reads one restore job.

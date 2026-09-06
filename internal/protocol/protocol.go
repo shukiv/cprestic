@@ -19,9 +19,14 @@ const (
 	PathNextJob       = "/v1/jobs/next"
 	PathReport        = "/v1/jobs/report"
 	PathRestoreReport = "/v1/restores/report"
-	PathHealthz       = "/healthz"
-	DefaultPoll       = 60 * time.Second
-	MaxBodyBytes      = 1 << 20
+	// PathRenewLease is where an agent says it is still working. A lease
+	// is a fixed span, and the work is not: a restore of a large account
+	// can outlast it, and being taken back mid-write is how a destructive
+	// restore ends up running twice.
+	PathRenewLease = "/v1/leases/renew"
+	PathHealthz    = "/healthz"
+	DefaultPoll    = 60 * time.Second
+	MaxBodyBytes   = 1 << 20
 )
 
 // Work kinds an assignment can carry.
@@ -138,6 +143,28 @@ type RestoreReport struct {
 	Hint    string `json:"hint,omitempty"`
 	Applied bool   `json:"applied"`
 	Error   string `json:"error,omitempty"`
+}
+
+// LeaseRenewal says an agent is still working on a job it claimed, and
+// asks for more time before the controller gives the work to somebody
+// else.
+//
+// The claim token is what makes it safe. Only the attempt holding the job
+// may extend it, so an agent that lost the lease and does not know it
+// cannot take it back from the attempt that has it now.
+type LeaseRenewal struct {
+	JobID      string `json:"job_id"`
+	ClaimToken string `json:"claim_token"`
+	// Restore says which queue the job is in. A backup and a restore can
+	// share an id in neither table, but they are different rows.
+	Restore bool `json:"restore,omitempty"`
+}
+
+// LeaseRenewed is what the controller answers with.
+type LeaseRenewed struct {
+	// LeaseExpiresAt is the new expiry. Zero means the lease was not
+	// renewed, and the agent must stop: something else may hold the job.
+	LeaseExpiresAt time.Time `json:"lease_expires_at"`
 }
 
 // EnrolRequest is sent once at startup so the controller learns what this

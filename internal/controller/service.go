@@ -172,6 +172,34 @@ func (s *Service) ReportRestore(ctx context.Context, serverID string, report pro
 	return nil
 }
 
+// RenewLease extends the lease on work an agent says it is still doing.
+//
+// The lease exists so that an agent that died does not hold a job for
+// ever. It is not a deadline for the work: a large account on a slow link
+// can outlast any span that is also short enough to be useful, and a job
+// taken back while its agent is still running it is done twice. For a
+// restore that writes into a live account, twice is the harm.
+//
+// The claim token is checked here as it is on a report, and for the same
+// reason: only the attempt that holds the job may extend it.
+func (s *Service) RenewLease(ctx context.Context, serverID string,
+	req protocol.LeaseRenewal) (protocol.LeaseRenewed, error) {
+
+	if !validClaimToken(req.ClaimToken) {
+		return protocol.LeaseRenewed{}, fmt.Errorf(
+			"controller: lease renewal has no valid claim token")
+	}
+	renew := s.store.RenewBackupLease
+	if req.Restore {
+		renew = s.store.RenewRestoreLease
+	}
+	expires, err := renew(ctx, serverID, req.JobID, req.ClaimToken, s.LeaseDuration)
+	if err != nil {
+		return protocol.LeaseRenewed{}, err
+	}
+	return protocol.LeaseRenewed{LeaseExpiresAt: expires}, nil
+}
+
 // NextJob leases a backup job for a server and builds the assignment,
 // decrypting only the credentials that job actually needs.
 func (s *Service) NextJob(ctx context.Context, serverID string) (protocol.JobAssignment, error) {
