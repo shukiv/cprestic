@@ -72,6 +72,10 @@ func main() {
 		return
 	}
 	if cfg.cpanelHookEvent != "" {
+		// Read before the call, not after it: reaching an unreachable
+		// service takes the socket timeout, and the event happened when
+		// cPanel ran this, not when it gave up.
+		happenedAt := time.Now().UTC()
 		payload, err := runCPanelHook(cfg.lifecycleSocketPath, cfg.cpanelHookEvent)
 		if err != nil {
 			if cfg.cpanelHookEvent == "remove-pre" {
@@ -106,7 +110,7 @@ func main() {
 				// deferred and lost.
 				if hookspool.Spooled(cfg.cpanelHookEvent) {
 					path, spoolErr := spoolCPanelHook(
-						cfg.hookSpoolDir, cfg.cpanelHookEvent, payload)
+						cfg.hookSpoolDir, cfg.cpanelHookEvent, payload, happenedAt)
 					if spoolErr != nil {
 						fmt.Println("0 cprest could not record this account event; " +
 							"back up and restore for this account may show the wrong owner")

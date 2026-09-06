@@ -2,6 +2,8 @@ package node
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -385,5 +387,63 @@ func TestAnUndeliveredCreateStillSeparatesTheNewOwner(t *testing.T) {
 	if !again.SinceAt.Equal(createdAt) {
 		t.Errorf("replaying the same event moved the boundary to %v, hiding the "+
 			"present owner's own backups from them", again.SinceAt)
+	}
+}
+
+// A create spooled for a name that no longer exists has nothing left to
+// record, and keeping it makes every reconciliation from now on fail on
+// the same file.
+//
+// The sequence is ordinary: the service is down, an account is made and
+// removed again before it comes back. There is no current holder whose
+// backups the boundary would protect, and a name created later brings its
+// own hook with it. A lookup that fails for any other reason is a
+// different thing and the event is kept.
+func TestAReplayedCreateForAVanishedAccountIsDiscarded(t *testing.T) {
+	engine, _ := lifecycleEngine(t, nil, nil)
+	gone := errors.New("boom")
+	engine.accountUID = func(name string) (int, error) {
+		if name == "webshop" {
+			return 0, fmt.Errorf("node: %s is %w", name, ErrNoSuchAccount)
+		}
+		return 0, fmt.Errorf("node: cannot read the account list: %w", gone)
+	}
+
+	for _, event := range []hookspool.Event{
+		{At: time.Now().Add(-2 * time.Hour).UTC(), Event: "create", Account: "webshop",
+			Payload: []byte(`{"data":{"user":"webshop"}}`)},
+		{At: time.Now().Add(-1 * time.Hour).UTC(), Event: "create", Account: "unreadable",
+			Payload: []byte(`{"data":{"user":"unreadable"}}`)},
+	} {
+		if _, err := hookspool.Write(engine.hookSpool, event); err != nil {
+			t.Fatalf("spool %s: %v", event.Account, err)
+		}
+	}
+
+	if err := engine.ReplayHookSpool(); err != nil {
+		t.Fatal(err)
+	}
+	pending, problems := hookspool.Pending(engine.hookSpool)
+	if len(problems) != 0 {
+		t.Fatalf("problems: %v", problems)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("the spool holds %d events, want only the one whose account "+
+			"could not be read", len(pending))
+	}
+	if pending[0].Event.Account != "unreadable" {
+		t.Errorf("the spool kept %q; the event for the account that is gone should "+
+			"have been discarded and the unreadable one kept",
+			pending[0].Event.Account)
+	}
+
+	// And it stays discarded: a file that can never succeed must not come
+	// back on the next sweep.
+	if err := engine.ReplayHookSpool(); err != nil {
+		t.Fatal(err)
+	}
+	pending, _ = hookspool.Pending(engine.hookSpool)
+	if len(pending) != 1 {
+		t.Errorf("a second replay left %d events", len(pending))
 	}
 }

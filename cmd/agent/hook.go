@@ -151,12 +151,16 @@ func runCPanelHook(socketPath, event string) ([]byte, error) {
 // onto the same uid while the service was down is indistinguishable from
 // the account that was there before. Everything else polling can work out
 // again by looking.
-func spoolCPanelHook(dir, event string, payload []byte) (string, error) {
+// The time is when cPanel ran the hook, not when the spool was written.
+// A service that is stopped rather than absent takes the socket timeout to
+// say so, and a boundary recorded thirty seconds late is thirty seconds of
+// the new owner's backups filed under the old one.
+func spoolCPanelHook(dir, event string, payload []byte, at time.Time) (string, error) {
 	account := hookspool.AccountIn(payload)
 	if account == "" {
 		return "", fmt.Errorf("the %s hook did not name an account", event)
 	}
 	return hookspool.Write(dir, hookspool.Event{
-		At: time.Now().UTC(), Event: event, Account: account, Payload: payload,
+		At: at.UTC(), Event: event, Account: account, Payload: payload,
 	})
 }

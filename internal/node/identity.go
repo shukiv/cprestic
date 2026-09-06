@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/user"
 	"strconv"
@@ -265,11 +266,23 @@ func (e *Engine) ReplayHookSpool() error {
 		case "remove":
 			err = e.AccountRemoved(entry.Event.Account)
 		}
+		if errors.Is(err, ErrNoSuchAccount) {
+			// The account was made and removed again while this service
+			// was down. There is nobody holding the name to protect, and
+			// a name created later brings its own hook, so this event
+			// has nothing left to record. Kept, it would fail on every
+			// reconciliation from now on.
+			e.log.Warn("a cPanel account event names an account that is gone; discarded",
+				"event", entry.Event.Event, "account", entry.Event.Account)
+			if err := hookspool.Done(entry); err != nil {
+				e.log.Error("clear a cPanel event for an account that is gone", "error", err)
+			}
+			continue
+		}
 		if err != nil {
-			// Keep the file. The account may not exist yet from this
-			// process's point of view, or the store may be busy; either
-			// way the boundary is not recorded, so it must not be
-			// forgotten.
+			// Keep the file. The store may be busy, or the account list
+			// may not be readable right now; either way the boundary is
+			// not recorded, so it must not be forgotten.
 			e.log.Error("replay a cPanel event left by a hook",
 				"event", entry.Event.Event, "account", entry.Event.Account, "error", err)
 			continue
@@ -557,11 +570,21 @@ func (e *Engine) AccountRemoved(account string) error {
 	return nil
 }
 
+// ErrNoSuchAccount says the name is not an account on this server. It is
+// worth telling apart from a lookup that failed for some other reason: a
+// name that is gone cannot be given an ownership boundary, and a name the
+// lookup could not read might still get one on the next try.
+var ErrNoSuchAccount = errors.New("not an account on this server")
+
 // accountUID is the unix account a cPanel name means right now.
 func accountUID(account string) (int, error) {
 	found, err := user.Lookup(account)
 	if err != nil {
-		return 0, fmt.Errorf("node: %s is not an account on this server: %w", account, err)
+		var unknown user.UnknownUserError
+		if errors.As(err, &unknown) {
+			return 0, fmt.Errorf("node: %s is %w", account, ErrNoSuchAccount)
+		}
+		return 0, fmt.Errorf("node: cannot look up %s on this server: %w", account, err)
 	}
 	uid, err := strconv.Atoi(found.Uid)
 	if err != nil {

@@ -242,6 +242,10 @@ type destinationView struct {
 	// was approved here, so nothing will be deleted until the new plan
 	// has been read. What was approved is on the repository.
 	KeepsChanged bool
+	// PlanApprovable says the plan on record was taken under the policy
+	// in force now. Approving any other plan is refused, so the button
+	// is not offered for one.
+	PlanApprovable bool
 }
 
 // TypeName is the destination's type in the words the form used to offer
@@ -310,6 +314,7 @@ func (s *Server) destinationViews() ([]destinationView, error) {
 			view.Keeps = node.MergedRetention(policies, view.Repository.ID)
 			view.KeepsChanged = view.Repository.RetentionApprovedAt != nil &&
 				!s.engine.RetentionApprovalCovers(view.Repository, view.Keeps)
+			view.PlanApprovable = s.engine.PlanApprovable(view.Repository, view.Keeps)
 		}
 		views = append(views, view)
 	}

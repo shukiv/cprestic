@@ -242,6 +242,13 @@ func TestApprovalDoesNotSurviveAPolicyChange(t *testing.T) {
 	if engine.RetentionApprovalCovers(stored, nodestore.Retention{KeepDaily: 1}) {
 		t.Error("the changed policy still counts as approved")
 	}
+	// And it does not offer to approve the plan on record, which was
+	// taken under the policy from before the edit. Offering a button
+	// whose only outcome is a refusal is how an operator concludes the
+	// approval is broken and stops trusting the page.
+	if engine.PlanApprovable(stored, nodestore.Retention{KeepDaily: 1}) {
+		t.Error("the stale plan is still offered for approval")
+	}
 
 	// Reading the new plan and approving it puts the repository back in
 	// service, under the policy that was actually read this time.

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shuki/cprest/internal/hookspool"
 )
@@ -111,7 +112,12 @@ func TestAnUndeliverableAccountEventIsKeptForReplay(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "hooks")
 	payload := []byte(`{"context":"Accounts::Create","data":{"user":"webshop"}}`)
 
-	path, err := spoolCPanelHook(dir, "create", payload)
+	// The time cPanel ran the hook, not the time the spool was written.
+	// The two differ by the socket timeout whenever the service is
+	// stopped rather than absent, and a boundary recorded late files the
+	// new owner's first backups under the customer before them.
+	happenedAt := time.Now().UTC().Add(-30 * time.Second)
+	path, err := spoolCPanelHook(dir, "create", payload, happenedAt)
 	if err != nil {
 		t.Fatalf("spoolCPanelHook: %v", err)
 	}
@@ -125,12 +131,16 @@ func TestAnUndeliverableAccountEventIsKeptForReplay(t *testing.T) {
 	if pending[0].Event.Account != "webshop" || pending[0].Event.Event != "create" {
 		t.Errorf("spooled %+v", pending[0].Event)
 	}
+	if !pending[0].Event.At.Equal(happenedAt) {
+		t.Errorf("the event is dated %v, want %v -- when cPanel ran the hook",
+			pending[0].Event.At, happenedAt)
+	}
 
 	// A payload that names no account is refused rather than written as
 	// an event about nothing: main treats that as a failure the operator
 	// is told about, because it is the difference between deferred and
 	// lost.
-	if _, err := spoolCPanelHook(dir, "create", []byte(`{"data":{}}`)); err == nil {
+	if _, err := spoolCPanelHook(dir, "create", []byte(`{"data":{}}`), happenedAt); err == nil {
 		t.Error("an event naming no account was accepted")
 	}
 }

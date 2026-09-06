@@ -137,10 +137,12 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
           {{if .KeepsChanged}}
           {{if keepsSet .Repository.RetentionApprovedKeeps}}<strong>The schedules changed since
           this was approved</strong> — approved was {{keepsSaid .Repository.RetentionApprovedKeeps}},
-          so nothing is being removed. Read the plan below and approve what it now says.
+          so nothing is being removed.
           {{else}}<strong>This needs approving once more.</strong> An approval now records the
           keep policy it was given for, and this one was made before that, so nothing is being
-          removed until you have read the plan below and approved it.{{end}}
+          removed.{{end}}
+          {{if .PlanApprovable}}Read the plan below and approve what it says.
+          {{else}}Take a fresh plan first, then approve what that one says.{{end}}
           {{else if .Repository.RetentionApprovedAt}}Approved {{ago .Repository.RetentionApprovedAt}}.
           {{else}}<strong>Nothing has been removed yet.</strong> Read the plan below first.{{end}}</p>
           {{else}}
@@ -167,7 +169,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
             <input type="hidden" name="repository" value="{{.Repository.ID}}">
             <button class="cpr-btn cpr-quiet">Stop</button>
           </form>
-          {{else if $r.PlannedAt}}
+          {{else if .PlanApprovable}}
           <form method="post" action="?p=destinations/retention/approve" class="cpr-inline"
                 data-confirm="Allow cP:Restic to delete backups from this destination from now on?">
             <input type="hidden" name="csrf" value="{{$.CSRF}}">

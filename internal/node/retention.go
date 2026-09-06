@@ -249,6 +249,15 @@ func describeKeeps(keeps nodestore.Retention) string {
 	return strings.Join(parts, ", ")
 }
 
+// PlanApprovable says whether the plan on record was taken under the
+// keep policy in force now, which is the only plan an approval may be
+// given for. A plan taken under a different policy -- or one taken
+// before the policy was recorded alongside it -- is refused by
+// ApproveRetention, so the page must not offer to approve it.
+func (e *Engine) PlanApprovable(repo nodestore.Repository, keeps nodestore.Retention) bool {
+	return repo.Retention.PlannedAt != nil && repo.Retention.PlannedKeeps == keeps
+}
+
 // RetentionApprovalCovers says whether what would be deleted from a
 // repository now is what an operator approved for it. A repository that
 // was never approved answers false, and so does one whose schedules have
