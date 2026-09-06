@@ -21,6 +21,7 @@ import (
 	"github.com/shuki/cprest/internal/node"
 	"github.com/shuki/cprest/internal/nodestore"
 	"github.com/shuki/cprest/internal/protocol"
+	"github.com/shuki/cprest/internal/resticrun"
 	"github.com/shuki/cprest/internal/vault"
 	"github.com/shuki/cprest/internal/webui"
 )
@@ -28,6 +29,13 @@ import (
 // newUI stands the interface up on a socket with a synthetic cPanel host
 // behind it, which is how it is exercised off a real server.
 func newUI(t *testing.T) (*http.Client, string, *node.Engine) {
+	t.Helper()
+	return newUIWithExec(t, nil)
+}
+
+// newUIWithExec is newUI with restic answered by the caller, for a test
+// that has to see which commands the interface causes to be run.
+func newUIWithExec(t *testing.T, exec resticrun.Execer) (*http.Client, string, *node.Engine) {
 	t.Helper()
 	root := t.TempDir()
 
@@ -64,7 +72,7 @@ func newUI(t *testing.T) (*http.Client, string, *node.Engine) {
 	}
 
 	engine, err := node.New(node.Config{
-		Store: store, Vault: v,
+		Store: store, Vault: v, Exec: exec,
 		Provider: &cpanel.Fake{
 			Root:      filepath.Join(root, "cpanel"),
 			Databases: map[string][]string{"customer1": {"customer1_wp"}},

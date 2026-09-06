@@ -78,7 +78,8 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
         <div class="cpr-sublabel cpr-mono">{{.Endpoint}}</div>
         <div class="cpr-deststate">{{template "deststate" .}}</div>
         {{if .Repository.InitialisedAt}}<div class="cpr-sublabel">created {{stampPtr .Repository.InitialisedAt}}</div>
-        {{else}}<div class="cpr-sublabel">not created yet</div>{{end}}
+        {{else}}<div class="cpr-sublabel">not created yet — <b>Test</b> creates it,
+        and so does the first backup</div>{{end}}
       </td>
       <td>{{template "destspace" .Space}}</td>
       {{/* Edit is the one an operator reaches for; the rest live behind the

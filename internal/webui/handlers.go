@@ -878,9 +878,24 @@ func (s *Server) finishSFTP(w http.ResponseWriter, r *http.Request, request node
 			"%s is ready. cprest installed its own key and the repository is created.",
 			result.Destination.Name))
 	case result.Warning != "":
+		// The login is not proved yet -- typically the key still has to be
+		// installed on that server -- so creating the repository will
+		// usually fail here. It is still attempted, because the one case
+		// where it works is the operator who put the key there already,
+		// and the warning is what they are shown either way.
+		if created, err := s.engine.EnsureProvisioned(r.Context()); err == nil && created > 0 {
+			s.redirect(w, r, "/destinations", "warn",
+				result.Warning+" The repository is created.")
+			return
+		}
 		s.redirect(w, r, "/destinations", "warn", result.Warning)
 	default:
-		s.redirect(w, r, "/destinations", "ok", "Saved.")
+		if _, err := s.engine.EnsureProvisioned(r.Context()); err != nil {
+			s.redirect(w, r, "/destinations", "warn",
+				"Saved, but creating the repository failed: "+err.Error())
+			return
+		}
+		s.redirect(w, r, "/destinations", "ok", "Saved, and the repository is created.")
 	}
 }
 
@@ -982,6 +997,11 @@ func (s *Server) handleEditDestination(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("Saved, but %s could not be reached: %v", name, err))
 		return
 	}
+	if _, err := s.engine.EnsureProvisioned(r.Context()); err != nil {
+		s.redirect(w, r, "/destinations", "warn", fmt.Sprintf(
+			"%s is reachable, but creating the repository failed: %v", name, err))
+		return
+	}
 	s.redirect(w, r, "/destinations", "ok", name+" updated and reachable.")
 }
 
@@ -991,7 +1011,17 @@ func (s *Server) handleTestDestination(w http.ResponseWriter, r *http.Request) {
 		s.redirect(w, r, "/destinations", "error", err.Error())
 		return
 	}
-	s.redirect(w, r, "/destinations", "ok", "Destination reachable.")
+	created, err := s.engine.EnsureProvisioned(r.Context())
+	switch {
+	case err != nil:
+		s.redirect(w, r, "/destinations", "warn",
+			"That server answered, but creating the repository failed: "+err.Error())
+	case created > 0:
+		s.redirect(w, r, "/destinations", "ok",
+			"Destination reachable, and its repository is created.")
+	default:
+		s.redirect(w, r, "/destinations", "ok", "Destination reachable.")
+	}
 }
 
 func (s *Server) handleDeleteDestination(w http.ResponseWriter, r *http.Request) {
