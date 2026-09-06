@@ -383,7 +383,7 @@ a { color: inherit; }
   color: #dce8f7;
 }
 .brand { display: flex; min-height: 44px; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
-.brand-mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; background: #e35e30; color: var(--white); font-size: 13px; letter-spacing: -.04em; }
+.brand-mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; background: #f47216; color: var(--white); font-size: 13px; letter-spacing: -.04em; }
 .a-server { margin: 10px 0 20px 44px; color: #9fb2c9; font-size: 12px; }
 .a-nav { display: grid; gap: 4px; }
 .a-nav button {

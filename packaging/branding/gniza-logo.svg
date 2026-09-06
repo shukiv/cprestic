@@ -1,28 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Gniza, as a wordmark.
+  Gniza, as a wordmark: the mark, the name, and what it does.
 
-  The badge in badge.svg is for a 48x48 tile; this is the
-  name in full, for a README or a page heading. Same rules apply: an
-  <img> inherits neither font nor colour from the page around it, so the
-  face is pinned with textLength and the ink follows the reader's theme.
+  badge.svg is for a 48x48 tile; this is the name in full, for a README or
+  a page heading. The mark is an outline and needs nothing. The words are
+  set as text, and an <img> inherits neither font nor colour from the page
+  around it, so the face is pinned with textLength and the ink follows the
+  reader's theme.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 96" width="300" height="96"
-     role="img" aria-label="Gniza — Backup. Restore. Repeat.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 348 96" width="348" height="96"
+     role="img" aria-label="Gniza Backup — Backup. Restore. Repeat.">
   <style>
-    .cpr-ink { fill:#141A22; }
-    .cpr-g   { fill:#CF470C; }
-    .cpr-tag { fill:#5B6675; }
+    .gz-ink    { fill:#0F172A; }
+    .gz-accent { fill:#EE7A00; }
+    .gz-mark   { fill:#F47216; }
+    .gz-tag    { fill:#5B6675; }
     text {
       font-family:"Fira Sans","Inter","Helvetica Neue",Helvetica,Arial,sans-serif;
       font-weight:700; letter-spacing:-0.015em;
     }
-    .cpr-tagline { font-weight:400; letter-spacing:0.04em; }
+    .gz-light   { font-weight:400; }
+    .gz-tagline { font-weight:400; letter-spacing:0.04em; }
     @media (prefers-color-scheme: dark) {
-      .cpr-ink { fill:#E8EDF2; }
-      .cpr-tag { fill:#9AA6B4; }
+      .gz-ink { fill:#E8EDF2; }
+      .gz-tag { fill:#9AA6B4; }
     }
   </style>
-  <text class="cpr-ink" x="8" y="56" font-size="60" textLength="160" lengthAdjust="spacingAndGlyphs"><tspan class="cpr-g">G</tspan>niza</text>
-  <text class="cpr-tag cpr-tagline" x="9" y="82" font-size="17" textLength="228" lengthAdjust="spacingAndGlyphs">Backup. Restore. Repeat.</text>
+  <g class="gz-mark" fill-rule="evenodd" transform="translate(8 18) scale(4.49)">
+    <g transform="translate(-98.617 -139.31)">
+      <path transform="matrix(.23378 0 0 -.23378 50.654 216.38)" d="m219.89 325.53h14.261v2.3h-14.261zm0-16.189h14.261v2.3h-14.261zm-14.721 4.14h43.703v-12.881h-43.703zm14.721-18.029h14.261v-2.3h-14.261zm7.13-19.157 2.663 4.609 2.024 3.507h17.165v12.881h-43.703v-12.881h17.166l2.023-3.507zm-21.851 53.375h43.703v-12.881h-43.703z"/>
+    </g>
+  </g>
+  <text x="68" y="53" font-size="42"><tspan class="gz-ink" textLength="128" lengthAdjust="spacingAndGlyphs">GNIZA</tspan><tspan class="gz-accent gz-light" dx="12" textLength="124" lengthAdjust="spacingAndGlyphs">Backup</tspan></text>
+  <text class="gz-tag gz-tagline" x="69" y="79" font-size="16" textLength="215" lengthAdjust="spacingAndGlyphs">Backup. Restore. Repeat.</text>
 </svg>

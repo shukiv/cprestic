@@ -584,14 +584,10 @@
 .gniza .cpr-report-dialog textarea:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
 /* --- the name ------------------------------------------------------- */
-/* Gniza — cPanel's two letters in cPanel's orange, then what does the
-   work. The colour is the product's own and does not come from the theme
-   tokens: it is the same in light and dark, as a mark should be. */
 .gniza .cpr-brand {
   font-size:19px; font-weight:700; letter-spacing:-.015em; white-space:nowrap;
   padding:var(--s4) 0; margin-right:var(--s5); flex:none;
 }
-.gniza .cpr-brand-cp { color:#CF470C; }
 
 /* --- Operational rail ------------------------------------------------
  * The chosen production shell. It preserves the real server-rendered WHM
@@ -620,9 +616,13 @@
  * one here and a rounded one there would read as two products. */
 .gniza .cpr-brand-mark {
   display:grid; width:42px; height:42px; flex:none; place-items:center;
-  border-radius:9px; background:#E35E30; color:#FFFFFF;
-  font-size:15px; font-weight:700; letter-spacing:-.03em;
+  border-radius:9px; background:#F47216; color:#FFFFFF;
 }
+/* The mark inside is the artwork itself, an outline that takes its colour
+ * from the badge rather than carrying its own, so one rule above decides
+ * both. Height only: the drawing is taller than it is wide, and giving it
+ * a width as well would squash it. */
+.gniza .cpr-brand-mark svg { display:block; width:auto; height:62%; }
 /* Name over strapline, the pair beside the mark, all three vertically
  * centred on each other. The strapline used to be a sibling of the link
  * pushed right by a margin that had to be kept equal to the mark's width
@@ -827,7 +827,7 @@
 }
 /* The customer's header is a 66px bar, not a rail: the mark keeps the
  * rail's shape at the size that fits a single line. */
-.gniza.cpr-user .cpr-brand-mark { width:34px; height:34px; border-radius:7px; font-size:12px; }
+.gniza.cpr-user .cpr-brand-mark { width:34px; height:34px; border-radius:7px; }
 .gniza.cpr-user .cpr-userbrand:focus-visible,
 .gniza.cpr-user .cpr-usernav a:focus-visible,
 .gniza.cpr-user .cpr-kind-card:focus-visible {

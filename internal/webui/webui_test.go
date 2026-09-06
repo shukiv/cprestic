@@ -2107,7 +2107,10 @@ func TestTheBrandIsOnThePageInItsOwnColour(t *testing.T) {
 
 	_, page := get(t, client, "/")
 	for _, want := range []string{
-		`<span class="cpr-brand-mark">GZ</span>`,
+		`<span class="cpr-brand-mark" aria-hidden="true"><svg`,
+		// The mark takes its colour from the badge around it rather than
+		// carrying its own, so the one CSS rule below decides both.
+		`fill="currentColor"`,
 		`<span class="cpr-brand-name">Gniza</span>`,
 		// The strapline sits inside the lockup, beside the mark rather
 		// than under the whole block on a margin kept in step by hand.
@@ -2117,7 +2120,7 @@ func TestTheBrandIsOnThePageInItsOwnColour(t *testing.T) {
 			t.Errorf("the interface does not carry the name: %s is missing", want)
 		}
 	}
-	if !strings.Contains(page, "background:#E35E30; color:#FFFFFF;") {
+	if !strings.Contains(page, "background:#F47216; color:#FFFFFF;") {
 		t.Error("the mark is not in its own colour")
 	}
 	if strings.Contains(page, ".gniza .cpr-brand span { color:var(--muted)") {

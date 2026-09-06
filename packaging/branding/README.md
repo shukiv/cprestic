@@ -1,48 +1,56 @@
 # Brand assets
 
-The mark is **cP:R** — cPanel's two letters, then what does the work. Full
-name in prose is **Gniza**; `gniza` stays the name of the binaries, the
-paths and the Go module.
+The mark is Gniza's own: three stacked shelves with a spout under the last
+one — what is put away, and the one that gives it back. The name in prose is
+**Gniza**; `gniza` is also the name of the binaries, the paths and the Go
+module.
 
 | File | What it is |
 |---|---|
-| `badge.svg` | the badge: white letters on the orange rounded square, 300×300 |
-| `mark.svg` | the letters alone, cPanel orange, transparent, trimmed to the ink |
-| `mark-white.svg` | the same in white, for a dark or coloured ground |
+| `badge.svg` | the badge: the white mark on the orange rounded square, 300×300 |
+| `mark.svg` | the mark alone, brand orange, transparent, trimmed to the ink |
+| `mark-white.svg` | the same shape in white, for a dark or coloured ground |
 | `png/badge-{16,32,48,64,128,256,512}.png` | the badge, rasterised |
-| `png/mark-{256,512}.png` | the letters, rasterised, transparent |
-| `gniza-logo.svg` | the wordmark, *Gniza* in full |
+| `png/mark-{256,512}.png` | the mark, rasterised, transparent |
+| `gniza-logo.svg` | the wordmark: mark, name and strapline |
 
 `badge.svg` is the plugin's icon: WHM draws it in the sidebar from
 `addon_plugins/gniza.svg`, and cPanel draws the account tile from the 48px
 PNG, because cPanel's SVG installer rewrites geometry attributes in custom
 artwork.
 
+The same outline is set inline in the WHM plugin's sidebar, in
+`internal/webui/templates/layout.html`. There it is filled with
+`currentColor` so `.cpr-brand-mark` decides the badge and the mark on it
+with one rule.
+
 ## Colours
+
+They are [gniza.app](https://gniza.app)'s, so the plugin and the site are one
+product.
 
 | | Hex | Where |
 |---|---|---|
-| Badge ground | `#E35E30` | the square, matching `.cpr-brand-mark` in the interface |
-| cPanel orange | `#CF470C` | the letters `cP` on a light ground |
-| Ink | `#141A22` | the rest of the wordmark |
+| Brand orange | `#F47216` | the mark, and the badge ground |
+| Accent | `#EE7A00` | the second word of the wordmark |
+| Ink | `#0F172A` | the name |
+| Strapline | `#5B6675` | *Backup. Restore. Repeat.* under the name |
 
-## Why the letters are paths
+## Why the mark is a path and the words are not
 
-`gniza-logo.svg` sets `<text>` and pins it with `textLength`, which is what
-you do when the artwork has to hold its shape on a machine that has none of
-your fonts. It holds; it is not identical — the fallback face still decides
+The mark is an outline, so it is the same shape on a machine that has none
+of our fonts, and a PNG made here matches the SVG a browser draws.
+
+`gniza-logo.svg` sets the words as `<text>` and pins them with `textLength`,
+which is what you do when artwork has to hold its shape without the font it
+was drawn in. It holds; it is not identical — the fallback face still decides
 the letterforms.
 
-The `cpr-*` files are outlines of Fira Sans Bold, the face the interface
-already ships, so the badge is the same shape everywhere and a PNG made here
-matches the SVG a browser draws. Fira Sans is under the SIL Open Font License
-([OFL.txt](../../internal/webui/fonts/OFL.txt)), which covers this.
-
-## Rebuilding them
+## Rebuilding the PNGs
 
 ```bash
-python3 packaging/branding/build.py     # needs fonttools + brotli, rsvg-convert
+python3 packaging/branding/build.py     # needs rsvg-convert
 ```
 
-The output is committed; the script is how it was made. Change the tracking,
-the radius or the ink width there rather than editing the paths by hand.
+The SVGs are drawn by hand and the PNGs are committed; the script only
+rasterises. Change the artwork in the SVG rather than editing the PNGs.
