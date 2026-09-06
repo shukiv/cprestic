@@ -3535,8 +3535,7 @@ func (s *Server) settingsPage() (settingsView, error) {
 		OutputBytes: held,
 		KeepDays:    keepDays(settings),
 		DeletedDays: deletedDays(settings), DeletedPreset: deletedPreset(settings),
-		BugIntakeURL: bugreport.IntakeURL, BugIntakeProgram: bugreport.IntakeProgram,
-		BugIntakeKeyPath: s.engine.BugIntakeKeyPath(), BugIntakeSetupError: s.engine.BugIntakeSetupError(),
+		BugReportURL: bugreport.PublicReportURL, BugIntakeProgram: bugreport.IntakeProgram,
 		Version:     agent.Version,
 		LastChecked: lastChecked, CheckError: checkError,
 		Update:     panel,
@@ -3560,12 +3559,13 @@ type settingsView struct {
 	// DeletedDays is how long a deleted account's backups are kept, and
 	// DeletedPreset is which of the offered periods that is -- "custom"
 	// when it is a number somebody typed rather than one on the list.
-	DeletedDays         int
-	DeletedPreset       string
-	BugIntakeURL        string
-	BugIntakeProgram    string
-	BugIntakeKeyPath    string
-	BugIntakeSetupError string
+	DeletedDays   int
+	DeletedPreset string
+	// BugReportURL is the public form a bug report is filed on, and
+	// BugIntakeProgram is the product to pick there. Neither is a setting:
+	// they are shown so an operator knows where a report goes.
+	BugReportURL     string
+	BugIntakeProgram string
 	// Version is what this build calls itself, and LastChecked and
 	// CheckError are the last ask about a newer release. A check that has
 	// been failing for a month is worth seeing beside the tick that turns

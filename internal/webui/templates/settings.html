@@ -41,15 +41,13 @@
         after this they are swept. −1 keeps them until you delete them.</small>
       </div>
       <div>
-        <label for="bug_intake">Bug report intake</label>
-        <input type="url" id="bug_intake" readonly value="{{$data.BugIntakeURL}}"
+        <label for="bug_intake">Where bug reports go</label>
+        <input type="url" id="bug_intake" readonly value="{{$data.BugReportURL}}"
                aria-describedby="bug_intake_help">
-        <small class="cpr-help" id="bug_intake_help">Reports go to program <b>{{$data.BugIntakeProgram}}</b>
-        after you preview them and press Send. No email or notification channel is used.
-        {{if $data.BugIntakeSetupError}}Not ready: {{$data.BugIntakeSetupError}}.
-        {{else}}A local key is installed; acceptance is checked when you send.{{end}}
-        The key belongs in <code>{{$data.BugIntakeKeyPath}}</code>, owned by root with mode 0600.
-        It is never displayed here. Remove that file to disable sending; downloads remain available.</small>
+        <small class="cpr-help" id="bug_intake_help">This server builds the report and hands it to
+        you; you file it on that form, picking <b>{{$data.BugIntakeProgram}}</b> as the product.
+        Nothing is transmitted from here, so there is nothing to configure and no credential to
+        install. No email or notification channel is used.</small>
       </div>
       <div>
         <label for="deleted_account_days">Keep a deleted account's backups for</label>

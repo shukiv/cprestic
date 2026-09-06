@@ -129,7 +129,7 @@
     </button>
   </div>
   <div class="cpr-sheet-body">
-    <p id="report-problem-intro" class="cpr-report-intro">Tell us what went wrong. You can review the full report on the next page before sending anything.</p>
+    <p id="report-problem-intro" class="cpr-report-intro">Tell us what went wrong. The next page shows you the whole report and hands it to you to file.</p>
     <form method="post" action="?p=report/send">
       <input type="hidden" name="csrf" value="{{.CSRF}}">
       <div class="cpr-formgrid">
@@ -145,10 +145,10 @@
                     placeholder="What did you do? What did you expect? What happened instead?"></textarea>
         </div>
       </div>
-      <p id="report-problem-privacy" class="cpr-report-privacy">The preview includes versions, recent failures, selected settings and recent service logs. Automatic redaction is best-effort; check for sensitive information. You can download the report instead of sending it.</p>
+      <p id="report-problem-privacy" class="cpr-report-privacy">The report includes versions, recent failures, selected settings and recent service logs. Automatic redaction is best-effort; check for sensitive information before you file it.</p>
       <div class="cpr-actions cpr-report-actions">
         <a class="cpr-btn cpr-quiet" href="?p=report">Open full page</a>
-        <button class="cpr-btn cpr-primary" type="submit">Preview report</button>
+        <button class="cpr-btn cpr-primary" type="submit">Show me the report</button>
       </div>
     </form>
   </div>

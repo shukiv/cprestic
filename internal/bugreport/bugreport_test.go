@@ -4,8 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // A report becomes an issue anybody may read, and the one section that is
@@ -143,5 +145,45 @@ func TestOnlyAnAddressIsAccepted(t *testing.T) {
 		if err := UsableAddress(good); err != nil {
 			t.Errorf("%q was refused: %v", good, err)
 		}
+	}
+}
+
+func TestSafeReportRemainsTheSameDuringPreviewAndDownload(t *testing.T) {
+	report := Report{Subject: "Failure", Body: "password=redact-me", Sections: []Section{
+		{Title: "Single long line", Text: strings.Repeat("א", MaxSectionBytes)},
+		{Title: "Long log", Text: strings.Repeat("an earlier log line\n", MaxSectionBytes)},
+	}}
+	safe := report.Safe()
+	if !reflect.DeepEqual(safe, safe.Safe()) {
+		t.Fatal("preparing a reviewed report changed its content")
+	}
+	if strings.Contains(safe.Body, "redact-me") {
+		t.Fatal("the operator's own text was not redacted")
+	}
+	for _, section := range safe.Sections {
+		if len(section.Text) > MaxSectionBytes || !utf8.ValidString(section.Text) {
+			t.Fatal("diagnostic section exceeds its cap or splits a UTF-8 character")
+		}
+	}
+}
+
+// TestAReportIsRefusedHereRatherThanOnTheForm covers the limits the public
+// form imposes. Nothing this program sends enforces them any more, so this
+// is the only place a too-long or multi-line subject is caught before an
+// operator carries it there and is turned away.
+func TestAReportIsRefusedHereRatherThanOnTheForm(t *testing.T) {
+	for name, report := range map[string]Report{
+		"no subject":       {Body: "something"},
+		"no body":          {Subject: "something"},
+		"subject too long": {Subject: strings.Repeat("x", 256), Body: "something"},
+		"subject wrapped":  {Subject: "two\nlines", Body: "something"},
+		"body too long":    {Subject: "one line", Body: strings.Repeat("x", 20001)},
+	} {
+		if err := report.Validate(); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+	if err := (Report{Subject: "One line", Body: "What happened"}).Validate(); err != nil {
+		t.Errorf("a usable report was refused: %v", err)
 	}
 }

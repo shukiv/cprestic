@@ -3,33 +3,17 @@
 <div class="cpr-page-head">
   <h1>Report a problem</h1>
   <p class="cpr-hint">What went wrong, in your words, with what this server can say about itself
-  attached. Send it over HTTPS to <b>bugs.jabali-panel.com</b>, program <b>{{$data.Program}}</b>.
-  Preview the diagnostic information before sending; email and notification channels are not used.</p>
+  attached. Nothing leaves this server on its own: review the report, download it, and file it at
+  <a class="cpr-link" href="{{$data.ReportURL}}" target="_blank" rel="noopener noreferrer">{{$data.ReportURL}}</a>,
+  choosing <b>{{$data.Program}}</b> as the product. Email and notification channels are not used.</p>
 </div>
-
-{{if $data.Sent}}
-<div class="cpr-card"><div class="cpr-pad">
-  <div class="cpr-banner cpr-ok" role="status"><div class="cpr-body">
-    <strong>Sent to {{$data.Program}}</strong>.
-    {{if eq $data.Receipt.Action "commented"}}Added to an existing report{{else}}Created a report{{end}}
-    {{with $data.Receipt.Identifier}} — {{.}}{{end}}.
-    {{with $data.Receipt.URL}}<a class="cpr-link" href="{{.}}" target="_blank" rel="noopener noreferrer">Open in Plane</a>
-    <small class="cpr-help">The tracker link may require access to your internal network.</small>{{end}}
-  </div></div>
-  {{range $data.Receipt.Warnings}}<p class="cpr-hint">Intake warning: {{.}}</p>{{end}}
-</div></div>
-{{else}}
 
 {{if $data.Error}}
 <div class="cpr-banner cpr-bad" role="alert"><div class="cpr-body">{{$data.Error}}</div></div>
 {{end}}
-{{if $data.SetupError}}
-<div class="cpr-banner" role="status"><div class="cpr-body">Sending is not configured: {{$data.SetupError}}.
-See <a class="cpr-link" href="?p=settings">Settings</a>. You can still preview and download the report.</div></div>
-{{end}}
 
 <div class="cpr-card">
-  <form method="post" action="?p=report/send" data-report-form>
+  <form method="post" action="?p=report/send">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
     {{if $data.Prepared}}
     <input type="hidden" name="prepared" value="{{$data.Prepared}}">
@@ -47,17 +31,14 @@ See <a class="cpr-link" href="?p=settings">Settings</a>. You can still preview a
                   placeholder="What you did, what you expected, what happened instead.">{{$data.Body}}</textarea>
         <small class="cpr-help">Versions, this server's recent failures, its settings without
         credentials, and the last 200 lines the service logged are attached. Passwords, keys and
-        tokens are filtered before sending, but automatic redaction is best-effort.
-        Review the preview for sensitive information.</small>
+        tokens are filtered out, but automatic redaction is best-effort. You are the last check:
+        read the report before you file it.</small>
       </div>
     </div>
     <div class="cpr-pad cpr-bulkbar" style="border-top:1px solid var(--line)">
       <span style="flex:1"></span>
-      <button class="cpr-btn" type="submit">Show me what would be sent</button>
-      <button class="cpr-btn" type="submit" name="download" value="1">Download it</button>
-      {{if and $data.CanSend $data.Prepared}}
-      <button class="cpr-btn cpr-primary" type="submit" name="send" value="1">Send to intake</button>
-      {{end}}
+      <button class="cpr-btn" type="submit">Show me the report</button>
+      <button class="cpr-btn cpr-primary" type="submit" name="download" value="1">Download it</button>
     </div>
   </form>
 </div>
@@ -65,15 +46,14 @@ See <a class="cpr-link" href="?p=settings">Settings</a>. You can still preview a
 {{if $data.Preview}}
 <div class="cpr-card" style="margin-top:var(--s4)">
   <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
-    <h2 style="margin:0">What would be sent</h2>
-    {{if not $data.CanSend}}
-    <span class="cpr-hint" style="margin:0">Sending needs an intake key. Download is available.</span>
-    {{end}}
+    <h2 style="margin:0">The report</h2>
+    <a class="cpr-btn" href="{{$data.ReportURL}}" target="_blank" rel="noopener noreferrer">Open the report form</a>
   </div>
   <div class="cpr-pad">
     <textarea rows="18" readonly class="cpr-mono" aria-label="The whole report">{{$data.Preview}}</textarea>
+    <small class="cpr-help">Download this and attach it to the form as the log file, or paste it in.
+    Pick <b>{{$data.Program}}</b> as the product so it reaches the right tracker.</small>
   </div>
 </div>
-{{end}}
 {{end}}
 {{end}}

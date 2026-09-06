@@ -649,32 +649,6 @@
   schedule();
 })();
 
-// Give feedback while the intake is creating the ticket, and guard against
-// accidental double-clicks without dropping the submit button's name/value.
-(function () {
-  "use strict";
-  document.addEventListener("submit", function (event) {
-    var form = event.target;
-    if (!form.matches("[data-report-form]")) { return; }
-    if (form.dataset.intakeSending === "1") { event.preventDefault(); return; }
-    var button = event.submitter;
-    if (!button || button.name !== "send") { return; }
-    form.dataset.intakeSending = "1";
-    form.setAttribute("aria-busy", "true");
-    // Do not disable the submitter: its name/value must reach the server.
-    button.setAttribute("aria-disabled", "true");
-    button.textContent = "Sending to intake…";
-  });
-  window.addEventListener("pageshow", function () {
-    document.querySelectorAll("[data-report-form]").forEach(function (form) {
-      delete form.dataset.intakeSending;
-      form.removeAttribute("aria-busy");
-      var button = form.querySelector('button[name="send"]');
-      if (button) { button.removeAttribute("aria-disabled"); button.textContent = "Send to intake"; }
-    });
-  });
-})();
-
 // A report is long and wanted occasionally, so it lives in a dialog rather
 // than under every row.
 (function () {

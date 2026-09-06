@@ -49,12 +49,12 @@ func TestReportDialogStaysInsidePluginStyleScope(t *testing.T) {
 		t.Fatal("report dialog is not closed")
 	}
 	markup := page[dialog : dialog+end]
-	for _, want := range []string{`class="cpr-sheet cpr-report-dialog"`, `aria-labelledby="report-problem-title"`, `aria-describedby="report-problem-intro"`, `name="csrf"`, `action="?p=report/send"`, `maxlength="20000"`, "Preview report", "Open full page"} {
+	for _, want := range []string{`class="cpr-sheet cpr-report-dialog"`, `aria-labelledby="report-problem-title"`, `aria-describedby="report-problem-intro"`, `name="csrf"`, `action="?p=report/send"`, `maxlength="20000"`, "Show me the report", "Open full page"} {
 		if !strings.Contains(markup, want) {
 			t.Errorf("report dialog missing %q", want)
 		}
 	}
-	if strings.Contains(markup, `name="send"`) {
-		t.Error("initial modal must preview, not submit to intake")
+	if strings.Contains(markup, `name="send"`) || strings.Contains(markup, `name="download"`) {
+		t.Error("the modal must show the report first, not hand it over unseen")
 	}
 }

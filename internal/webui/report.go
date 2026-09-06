@@ -171,22 +171,21 @@ func (s *Server) reportLog(ctx context.Context) string {
 	return string(out)
 }
 
-// reportView is the bug-report form and, after sending, what became of it.
+// reportView is the bug-report form and the report it prepares.
 type reportView struct {
-	Subject    string
-	Body       string
-	Program    string
-	SetupError string
-	CanSend    bool
-	// Preview is the whole report as it would be sent, shown before it is
-	// sent because it leaves the server.
+	Subject string
+	Body    string
+	// ReportURL is the form the operator files this on, and Program is the
+	// product to pick there. The page carries both because this server
+	// does not file anything itself.
+	ReportURL string
+	Program   string
+	// Preview is the whole report, shown before it is downloaded because
+	// it is the operator who then carries it somewhere public.
 	Preview   string
 	Prepared  string
 	Signature string
-	Receipt   bugreport.IntakeReceipt
-	// Sent says it went.
-	Sent  bool
-	Error string
+	Error     string
 }
 
 // handleReport draws the bug-report form.
@@ -201,9 +200,8 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) newReportView(subject, body string) reportView {
-	setup := s.engine.BugIntakeSetupError()
 	return reportView{Subject: subject, Body: body,
-		Program: bugreport.IntakeProgram, SetupError: setup, CanSend: setup == ""}
+		ReportURL: bugreport.PublicReportURL, Program: bugreport.IntakeProgram}
 }
 
 type preparedReport struct {
@@ -217,8 +215,14 @@ func (s *Server) reportSignature(prepared string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-// handleSendReport gathers the debug information and either shows it,
-// hands it over as a file, or sends it.
+// handleSendReport gathers the debug information and either shows it or
+// hands it over as a file. Nothing here transmits: the file is the report,
+// and the operator files it on the public form.
+//
+// A release before this one could send from the server, and a page left
+// open from then still asks for it. Such a request is answered with the
+// report itself rather than an error -- what it wanted has not failed, it
+// has moved.
 func (s *Server) handleSendReport(w http.ResponseWriter, r *http.Request) {
 	subject := strings.TrimSpace(r.PostFormValue("subject"))
 	body := strings.TrimSpace(r.PostFormValue("body"))
@@ -235,16 +239,16 @@ func (s *Server) handleSendReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var report bugreport.Report
-	if r.PostFormValue("send") == "1" || (r.PostFormValue("download") == "1" && r.PostFormValue("prepared") != "") {
-		// Send precisely the diagnostic snapshot the operator reviewed, not
-		// newly gathered logs that might now contain something different.
+	if r.PostFormValue("download") == "1" && r.PostFormValue("prepared") != "" {
+		// Hand over precisely the diagnostic snapshot the operator reviewed,
+		// not newly gathered logs that might now say something different.
 		view.Prepared, view.Signature = r.PostFormValue("prepared"), r.PostFormValue("signature")
 		var prepared preparedReport
 		valid := hmac.Equal([]byte(view.Signature), []byte(s.reportSignature(view.Prepared))) &&
 			json.Unmarshal([]byte(view.Prepared), &prepared) == nil && prepared.Expires >= time.Now().Unix()
 		typed := (bugreport.Report{Subject: subject, Body: body}).Safe()
 		if !valid || prepared.Report.Subject != typed.Subject || prepared.Report.Body != typed.Body {
-			view.Error = "Preview this report again before sending; the preview expired or its contents changed."
+			view.Error = "Preview this report again before downloading; the preview expired or its contents changed."
 			view.Prepared, view.Signature = "", ""
 			s.render(w, r, "report.html", "Report a problem", "", view)
 			return
@@ -263,8 +267,8 @@ func (s *Server) handleSendReport(w http.ResponseWriter, r *http.Request) {
 	}
 	view.Preview = report.Markdown()
 
-	// A file, for a server with no intake key or an operator who would rather
-	// send it themselves. It is the whole report, the same text.
+	// The file is how the report leaves: the operator attaches it to the
+	// public form. It is the whole report, the same text as the preview.
 	if r.PostFormValue("download") == "1" {
 		name := fmt.Sprintf("gniza-report-%s.md", time.Now().UTC().Format("20060102-1504"))
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
@@ -274,22 +278,5 @@ func (s *Server) handleSendReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sending creates an intake item, so it happens because
-	// somebody pressed send on a page that showed them what was in it --
-	// never as a side effect of opening the form.
-	if r.PostFormValue("send") != "1" {
-		s.render(w, r, "report.html", "Report a problem", "", view)
-		return
-	}
-	receipt, err := s.engine.SendBugReport(r.Context(), report)
-	if err != nil {
-		s.log.Error("send a bug report", "error", err)
-		view.Error = err.Error()
-		s.render(w, r, "report.html", "Report a problem", "", view)
-		return
-	}
-	s.log.Info("bug report sent", "program", bugreport.IntakeProgram, "identifier", receipt.Identifier)
-	view.Receipt = receipt
-	view.Sent = true
 	s.render(w, r, "report.html", "Report a problem", "", view)
 }

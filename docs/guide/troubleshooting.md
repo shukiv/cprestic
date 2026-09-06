@@ -5,65 +5,36 @@
 The bug icon at the foot of the rail — beside the documentation and GitHub
 links — opens a form: a subject, and what happened in your own words.
 
-Pressing **Show me what would be sent** gathers the rest and shows you the
-whole thing before anything leaves the server: versions and environment, the
-recent failures this server has recorded, its settings without any credential,
-and the last 200 lines the service logged. Passwords, keys, tokens and private
-keys are removed from those lines first, and each section is capped so a noisy
-week does not become a report nobody reads.
+Pressing **Show me the report** gathers the rest and shows you the whole
+thing: versions and environment, the recent failures this server has
+recorded, its settings without any credential, and the last 200 lines the
+service logged. Passwords, keys, tokens and private keys are removed from
+those lines first, and each section is capped so a noisy week does not become
+a report nobody reads.
 
-Then, either:
+Nothing is transmitted from the server. **Download it** hands the report over
+as `gniza-report-<when>.md`, and you file it yourself at
+<https://bugs.jabali-panel.com/report>, picking **cprestic** as the product —
+the tracker's own key for this project, which did not follow the rename to
+Gniza. Attach the file as the log file, or paste it into the description.
 
-- **Send to intake** — HTTPS to `https://bugs.jabali-panel.com/api/v1/intake`,
-  explicitly routed to program `gniza` (Plane project `GNIZA`). Success
-  shows the issue number, a tracker link, and any nonfatal intake warnings.
-  The link may need access to the internal Plane network. Email and notification
-  channels are not involved; a failed delivery never falls back to email.
-- **Download it** — `gniza-report-<when>.md`, the same text as a file, to send
-  however you like. Available even without intake credentials.
+There is nothing to configure and no credential to install. A plugin that is
+published to every cPanel server cannot hold a key to an authenticated
+endpoint without publishing the key too, so it does not have one: reporting
+works the same on every server, out of the box.
 
-Sending is a second, separate press on a page that showed you what is in it.
-The reviewed diagnostics are signed and expire after twenty minutes or a
-service restart. Sending does not gather fresh logs. If the subject or
-description changes, preview again first. Downloads from a preview use the
-same reviewed diagnostics.
+The reviewed report is signed and expires after twenty minutes or a service
+restart, so a download hands over exactly the diagnostics you read rather
+than freshly gathered logs that may say something else. If the subject or
+description changes, show the report again first.
 
-### Enable intake delivery
+Redaction is best-effort, and you are the last check before the report
+becomes public: read it for secrets in unusual formats or sensitive customer
+details before you file it. Legacy `bug_email` and `sendmail_path` settings
+remain readable for compatibility but are not used.
 
-The intake must register the `cprestic` programme -- the tracker's own key for
-this project, which did not follow the rename to Gniza -- and issue a dedicated
-intake token through its `INTAKE_TOKENS` configuration. Program readiness at `/healthz` or
-`/api/v1/programs` is not authentication: submitting still needs that token.
-
-Install **only the token value**, not a `program:` prefix or `Bearer `, in
-`/etc/gniza/bugs-intake.key` on the cPanel server. The file must be a regular
-file owned by root with mode `0600`, inside the root-controlled config
-directory. Do not put it in source code, the browser, a command argument, or
-chat. For example, once the token is in a secure local file:
-
-```bash
-install -o root -g root -m 0600 /secure/path/gniza-intake-token /etc/gniza/bugs-intake.key
-```
-
-With a custom `config_dir`, the file is `bugs-intake.key` in that directory;
-Settings displays the exact path and local readiness. The key is reread for
-each send, so installing, rotating, or removing it needs no restart. Removing
-the key disables sending without disabling preview or download. Legacy
-`bug_email` and `sendmail_path` settings remain readable for compatibility but
-are no longer used for reporting.
-
-Only explicitly submitted reports leave the server; routine backup failure
-notifications keep their existing channel configuration. The report title and
-description are redacted locally, as are the diagnostic sections, before
-being sent as JSON. The intake redacts again. Redaction is best-effort: review
-the preview for secrets in unusual formats or sensitive customer details.
-
-An invalid token produces an actionable error. Rate limits show the returned
-`Retry-After` delay. A timeout or ambiguous response means delivery is
-**unconfirmed**, not definitely absent: check the intake before retrying. The
-plugin does not automatically retry or assign fingerprints to manual reports,
-so repeating a successful submission can create another issue. Neither HTTP
-redirects nor a success response for a different program are accepted.
+Customers with no access to WHM can use the same form directly; it needs
+nothing installed.
 
 ## First three commands
 

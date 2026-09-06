@@ -6,10 +6,13 @@
 // the answers: versions, the failures this server has recorded, the
 // settings that shape behaviour, and the last lines the service logged.
 //
-// It leaves the server through the HTTPS intake, so its contents are chosen
-// rather than swept up: no credentials, repository passwords or tokens. Log
-// lines pass through a redactor first. The operator is shown the whole
-// thing before any of it is sent.
+// Nothing here leaves the server on its own. The report is built, shown
+// and handed over as a file; the operator files it on the public form at
+// PublicReportURL, which is a page a person fills in. So the contents are
+// chosen rather than swept up -- no credentials, repository passwords or
+// tokens -- and log lines pass through a redactor first. That the operator
+// carries the report themselves is what makes the redaction matter: they
+// are the last check, and they see the whole thing before it goes.
 package bugreport
 
 import (
@@ -19,6 +22,51 @@ import (
 	"time"
 	"unicode/utf8"
 )
+
+// PublicReportURL is where a bug report is filed. It is a form a person
+// fills in, not an API this program posts to: an endpoint that accepts
+// reports without a person behind them needs a credential, and there is no
+// credential a plugin published to every cPanel server could hold without
+// publishing it too.
+const PublicReportURL = "https://bugs.jabali-panel.com/report"
+
+// IntakeProgram is the product to pick on that form. It is the tracker's
+// own key for this project and not a name this program is free to choose,
+// so it did not follow the rename to Gniza: the tracker has no Gniza
+// product, and a report filed under one that does not exist is a report
+// nobody reads.
+const IntakeProgram = "cprestic"
+
+// Safe returns a separate copy suitable for both preview and download.
+// User text is redacted too: the operator wrote it, but they may have
+// pasted a log line into it.
+func (r Report) Safe() Report {
+	out := Report{Subject: Redact(r.Subject), Body: Redact(r.Body)}
+	for _, section := range r.Sections {
+		out.Sections = append(out.Sections, Section{
+			Title: Redact(section.Title), Text: Clip(Redact(section.Text), MaxSectionBytes),
+		})
+	}
+	return out
+}
+
+// Validate holds the report to what the public form accepts, so a report
+// is refused here rather than after somebody has carried it there.
+func (r Report) Validate() error {
+	if strings.TrimSpace(r.Subject) == "" || strings.TrimSpace(r.Body) == "" {
+		return fmt.Errorf("a report needs a subject and a description of what happened")
+	}
+	if !utf8.ValidString(r.Subject) || len(r.Subject) > 255 || strings.ContainsAny(r.Subject, "\r\n") {
+		return fmt.Errorf("the subject must be one line of valid text, at most 255 bytes")
+	}
+	if !utf8.ValidString(r.Body) || len(r.Body) > 20000 {
+		return fmt.Errorf("the description must be valid text, at most 20,000 bytes; shorten it before previewing")
+	}
+	if len(r.Sections) > 20 {
+		return fmt.Errorf("the report has too many diagnostic sections (maximum 20)")
+	}
+	return nil
+}
 
 // Report is one bug report, before it becomes an issue.
 type Report struct {
