@@ -60,6 +60,21 @@ func (e *Engine) EnsureProvisioned(ctx context.Context) (int, error) {
 			source = &opened
 		}
 		if err := e.runner.Init(ctx, target, source); err != nil {
+			if repositoryAlreadyThere(err) {
+				// The password for that repository was made a moment ago
+				// and is not the one it was created with, so there is
+				// nothing to do here but say so. Attaching it is a
+				// different operation with a different question: what is
+				// its password.
+				return created, fmt.Errorf(
+					"there is already a repository at %s. cprest did not make it and "+
+						"cannot read it with the password it made for this destination. "+
+						"If those are this server's earlier backups, attach them under "+
+						"Restore -> Disaster recovery, which asks for the password they "+
+						"were made with. If they are not, give this destination a folder "+
+						"of its own",
+					repo.Path)
+			}
 			return created, err
 		}
 		if err := e.store.MarkRepositoryInitialised(repo.ID); err != nil {
@@ -71,6 +86,16 @@ func (e *Engine) EnsureProvisioned(ctx context.Context) (int, error) {
 		created++
 	}
 	return created, nil
+}
+
+// repositoryAlreadyThere reports whether restic refused to create a
+// repository because one is already at that path.
+//
+// restic says "create repository at ... failed: config file already
+// exists" and exits 1, the same exit code it uses for everything else, so
+// the sentence is what there is to go on.
+func repositoryAlreadyThere(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "config file already exists")
 }
 
 // QueueBackup queues a backup of one account under a policy.
