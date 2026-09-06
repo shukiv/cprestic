@@ -42,6 +42,7 @@ func lifecycleTestServer(t *testing.T) (*Server, *nodestore.Store) {
 		Store: store, Vault: v,
 		Provider: &cpanel.Fake{Root: filepath.Join(root, "cpanel")}, Log: log,
 		AccountUID: func(string) (int, error) { return 1500, nil },
+		HookSpool:  filepath.Join(root, "hooks"),
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -70,7 +70,8 @@ func newUI(t *testing.T) (*http.Client, string, *node.Engine) {
 			Databases: map[string][]string{"customer1": {"customer1_wp"}},
 			FileCount: 2, FileSize: 512,
 		},
-		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		HookSpool: filepath.Join(root, "hooks"),
 	})
 	if err != nil {
 		t.Fatalf("build engine: %v", err)

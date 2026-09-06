@@ -23,6 +23,7 @@ import (
 
 	"github.com/shuki/cprest/internal/agent"
 	"github.com/shuki/cprest/internal/cpanel"
+	"github.com/shuki/cprest/internal/hookspool"
 	"github.com/shuki/cprest/internal/resticrun"
 	"github.com/shuki/cprest/internal/staging"
 )
@@ -53,6 +54,7 @@ type config struct {
 	masterKeyPath       string
 	lifecycleSocketPath string
 	cpanelHookEvent     string
+	hookSpoolDir        string
 	cpanelHookDescribe  bool
 	certifyArchive      string
 	certifyUser         string
@@ -70,7 +72,8 @@ func main() {
 		return
 	}
 	if cfg.cpanelHookEvent != "" {
-		if err := runCPanelHook(cfg.lifecycleSocketPath, cfg.cpanelHookEvent); err != nil {
+		payload, err := runCPanelHook(cfg.lifecycleSocketPath, cfg.cpanelHookEvent)
+		if err != nil {
 			if cfg.cpanelHookEvent == "remove-pre" {
 				if detail, denied := blockingHookFailure(err); denied {
 					fmt.Printf("0 BAILOUT cprest blocked account removal: %s\n", hookMessage(detail))
@@ -91,6 +94,32 @@ func main() {
 				// not make every account create, modify or suspend on
 				// this server report a failed hook. What was missed is
 				// reconciled the next time the service looks.
+				//
+				// Except that two of these cannot be worked out again by
+				// looking. A username deleted and recreated while the
+				// service is down, onto the same uid, leaves an account
+				// list identical to the one that was there before -- so
+				// the create and the remove are written down here, and
+				// the service replays them before it reconciles
+				// anything. Failing to write one down is the one case
+				// that has to be reported: it is the difference between
+				// deferred and lost.
+				if hookspool.Spooled(cfg.cpanelHookEvent) {
+					path, spoolErr := spoolCPanelHook(
+						cfg.hookSpoolDir, cfg.cpanelHookEvent, payload)
+					if spoolErr != nil {
+						fmt.Println("0 cprest could not record this account event; " +
+							"back up and restore for this account may show the wrong owner")
+						log.Error("could not record a cPanel account event for replay",
+							"event", cfg.cpanelHookEvent, "error", spoolErr)
+						os.Exit(1)
+					}
+					fmt.Println("1 cprest lifecycle recorded; " +
+						"the backup service is unavailable and will replay it")
+					log.Warn("recorded a cPanel account event for replay",
+						"event", cfg.cpanelHookEvent, "spooled", path, "error", err)
+					return
+				}
 				fmt.Println("1 cprest lifecycle deferred; the backup service is unavailable")
 				log.Error("cPanel lifecycle hook could not reach the service; deferred",
 					"event", cfg.cpanelHookEvent, "error", err)
@@ -167,6 +196,8 @@ func parseFlags() config {
 		"standalone: key that encrypts stored destination credentials")
 	flag.StringVar(&cfg.lifecycleSocketPath, "lifecycle-socket", "/var/run/cprest/hooks/lifecycle.sock",
 		"root-only socket used by cPanel account lifecycle hooks")
+	flag.StringVar(&cfg.hookSpoolDir, "hook-spool", hookspool.DefaultDir,
+		"where a cPanel lifecycle hook leaves an account event this service was not running to hear")
 	flag.StringVar(&cfg.cpanelHookEvent, "cpanel-hook", "",
 		"internal: forward a cPanel create, modify, suspend, unsuspend, remove-pre or remove hook")
 	flag.BoolVar(&cfg.cpanelHookDescribe, "describe", false,

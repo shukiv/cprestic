@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/shuki/cprest/internal/hookspool"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/nodestore"
 	"github.com/shuki/cprest/internal/resticrun"
@@ -205,20 +206,82 @@ func (e *Engine) ReconcileAccountRenames(ctx context.Context) error {
 // AccountCreated records a hard ownership boundary reported by cPanel.
 // Unlike polling, the create event is proof that this is a new account even
 // when Linux reused both the former username and its uid.
-func (e *Engine) AccountCreated(account string) error {
+//
+// The time is when cPanel made the account, not when this was called: an
+// event replayed from the hook spool has to record the boundary where it
+// really falls, or the new owner's own first backups end up on the wrong
+// side of it. Recording the same event twice is harmless for the same
+// reason -- a boundary already at or after this one is left alone.
+func (e *Engine) AccountCreated(account string, at time.Time) error {
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	at = at.UTC()
 	uid, err := e.accountUID(account)
 	if err != nil {
 		return err
 	}
-	now := time.Now().UTC()
 	identity := nodestore.AccountIdentity{
-		Account: account, UID: uid, SinceAt: now, Recycled: true,
+		Account: account, UID: uid, SinceAt: at, Recycled: true,
 	}
 	if previous, lookupErr := e.store.Identity(account); lookupErr == nil {
 		identity.CreatedAt = previous.CreatedAt
+		if previous.Recycled && !previous.SinceAt.Before(at) {
+			// Already recorded, by the live hook or by an earlier
+			// replay. Writing it again would move the boundary forward
+			// and hide the present owner's own backups from them.
+			return nil
+		}
 	}
 	_, err = e.store.PutIdentity(identity)
 	return err
+}
+
+// ReplayHookSpool records the lifecycle events that reached the hook
+// while this service was not running.
+//
+// It is the other half of the hook's fail-open behaviour. A create or a
+// remove that nobody heard cannot be recovered from the account list: a
+// username deleted and recreated onto the same uid looks exactly like the
+// account that was there before, and treating it as the same account
+// hands the new customer the last one's backups. So the hook writes the
+// event down, and this puts it back before anything reads the account
+// list and infers ownership from it.
+func (e *Engine) ReplayHookSpool() error {
+	if e.hookSpool == "" {
+		return nil
+	}
+	pending, problems := hookspool.Pending(e.hookSpool)
+	for _, problem := range problems {
+		// Left where it is rather than deleted: an event that cannot be
+		// read is still evidence that something happened.
+		e.log.Error("read a cPanel event left by a hook", "error", problem)
+	}
+	for _, entry := range pending {
+		var err error
+		switch entry.Event.Event {
+		case "create":
+			err = e.AccountCreated(entry.Event.Account, entry.Event.At)
+		case "remove":
+			err = e.AccountRemoved(entry.Event.Account)
+		}
+		if err != nil {
+			// Keep the file. The account may not exist yet from this
+			// process's point of view, or the store may be busy; either
+			// way the boundary is not recorded, so it must not be
+			// forgotten.
+			e.log.Error("replay a cPanel event left by a hook",
+				"event", entry.Event.Event, "account", entry.Event.Account, "error", err)
+			continue
+		}
+		if err := hookspool.Done(entry); err != nil {
+			e.log.Error("clear a replayed cPanel event", "error", err)
+			continue
+		}
+		e.log.Warn("recorded a cPanel account event that happened while this service was down",
+			"event", entry.Event.Event, "account", entry.Event.Account, "at", entry.Event.At)
+	}
+	return nil
 }
 
 // QueueInitialBackup gives a newly-created account a baseline immediately
@@ -329,6 +392,14 @@ func (e *Engine) QueueSuspensionBackup(account string) (SuspensionBackup, error)
 }
 
 func (e *Engine) reconcileAccounts(ctx context.Context, allowRenames bool) error {
+	// Anything a hook could not deliver is recorded first. Polling sees
+	// only the account list as it is now, so a name that changed hands
+	// while this service was down would otherwise be reconciled as the
+	// same customer -- and the boundary the hook did record would be
+	// replayed too late to matter.
+	if err := e.ReplayHookSpool(); err != nil {
+		return err
+	}
 	accounts, err := e.provider.Accounts(ctx)
 	if err != nil {
 		return err
@@ -449,7 +520,7 @@ func (e *Engine) AccountRemoved(account string) error {
 	if err := e.store.ForgetBaskets(account); err != nil {
 		return err
 	}
-	if identity, err := e.store.Identity(account); err == nil {
+	if identity, err := e.store.Identity(account); err == nil && identity.RetiredAt == nil {
 		now := time.Now().UTC()
 		identity.RetiredAt = &now
 		if _, err := e.store.PutIdentity(identity); err != nil {

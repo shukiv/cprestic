@@ -70,6 +70,12 @@ rm -f "$FRONTEND/assets/application_icons/cprest.png" \
 # not caution, only clutter.
 rm -rf -- /var/cache/cprest
 
+# Account events the hooks left for a service that is now going away. The
+# hooks are unregistered above, so nothing will add more and nothing will
+# ever read these; reinstalling later must not replay account changes from
+# whenever cprest was last installed.
+rm -rf -- /var/lib/cprest/hooks
+
 cat <<'DONE'
 cprest removed.
 

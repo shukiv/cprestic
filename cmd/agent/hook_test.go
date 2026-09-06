@@ -5,8 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shuki/cprest/internal/hookspool"
 )
 
 func TestCPanelHookDescriptionIncludesBlockingPreRemove(t *testing.T) {
@@ -90,5 +96,80 @@ func TestAnUnreachableServiceDoesNotFailAPostHook(t *testing.T) {
 	}
 	if _, denied := blockingHookFailure(wrapped); !denied {
 		t.Error("a wrapped definite refusal was not recognised as one")
+	}
+}
+
+// An account event the service was not running to hear is written down
+// rather than lost.
+//
+// The hook deliberately fails open when it cannot reach the service:
+// wedging every account create and remove on the server because a backup
+// program is restarting would be worse than the thing it protects
+// against. But a create or a remove that nobody heard cannot be worked
+// out again by looking at the account list, so it is kept for replay.
+func TestAnUndeliverableAccountEventIsKeptForReplay(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "hooks")
+	payload := []byte(`{"context":"Accounts::Create","data":{"user":"webshop"}}`)
+
+	path, err := spoolCPanelHook(dir, "create", payload)
+	if err != nil {
+		t.Fatalf("spoolCPanelHook: %v", err)
+	}
+	pending, problems := hookspool.Pending(dir)
+	if len(problems) != 0 {
+		t.Fatalf("problems: %v", problems)
+	}
+	if len(pending) != 1 || pending[0].Path != path {
+		t.Fatalf("spool holds %+v, want the create that was just written", pending)
+	}
+	if pending[0].Event.Account != "webshop" || pending[0].Event.Event != "create" {
+		t.Errorf("spooled %+v", pending[0].Event)
+	}
+
+	// A payload that names no account is refused rather than written as
+	// an event about nothing: main treats that as a failure the operator
+	// is told about, because it is the difference between deferred and
+	// lost.
+	if _, err := spoolCPanelHook(dir, "create", []byte(`{"data":{}}`)); err == nil {
+		t.Error("an event naming no account was accepted")
+	}
+}
+
+// When the service answers, nothing is spooled: the event has been
+// recorded where it belongs, and a copy left behind would be replayed on
+// the next restart.
+func TestADeliveredAccountEventIsNotSpooled(t *testing.T) {
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "lifecycle.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go http.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	stdin, err := os.CreateTemp(dir, "hook-input")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stdin.WriteString(`{"data":{"user":"webshop"}}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stdin.Seek(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	realStdin := os.Stdin
+	os.Stdin = stdin
+	defer func() { os.Stdin = realStdin }()
+
+	if _, err := runCPanelHook(socket, "create"); err != nil {
+		t.Fatalf("runCPanelHook: %v", err)
+	}
+	spool := filepath.Join(dir, "hooks")
+	pending, problems := hookspool.Pending(spool)
+	if len(pending) != 0 || len(problems) != 0 {
+		t.Errorf("a delivered event was also spooled: %+v %v", pending, problems)
 	}
 }

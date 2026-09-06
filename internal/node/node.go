@@ -25,6 +25,7 @@ import (
 	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/destination"
 	"github.com/shuki/cprest/internal/granular"
+	"github.com/shuki/cprest/internal/hookspool"
 	"github.com/shuki/cprest/internal/inventory"
 	"github.com/shuki/cprest/internal/job"
 	"github.com/shuki/cprest/internal/nodestore"
@@ -85,6 +86,10 @@ type Engine struct {
 	// accountUID is replaceable in tests; on a cPanel host it resolves the
 	// Unix identity behind a username.
 	accountUID func(string) (int, error)
+	// hookSpool is where a cPanel lifecycle hook left an event this
+	// service was not running to hear. It is drained before anything
+	// infers who owns a name from the account list.
+	hookSpool string
 }
 
 // Config assembles an Engine.
@@ -100,6 +105,9 @@ type Config struct {
 	// AccountUID overrides Unix account lookup in tests. Production leaves
 	// it nil and resolves identities through the operating system.
 	AccountUID func(string) (int, error)
+	// HookSpool is the directory cPanel lifecycle hooks write to when
+	// this service is not there to answer. Empty means hookspool.DefaultDir.
+	HookSpool string
 }
 
 // New builds an Engine from stored settings.
@@ -158,11 +166,16 @@ func New(cfg Config) (*Engine, error) {
 	if uidLookup == nil {
 		uidLookup = accountUID
 	}
+	spoolDir := cfg.HookSpool
+	if spoolDir == "" {
+		spoolDir = hookspool.DefaultDir
+	}
 	engine := &Engine{
 		store: cfg.Store, vault: cfg.Vault, provider: cfg.Provider,
 		runner: runner, worker: worker, staging: stagingManager,
 		log: log, settings: settings, lastProgress: map[string]progressMark{},
 		accountUID: uidLookup,
+		hookSpool:  spoolDir,
 	}
 	// A backup of a large account takes minutes, and an operator watching
 	// it deserves to see it move. restic reports about once a second per

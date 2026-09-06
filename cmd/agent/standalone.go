@@ -64,6 +64,7 @@ func runStandalone(ctx context.Context, cfg config, log *slog.Logger) error {
 
 	engine, err := node.New(node.Config{
 		Store: store, Vault: v, Provider: provider, Log: log,
+		HookSpool: cfg.hookSpoolDir,
 	})
 	if err != nil {
 		return err
@@ -72,6 +73,13 @@ func runStandalone(ctx context.Context, cfg config, log *slog.Logger) error {
 		// A host whose pkgacct cannot be probed can still be configured;
 		// the interface shows the gap.
 		log.Error("probe pkgacct", "error", err)
+	}
+	// What the hooks could not deliver while this service was down, put
+	// back before anything reads the account list. An account created or
+	// removed in that window cannot be recovered from the list itself,
+	// and recording it late is the whole point of the spool.
+	if err := engine.ReplayHookSpool(); err != nil {
+		log.Error("replay the cPanel events left by hooks", "error", err)
 	}
 	// Which unix account each cPanel name means, recorded before anything
 	// serves a customer. Everything that decides whether a name has

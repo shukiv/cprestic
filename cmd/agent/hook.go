@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/shuki/cprest/internal/hookspool"
 )
 
 type cpanelHookDescriptor struct {
@@ -97,18 +99,22 @@ func hookMessage(detail string) string {
 // runCPanelHook forwards the JSON line supplied by cPanel's Standardized
 // Hooks system to the already-running standalone service. The hook process
 // never opens the bbolt file alongside the service.
-func runCPanelHook(socketPath, event string) error {
+//
+// It returns what cPanel sent as well as the outcome, so a caller whose
+// service could not be reached can write the event down instead of
+// losing it.
+func runCPanelHook(socketPath, event string) ([]byte, error) {
 	if event != "create" && event != "modify" && event != "suspend" &&
 		event != "unsuspend" && event != "remove" && event != "remove-pre" {
-		return fmt.Errorf("unknown cPanel hook event %q", event)
+		return nil, fmt.Errorf("unknown cPanel hook event %q", event)
 	}
 	limited := io.LimitReader(os.Stdin, (1<<20)+1)
 	body, err := io.ReadAll(limited)
 	if err != nil {
-		return fmt.Errorf("read cPanel hook input: %w", err)
+		return nil, fmt.Errorf("read cPanel hook input: %w", err)
 	}
 	if len(body) > 1<<20 {
-		return fmt.Errorf("cPanel hook input is larger than 1 MiB")
+		return nil, fmt.Errorf("cPanel hook input is larger than 1 MiB")
 	}
 
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
@@ -121,17 +127,36 @@ func runCPanelHook(socketPath, event string) error {
 	requestURL := "http://unix/event?event=" + url.QueryEscape(event)
 	request, err := http.NewRequest(http.MethodPost, requestURL, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return body, err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("notify cprest service: %w", err)
+		return body, fmt.Errorf("notify cprest service: %w", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusNoContent {
 		detail, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		return &hookServiceError{StatusCode: response.StatusCode, Detail: string(bytes.TrimSpace(detail))}
+		return body, &hookServiceError{
+			StatusCode: response.StatusCode, Detail: string(bytes.TrimSpace(detail))}
 	}
-	return nil
+	return body, nil
+}
+
+// spoolCPanelHook writes down an account event the service was not there
+// to hear.
+//
+// Only creation and removal are kept, and only these two need to be: they
+// are what says a username has changed hands, and a username recreated
+// onto the same uid while the service was down is indistinguishable from
+// the account that was there before. Everything else polling can work out
+// again by looking.
+func spoolCPanelHook(dir, event string, payload []byte) (string, error) {
+	account := hookspool.AccountIn(payload)
+	if account == "" {
+		return "", fmt.Errorf("the %s hook did not name an account", event)
+	}
+	return hookspool.Write(dir, hookspool.Event{
+		At: time.Now().UTC(), Event: event, Account: account, Payload: payload,
+	})
 }

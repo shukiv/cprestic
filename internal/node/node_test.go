@@ -124,8 +124,9 @@ func newEngine(t *testing.T, store *nodestore.Store, root string) *node.Engine {
 
 	engine, err := node.New(node.Config{
 		Store: store, Vault: v,
-		Provider: &cpanel.Fake{Root: filepath.Join(root, "cpanel")},
-		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Provider:  &cpanel.Fake{Root: filepath.Join(root, "cpanel")},
+		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		HookSpool: filepath.Join(root, "hooks"),
 	})
 	if err != nil {
 		t.Fatalf("node.New: %v", err)
@@ -528,8 +529,9 @@ func newEngineWithExec(t *testing.T, store *nodestore.Store, root string, exec r
 	}
 	engine, err := node.New(node.Config{
 		Store: store, Vault: v, Exec: exec,
-		Provider: &cpanel.Fake{Root: filepath.Join(root, "cpanel")},
-		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Provider:  &cpanel.Fake{Root: filepath.Join(root, "cpanel")},
+		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		HookSpool: filepath.Join(root, "hooks"),
 	})
 	if err != nil {
 		t.Fatalf("node.New: %v", err)

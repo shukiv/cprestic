@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/shuki/cprest/internal/cpanel"
+	"github.com/shuki/cprest/internal/hookspool"
 	"github.com/shuki/cprest/internal/nodestore"
 	"github.com/shuki/cprest/internal/vault"
 )
@@ -41,6 +42,7 @@ func lifecycleEngine(t *testing.T, users map[string][]string, uids map[string]in
 		AccountUID: func(user string) (int, error) {
 			return uids[user], nil
 		},
+		HookSpool: filepath.Join(root, "hooks"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +114,7 @@ func TestCreateHookSeparatesReusedNameEvenWhenUIDWasAlsoReused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := engine.AccountCreated("webshop"); err != nil {
+	if err := engine.AccountCreated("webshop", time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	current, err := store.Identity("webshop")
@@ -293,5 +295,95 @@ func TestARemovedAccountIsNeverTreatedAsARenameSource(t *testing.T) {
 	policy, _ = store.Policy(policy.ID)
 	if len(policy.Accounts) != 1 || policy.Accounts[0] != "departed" {
 		t.Fatalf("a removal was carried across as a rename: %v", policy.Accounts)
+	}
+}
+
+// TestAnUndeliveredCreateStillSeparatesTheNewOwner is the finding from the
+// second security review: the hook fails open when this service is not
+// running, and polling cannot recover what it dropped.
+//
+// A customer leaves, their username is deleted and given to somebody else,
+// and the operating system hands the new account the same uid. If both
+// events happened while the service was down, the account list afterwards
+// is identical to the one before -- same name, same uid -- so reconciling
+// against it treats two customers as one, and the new one can list and
+// restore the old one's backups.
+//
+// The hook writes those two events down instead of losing them, and they
+// are replayed before anything reads the account list.
+func TestAnUndeliveredCreateStillSeparatesTheNewOwner(t *testing.T) {
+	engine, store := lifecycleEngine(t,
+		map[string][]string{"webshop": nil}, map[string]int{"webshop": 1042})
+
+	// The customer who was here before, and something they restored.
+	firstOwnerSince := time.Now().Add(-30 * 24 * time.Hour).UTC()
+	if _, err := store.PutIdentity(nodestore.AccountIdentity{
+		Account: "webshop", UID: 1042, SinceAt: firstOwnerSince,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	theirs := nodestore.Restore{
+		Account: "webshop", SnapshotID: "40dc1520",
+		QueuedAt: time.Now().Add(-20 * 24 * time.Hour).UTC(), AccountSince: firstOwnerSince,
+	}
+	if !engine.BelongsToCurrentHolder(theirs) {
+		t.Fatal("the account's own restore was hidden from it before anything changed")
+	}
+
+	// The service is down. cPanel removes the account and creates it
+	// again for somebody else, onto the same name and the same uid, and
+	// both hooks write what they were told to the spool.
+	removedAt := time.Now().Add(-2 * time.Hour).UTC()
+	createdAt := time.Now().Add(-1 * time.Hour).UTC()
+	for _, event := range []hookspool.Event{
+		{At: removedAt, Event: "remove", Account: "webshop",
+			Payload: []byte(`{"data":{"user":"webshop"}}`)},
+		{At: createdAt, Event: "create", Account: "webshop",
+			Payload: []byte(`{"data":{"user":"webshop"}}`)},
+	} {
+		if _, err := hookspool.Write(engine.hookSpool, event); err != nil {
+			t.Fatalf("spool %s: %v", event.Event, err)
+		}
+	}
+
+	// The service comes back and looks at the accounts, which is where
+	// the boundary used to be lost.
+	if err := engine.ReconcileAccounts(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	current, err := store.Identity("webshop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !current.Recycled {
+		t.Fatal("the name changed hands and nothing recorded it, so the new owner " +
+			"can read the last customer's backups")
+	}
+	if !current.SinceAt.Equal(createdAt) {
+		t.Errorf("the boundary is %v, want the moment cPanel made the account, %v",
+			current.SinceAt, createdAt)
+	}
+	if engine.BelongsToCurrentHolder(theirs) {
+		t.Error("the previous customer's restore is offered to the new one")
+	}
+
+	// Replayed events are cleared, and replaying is harmless anyway: a
+	// hook that timed out after the service had already recorded the
+	// event leaves a file for something that is done.
+	pending, problems := hookspool.Pending(engine.hookSpool)
+	if len(pending) != 0 || len(problems) != 0 {
+		t.Errorf("spool still holds %d events and %d unreadable files", len(pending), len(problems))
+	}
+	if err := engine.AccountCreated("webshop", createdAt); err != nil {
+		t.Fatal(err)
+	}
+	again, err := store.Identity("webshop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.SinceAt.Equal(createdAt) {
+		t.Errorf("replaying the same event moved the boundary to %v, hiding the "+
+			"present owner's own backups from them", again.SinceAt)
 	}
 }

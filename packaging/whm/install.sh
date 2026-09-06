@@ -13,6 +13,9 @@ PREFIX=/usr/local/bin
 CONFIG_DIR=/etc/cprest
 STATE_DIR=/var/lib/cprest
 STAGING_DIR=/var/lib/cprest/staging
+# Where a cPanel lifecycle hook leaves an account event the service was
+# not running to hear, for it to replay when it comes back.
+HOOK_SPOOL_DIR=/var/lib/cprest/hooks
 CACHE_DIR=/var/cache/cprest/restic
 RUN_DIR=/var/run/cprest
 APPCONFIG_DIR=/var/cpanel/apps
@@ -102,7 +105,8 @@ fi
 say "restic: $(restic version 2>/dev/null | head -1)"
 
 # --- files -----------------------------------------------------------------
-install -d -m 0700 "$CONFIG_DIR" "$STATE_DIR" "$STAGING_DIR" "$CACHE_DIR" "$RUN_DIR"
+install -d -m 0700 "$CONFIG_DIR" "$STATE_DIR" "$STAGING_DIR" "$CACHE_DIR" "$RUN_DIR" \
+	"$HOOK_SPOOL_DIR"
 install -d -m 0755 "$APPCONFIG_DIR"
 install -m 0755 "$SOURCE_DIR/cprest-agent" "$PREFIX/cprest-agent"
 HOOK_BIN=/usr/local/cpanel/3rdparty/bin/cprest-hook

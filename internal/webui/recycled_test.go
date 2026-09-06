@@ -46,6 +46,7 @@ func TestARecycledNameCannotCollectTheLastHoldersRestore(t *testing.T) {
 		Provider:   &cpanel.Fake{Root: filepath.Join(root, "cpanel")},
 		AccountUID: func(string) (int, error) { return 2002, nil },
 		Log:        slog.New(slog.DiscardHandler),
+		HookSpool:  filepath.Join(root, "hooks"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +78,7 @@ func TestARecycledNameCannotCollectTheLastHoldersRestore(t *testing.T) {
 	if err := engine.AccountRemoved("customer1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := engine.AccountCreated("customer1"); err != nil {
+	if err := engine.AccountCreated("customer1", time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -134,11 +135,12 @@ func TestTheSameCustomerStillCollectsTheirOwn(t *testing.T) {
 		Provider:   &cpanel.Fake{Root: filepath.Join(root, "cpanel")},
 		AccountUID: func(string) (int, error) { return 1001, nil },
 		Log:        slog.New(slog.DiscardHandler),
+		HookSpool:  filepath.Join(root, "hooks"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := engine.AccountCreated("customer1"); err != nil {
+	if err := engine.AccountCreated("customer1", time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 
