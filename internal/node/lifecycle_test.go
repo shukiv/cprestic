@@ -475,3 +475,52 @@ func TestAReplayedCreateForAVanishedAccountIsDiscarded(t *testing.T) {
 		}
 	}
 }
+
+// TestAReplayedCreateQueuesTheInitialBackup covers the half of the create
+// hook that the spool replay was leaving out. A new account is given a
+// baseline straight away rather than waiting for the next nightly run,
+// and an account made while this service was down is the one that most
+// needs it -- nothing at all ran for it. Recording the ownership boundary
+// and stopping there left the account with no backup and nothing saying
+// so.
+func TestAReplayedCreateQueuesTheInitialBackup(t *testing.T) {
+	engine, store := lifecycleEngine(t,
+		map[string][]string{"latecomer": nil}, map[string]int{"latecomer": 1600})
+	policy, err := store.PutPolicy(nodestore.Policy{
+		Name: "Nightly", ScheduleCron: "0 2 * * *", Enabled: true,
+		RepositoryIDs: []string{"repo-1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := hookspool.Write(engine.hookSpool, hookspool.Event{
+		At: time.Now().Add(-90 * time.Minute).UTC(), Event: "create", Account: "latecomer",
+		Payload: []byte(`{"data":{"user":"latecomer"}}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.ReplayHookSpool(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.Identity("latecomer"); err != nil {
+		t.Fatalf("the ownership boundary was not recorded: %v", err)
+	}
+	jobs, err := store.Jobs(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 || jobs[0].Account != "latecomer" || jobs[0].PolicyID != policy.ID {
+		t.Fatalf("a replayed create left the account with no backup queued: %+v", jobs)
+	}
+
+	// And only once: the event is cleared, so a second sweep must not
+	// queue the same baseline again.
+	if err := engine.ReplayHookSpool(); err != nil {
+		t.Fatal(err)
+	}
+	if jobs, _ := store.Jobs(0); len(jobs) != 1 {
+		t.Errorf("a second replay queued the baseline again: %+v", jobs)
+	}
+}

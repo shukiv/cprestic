@@ -431,6 +431,18 @@ full.
 Tests: `internal/agent/skip_tags_test.go`, `internal/node/audit_bug_test.go`,
 `internal/reassemble/verify_scope_test.go`.
 
+Two places still read a snapshot without asking what it holds. They matter
+only once a schedule is set to skip something, which none does today, so they
+are recorded rather than fixed:
+
+- The snapshot list on the restore page does not mark a partial one. The
+  refusal guards the by-date path; an operator picking a snapshot by hand can
+  still pick one that is missing part of the account.
+- The rehearsal chooses the repository by newest snapshot of any kind, then
+  the newest complete one inside it. A repository whose newest snapshot is
+  partial wins the choice, and a complete backup in another repository is
+  never rehearsed.
+
 ### SEC-12 — a restore could outlive its lease and be run twice
 
 An agent now says it is still working, at half the remaining lease, and only
@@ -443,6 +455,12 @@ is not a refusal, and the work carries on.
 And if a lease does run out anyway, a restore that was writing into the live
 account is no longer requeued: it is marked failed, saying it may have partly
 run. A restore that only produces a copy is requeued as before.
+
+The failure message is a fallback, not an account of what happened. When the
+lease is taken back the claim token goes with it, so the agent's own report —
+which does list what it wrote — is refused when it finally arrives. The row
+says the restore may have partly run; it cannot say which part. Renewal is
+what keeps this path rare.
 
 Tests: `internal/store/lease_test.go`, `internal/agent/hold_lease_test.go`
 (the last under `-race`).
@@ -460,6 +478,12 @@ live account was touched. Migration 0007 adds the `detail` and `applied`
 columns fleet mode had nowhere to put them in; standalone has recorded both
 since it was written.
 
+The customer is told too. The hint is the one line shown on their own page in
+place of the operator's error, and it now names what was already put back and
+says to check the account first. Reporting the change to the operator alone
+would be the same non-disclosure one audience over, and the list holds nothing
+but the account's own names.
+
 Tests: `internal/agent/partial_putback_test.go`.
 
 ### What an operator has to do
@@ -469,6 +493,15 @@ Tests: `internal/agent/partial_putback_test.go`.
 - Rehearsals of accounts whose schedule skips part of the account will stop
   showing as verified, and say what was left out instead. That is the true
   state, not a regression.
+
+### Also fixed alongside these
+
+A cPanel account created while the service was down had its ownership
+boundary recorded on replay and nothing else: the initial backup the live
+hook queues was never asked for, so the account waited for the next nightly
+run with no copy of it anywhere. The replay now queues it, on the same terms
+as the hook. Test: `TestAReplayedCreateQueuesTheInitialBackup` in
+`internal/node/lifecycle_test.go`.
 
 *Not exercised on the live host:* a restore that outlives its lease needs a
 controller and a fleet, which `.144` does not run; and overwriting a real

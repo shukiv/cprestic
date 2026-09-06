@@ -27,7 +27,7 @@ func TestAFailedPutBackSaysWhatItAlreadyOverwrote(t *testing.T) {
 	}
 	agent := quietAgent(fake)
 
-	written, _, err := agent.applyItems(context.Background(), agent.log,
+	written, hint, err := agent.applyItems(context.Background(), agent.log,
 		protocol.RestoreAssignment{
 			CPanelUser: "c1",
 			ItemKind:   string(granular.KindDatabase),
@@ -49,6 +49,16 @@ func TestAFailedPutBackSaysWhatItAlreadyOverwrote(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "already been changed") {
 		t.Errorf("the error does not say the account was changed: %v", err)
+	}
+
+	// And the customer, who is the person whose database was overwritten
+	// and who is shown the hint in place of the error, is told the same.
+	if !strings.Contains(hint, "c1_shop") {
+		t.Errorf("the customer is not told which database was already "+
+			"overwritten: %q", hint)
+	}
+	if strings.Contains(hint, "agent:") {
+		t.Errorf("the operator's wording reached the customer: %q", hint)
 	}
 }
 
@@ -95,7 +105,7 @@ func TestAPutBackThatFailedBeforeWritingSaysNothingWasChanged(t *testing.T) {
 	}
 	agent := quietAgent(fake)
 
-	written, _, err := agent.applyItems(context.Background(), agent.log,
+	written, hint, err := agent.applyItems(context.Background(), agent.log,
 		protocol.RestoreAssignment{
 			CPanelUser: "c1",
 			ItemKind:   string(granular.KindDatabase),
@@ -109,5 +119,8 @@ func TestAPutBackThatFailedBeforeWritingSaysNothingWasChanged(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "already been changed") {
 		t.Errorf("a restore that changed nothing says it did: %v", err)
+	}
+	if strings.Contains(hint, "put back before it failed") {
+		t.Errorf("the customer is told part of it was written when none was: %q", hint)
 	}
 }

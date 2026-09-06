@@ -440,22 +440,30 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 	// on the next must not report only "failed" -- the account has been
 	// changed, and whoever reads that report is the person who has to
 	// decide what to do about it.
+	//
+	// The hint carries it too. The error and the detail are read by the
+	// operator; the hint is the only line the customer is shown, and the
+	// customer is the person whose databases were overwritten. Telling
+	// them nothing but "failed" is the same non-disclosure one audience
+	// over. What is listed here is their own account's names, so there is
+	// nothing in it they are not entitled to read.
 	var wrote []string
-	partly := func(err error) (string, string, error) {
+	partly := func(hint string, err error) (string, string, error) {
 		if len(wrote) == 0 {
-			return "", "", err
+			return "", hint, err
 		}
-		return strings.Join(wrote, "; "), "", fmt.Errorf(
-			"%w -- the account has already been changed: %s", err, strings.Join(wrote, "; "))
+		changed := strings.Join(wrote, "; ")
+		if hint != "" {
+			hint += " "
+		}
+		hint += "Part of this was put back before it failed: " + changed +
+			". Check the account before asking for it again."
+		return changed, hint, fmt.Errorf(
+			"%w -- the account has already been changed: %s", err, changed)
 	}
 	for _, name := range create {
 		if err := a.provider.CreateDatabase(ctx, assignment.CPanelUser, name); err != nil {
-			if len(wrote) == 0 {
-				return "", createFailureHint(name, err), err
-			}
-			return strings.Join(wrote, "; "), createFailureHint(name, err), fmt.Errorf(
-				"%w -- the account has already been changed: %s",
-				err, strings.Join(wrote, "; "))
+			return partly(createFailureHint(name, err), err)
 		}
 		log.Warn("database created for a restore",
 			"account", assignment.CPanelUser, "database", name)
@@ -463,7 +471,7 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 	}
 	for i, name := range databaseNames {
 		if err := a.provider.LoadDatabase(ctx, assignment.CPanelUser, name, dumps[i]); err != nil {
-			return partly(fmt.Errorf("agent: load %s: %w", name, err))
+			return partly("", fmt.Errorf("agent: load %s: %w", name, err))
 		}
 		log.Warn("database loaded from a backup",
 			"account", assignment.CPanelUser, "database", name)
@@ -471,7 +479,7 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 	}
 	if wantUsers {
 		if err := a.provider.PutDatabaseUsers(ctx, assignment.CPanelUser, users); err != nil {
-			return partly(err)
+			return partly("", err)
 		}
 		names := distinctUserNames(users)
 		log.Warn("database users recreated from a backup",
@@ -480,13 +488,13 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 	}
 	if wantHomedir {
 		if err := a.provider.PutHomeDir(ctx, assignment.CPanelUser, homedir); err != nil {
-			return partly(err)
+			return partly("", err)
 		}
 		wrote = append(wrote, "written into the home directory of "+assignment.CPanelUser)
 	}
 	if wantCron {
 		if err := a.provider.PutCrontab(ctx, assignment.CPanelUser, crontab); err != nil {
-			return partly(err)
+			return partly("", err)
 		}
 		log.Warn("cron jobs put back from a backup", "account", assignment.CPanelUser)
 		wrote = append(wrote, "cron jobs of "+assignment.CPanelUser)

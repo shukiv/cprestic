@@ -293,6 +293,29 @@ func (e *Engine) ReplayHookSpool() error {
 		}
 		e.log.Warn("recorded a cPanel account event that happened while this service was down",
 			"event", entry.Event.Event, "account", entry.Event.Account, "at", entry.Event.At)
+		if entry.Event.Event != "create" {
+			continue
+		}
+		// The live hook gives a new account a baseline immediately rather
+		// than leaving it with nothing until the next nightly run. An
+		// account made while this service was down is the case that needs
+		// it most: nothing ran for it at all, and the replay was recording
+		// the boundary and stopping there.
+		//
+		// The event is already cleared. A failure here is not a reason to
+		// bring it back: the boundary is recorded, which is the part that
+		// cannot be reconstructed later, and the ordinary schedule still
+		// covers the account.
+		queued, err := e.QueueInitialBackup(entry.Event.Account)
+		if err != nil {
+			e.log.Error("queue the initial backup for an account created while this service was down",
+				"account", entry.Event.Account, "error", err)
+			continue
+		}
+		if queued {
+			e.log.Warn("queued the initial backup for an account created while this service was down",
+				"account", entry.Event.Account)
+		}
 	}
 	return nil
 }
