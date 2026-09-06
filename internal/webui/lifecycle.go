@@ -112,13 +112,21 @@ func (s *Server) handleLifecycleEvent(w http.ResponseWriter, r *http.Request) {
 			fail(account, http.StatusInternalServerError, err)
 			return
 		}
+		// The boundary is recorded. Failing the hook now would tell it
+		// to write the event down and have the service replay it, and
+		// the replay would find the boundary already there -- so the
+		// only thing the failure would achieve is telling WHM that
+		// creating the account went wrong. The backup is the part that
+		// can be caught up: the schedule covers the account either way.
 		queued, err := s.engine.QueueInitialBackup(account)
-		if err != nil {
-			fail(account, http.StatusInternalServerError, err)
-			return
-		}
 		detail := "ownership boundary recorded; no enabled all-account policy"
-		if queued {
+		switch {
+		case err != nil:
+			detail = "ownership boundary recorded; the initial backup could not be " +
+				"queued: " + err.Error()
+			s.log.Error("queue the initial backup for a new cPanel account",
+				"account", account, "error", err)
+		case queued:
 			detail = "ownership boundary recorded; initial backup queued"
 		}
 		if err := record(account, true, detail); err != nil {

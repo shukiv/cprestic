@@ -66,7 +66,28 @@ func blockingHookFailure(err error) (string, bool) {
 	if !errors.As(err, &serviceErr) {
 		return "", false
 	}
-	return serviceErr.Detail, serviceErr.StatusCode >= 400 && serviceErr.StatusCode < 500
+	return serviceErr.Detail, serviceDecided(err)
+}
+
+// serviceDecided reports whether the failure is the service's own answer.
+//
+// A 4xx is a decision: the request was refused, and asking again with the
+// same request would be refused again. A 5xx is the service failing to do
+// its job -- a busy store, a full disk, a bug -- and is no more final than
+// a socket nobody is listening on. Treating the two alike is what lost a
+// create or a remove: the event was reported as a failed hook and dropped,
+// and a username that changed hands while the store was unwell kept the
+// last owner's boundary.
+func serviceDecided(err error) bool {
+	var serviceErr *hookServiceError
+	return errors.As(err, &serviceErr) &&
+		serviceErr.StatusCode >= 400 && serviceErr.StatusCode < 500
+}
+
+// recordableFailure reports whether a failed hook leaves behind an account
+// event that has to be written down instead of reported and dropped.
+func recordableFailure(event string, err error) bool {
+	return !serviceDecided(err) && hookspool.Spooled(event)
 }
 
 // serviceAnswered reports whether the failure came back from a service that

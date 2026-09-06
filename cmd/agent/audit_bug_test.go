@@ -12,9 +12,19 @@ import (
 	"github.com/shuki/cprest/internal/hookspool"
 )
 
-// Positive audit reproduction: a passing test means a create that the
-// service answered with 500 was lost rather than left for replay.
-func TestAuditServiceFailureDropsAccountBoundary(t *testing.T) {
+// TestAServiceFailureDoesNotLoseTheAccountBoundary runs the hook binary
+// itself against a service that answers the way an unwell one does.
+//
+// The hook split failures two ways: a service that answered had reached a
+// decision worth reporting to WHM, and a service that could not be reached
+// had the event written down for replay. A 500 fell on the reporting side,
+// so a create or a remove the service could not record was reported as a
+// failed hook and then dropped. A username that changed hands during those
+// minutes keeps the previous owner's boundary, and with it their backups.
+//
+// A 500 is not a decision. The event is written down, exactly as it is for
+// a service that is not running.
+func TestAServiceFailureDoesNotLoseTheAccountBoundary(t *testing.T) {
 	root, err := os.MkdirTemp("/dev/shm", "cpr-hook-")
 	if err != nil {
 		t.Fatal(err)
@@ -40,14 +50,22 @@ func TestAuditServiceFailureDropsAccountBoundary(t *testing.T) {
 	cmd := exec.Command(binary,
 		"-cpanel-hook=create", "-lifecycle-socket="+socket, "-hook-spool="+spool)
 	cmd.Stdin = strings.NewReader(`{"data":{"user":"customer1"}}`)
-	if err := cmd.Run(); err == nil {
-		t.Fatal("service HTTP 500 unexpectedly reported hook success")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the hook failed rather than recording the event: %v\n%s", err, output)
+	}
+	// cPanel reads the first character: 1 is a hook that succeeded.
+	if !strings.HasPrefix(string(output), "1 ") {
+		t.Errorf("the hook reported failure to WHM: %s", output)
 	}
 	pending, problems := hookspool.Pending(spool)
 	if len(problems) != 0 {
 		t.Fatalf("read spool: %v", problems)
 	}
-	if len(pending) != 0 {
-		t.Fatalf("boundary was unexpectedly preserved: %+v", pending)
+	if len(pending) != 1 {
+		t.Fatalf("the account boundary was lost: the spool holds %+v", pending)
+	}
+	if pending[0].Event.Account != "customer1" || pending[0].Event.Event != "create" {
+		t.Errorf("spooled %+v", pending[0].Event)
 	}
 }

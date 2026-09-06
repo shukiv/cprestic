@@ -183,3 +183,102 @@ func TestADeliveredAccountEventIsNotSpooled(t *testing.T) {
 		t.Errorf("a delivered event was also spooled: %+v %v", pending, problems)
 	}
 }
+
+// TestAServerErrorKeepsTheAccountEventForReplay covers the other half of
+// "the service could not take it".
+//
+// A hook failure was split two ways: a service that answered had reached a
+// decision worth reporting, and a service that did not answer had the
+// event written down for replay. But a service that answers HTTP 500 has
+// not decided anything -- its store is busy, its disk is full, it has a
+// bug -- and it has not recorded the event either. Reporting that as a
+// failed hook and dropping the event is how a username that changed hands
+// during a bad ten minutes keeps the last owner's boundary, and with it
+// their backups.
+//
+// Only the service's own decision, a 4xx, is final enough to drop an
+// account event on.
+func TestAServerErrorKeepsTheAccountEventForReplay(t *testing.T) {
+	for _, status := range []int{500, 502, 503} {
+		err := error(&hookServiceError{StatusCode: status, Detail: "store is busy"})
+		if serviceDecided(err) {
+			t.Errorf("HTTP %d was treated as the service's own decision", status)
+		}
+		for _, event := range []string{"create", "remove"} {
+			if !recordableFailure(event, err) {
+				t.Errorf("a %s answered with HTTP %d was dropped rather than "+
+					"written down; the account boundary is lost", event, status)
+			}
+		}
+	}
+	// A 4xx is the service's answer: asking again would be refused again,
+	// and there is nothing a replay could do with it.
+	for _, status := range []int{400, 409} {
+		err := error(&hookServiceError{StatusCode: status, Detail: "no account named"})
+		if !serviceDecided(err) {
+			t.Errorf("HTTP %d was not treated as a decision", status)
+		}
+		if recordableFailure("create", err) {
+			t.Errorf("a create refused with HTTP %d was written down for replay", status)
+		}
+	}
+	// A service that is not there is recorded, as it was before.
+	unreachable := errors.New("dial unix: connect: no such file or directory")
+	if !recordableFailure("create", unreachable) {
+		t.Error("an unreachable service no longer has its events written down")
+	}
+	// And an event with nothing to record is still reported rather than
+	// spooled, whichever way it failed.
+	if recordableFailure("modify", unreachable) {
+		t.Error("a modify was spooled; only create and remove carry a boundary")
+	}
+}
+
+// And the whole path, through a socket that answers the way an unwell
+// service does: the event ends up in the spool for the service to replay.
+func TestAServerErrorSpoolsTheEventThroughTheRealPath(t *testing.T) {
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "lifecycle.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go http.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "the account store is busy", http.StatusInternalServerError)
+	}))
+
+	stdin, err := os.CreateTemp(dir, "hook-input")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stdin.WriteString(`{"data":{"user":"webshop"}}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stdin.Seek(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	realStdin := os.Stdin
+	os.Stdin = stdin
+	defer func() { os.Stdin = realStdin }()
+
+	happenedAt := time.Now().UTC()
+	payload, hookErr := runCPanelHook(socket, "create")
+	if hookErr == nil {
+		t.Fatal("a service answering HTTP 500 was read as success")
+	}
+	if !recordableFailure("create", hookErr) {
+		t.Fatalf("the create was dropped rather than written down: %v", hookErr)
+	}
+	spool := filepath.Join(dir, "hooks")
+	if _, err := spoolCPanelHook(spool, "create", payload, happenedAt); err != nil {
+		t.Fatalf("spoolCPanelHook: %v", err)
+	}
+	pending, problems := hookspool.Pending(spool)
+	if len(problems) != 0 {
+		t.Fatalf("problems: %v", problems)
+	}
+	if len(pending) != 1 || pending[0].Event.Account != "webshop" {
+		t.Fatalf("spool holds %+v, want the create the service could not take", pending)
+	}
+}

@@ -92,38 +92,44 @@ func main() {
 				log.Error("cPanel account removal check unavailable; allowed removal", "error", err)
 				return
 			}
-			if !serviceAnswered(err) {
-				// The same reasoning as the blocking hook above, and for
-				// the same reason: a stopped or restarting service must
-				// not make every account create, modify or suspend on
-				// this server report a failed hook. What was missed is
-				// reconciled the next time the service looks.
-				//
-				// Except that two of these cannot be worked out again by
-				// looking. A username deleted and recreated while the
-				// service is down, onto the same uid, leaves an account
-				// list identical to the one that was there before -- so
-				// the create and the remove are written down here, and
-				// the service replays them before it reconciles
-				// anything. Failing to write one down is the one case
-				// that has to be reported: it is the difference between
-				// deferred and lost.
-				if hookspool.Spooled(cfg.cpanelHookEvent) {
-					path, spoolErr := spoolCPanelHook(
-						cfg.hookSpoolDir, cfg.cpanelHookEvent, payload, happenedAt)
-					if spoolErr != nil {
-						fmt.Println("0 cprest could not record this account event; " +
-							"back up and restore for this account may show the wrong owner")
-						log.Error("could not record a cPanel account event for replay",
-							"event", cfg.cpanelHookEvent, "error", spoolErr)
-						os.Exit(1)
-					}
-					fmt.Println("1 cprest lifecycle recorded; " +
-						"the backup service is unavailable and will replay it")
-					log.Warn("recorded a cPanel account event for replay",
-						"event", cfg.cpanelHookEvent, "spooled", path, "error", err)
-					return
+			// The same reasoning as the blocking hook above, and for
+			// the same reason: a stopped or restarting service must
+			// not make every account create, modify or suspend on
+			// this server report a failed hook. What was missed is
+			// reconciled the next time the service looks.
+			//
+			// Except that two of these cannot be worked out again by
+			// looking. A username deleted and recreated while the
+			// service is down, onto the same uid, leaves an account
+			// list identical to the one that was there before -- so
+			// the create and the remove are written down here, and
+			// the service replays them before it reconciles
+			// anything. Failing to write one down is the one case
+			// that has to be reported: it is the difference between
+			// deferred and lost.
+			//
+			// A service that answered with a 5xx is in the same
+			// position as one that did not answer at all: it did not
+			// record the event, and it did not decide anything. Only
+			// its own decision -- a 4xx -- is final enough to drop an
+			// account boundary on.
+			if recordableFailure(cfg.cpanelHookEvent, err) {
+				path, spoolErr := spoolCPanelHook(
+					cfg.hookSpoolDir, cfg.cpanelHookEvent, payload, happenedAt)
+				if spoolErr != nil {
+					fmt.Println("0 cprest could not record this account event; " +
+						"back up and restore for this account may show the wrong owner")
+					log.Error("could not record a cPanel account event for replay",
+						"event", cfg.cpanelHookEvent, "error", spoolErr)
+					os.Exit(1)
 				}
+				fmt.Println("1 cprest lifecycle recorded; " +
+					"the backup service could not take it now and will replay it")
+				log.Warn("recorded a cPanel account event for replay",
+					"event", cfg.cpanelHookEvent, "spooled", path, "error", err)
+				return
+			}
+			if !serviceAnswered(err) {
 				fmt.Println("1 cprest lifecycle deferred; the backup service is unavailable")
 				log.Error("cPanel lifecycle hook could not reach the service; deferred",
 					"event", cfg.cpanelHookEvent, "error", err)
