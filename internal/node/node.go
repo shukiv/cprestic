@@ -1,4 +1,4 @@
-// Package node runs cprest on a single cPanel server with no controller.
+// Package node runs Gniza on a single cPanel server with no controller.
 //
 // It is the same machinery as fleet mode with the control plane removed:
 // state lives in a local bbolt file instead of PostgreSQL, scheduling
@@ -22,20 +22,20 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/shuki/cprest/internal/agent"
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/destination"
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/hookspool"
-	"github.com/shuki/cprest/internal/inventory"
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/notify"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/reassemble"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/staging"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/agent"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/destination"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/hookspool"
+	"github.com/shukiv/gniza/internal/inventory"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/notify"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/reassemble"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/staging"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
 // Engine is the standalone node.

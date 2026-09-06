@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/shuki/cprest/internal/node"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/vault"
-	"github.com/shuki/cprest/internal/webui"
+	"github.com/shukiv/gniza/internal/node"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/vault"
+	"github.com/shukiv/gniza/internal/webui"
 )
 
 // runStandalone serves one cPanel server with no controller: local state,
@@ -22,6 +22,16 @@ func runStandalone(ctx context.Context, cfg config, log *slog.Logger) error {
 		return err
 	}
 	defer store.Close()
+
+	// A server that was installed when this program was called cprest has
+	// the old directory names written into its state file. The installer
+	// renames the directories; this renames what the state file says about
+	// them, before anything reads a path out of it.
+	if moved, err := store.MigrateLegacyPaths(); err != nil {
+		return err
+	} else if moved > 0 {
+		log.Info("moved stored paths to the new directory names", "records", moved)
+	}
 
 	v, err := openOrCreateVault(cfg.masterKeyPath, log)
 	if err != nil {

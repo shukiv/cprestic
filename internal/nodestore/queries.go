@@ -9,7 +9,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/shuki/cprest/internal/job"
+	"github.com/shukiv/gniza/internal/job"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -47,12 +47,12 @@ func (s *Store) Settings() (Settings, error) {
 // must have been using the same one all along.
 func DefaultSettings() Settings {
 	return Settings{
-		StagingRoot:   "/var/lib/cprest/staging",
+		StagingRoot:   "/var/lib/gniza/staging",
 		MaxConcurrent: 1,
 		SafetyMargin:  0.2,
 		ResticBinary:  "restic",
-		ResticCache:   "/var/cache/cprest/restic",
-		ConfigDir:     "/etc/cprest",
+		ResticCache:   "/var/cache/gniza/restic",
+		ConfigDir:     "/etc/gniza",
 	}
 }
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // deletedSweepEvery is how often deleted accounts are looked at. Forgetting

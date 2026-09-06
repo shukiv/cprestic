@@ -10,15 +10,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/node"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/staging"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/node"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/staging"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
 // TestSourceOperationsStayOnTheAppendOnlyEndpoint protects the boundary

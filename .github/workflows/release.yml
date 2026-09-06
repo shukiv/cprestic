@@ -58,10 +58,13 @@ jobs:
       # key, which is what an installer running as root is entitled to ask.
       - name: Sign the checksums
         env:
-          SIGNING_KEY: ${{ secrets.CPREST_SIGNING_KEY }}
+          # Renamed with the project. Set it with:
+          #   gh secret set GNIZA_SIGNING_KEY --repo shukiv/gniza < release.pem
+          # An unset secret fails this step rather than publishing unsigned.
+          SIGNING_KEY: ${{ secrets.GNIZA_SIGNING_KEY }}
         run: |
           set -eu
-          [ -n "${SIGNING_KEY:-}" ] || { echo "CPREST_SIGNING_KEY is not set; a release has to be signed" >&2; exit 1; }
+          [ -n "${SIGNING_KEY:-}" ] || { echo "GNIZA_SIGNING_KEY is not set; a release has to be signed" >&2; exit 1; }
           key=$(mktemp)
           trap 'rm -f "$key"' EXIT
           printf '%s\n' "$SIGNING_KEY" > "$key"

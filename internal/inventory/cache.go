@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shuki/cprest/internal/granular"
+	"github.com/shukiv/gniza/internal/granular"
 )
 
 // Cache reads a snapshot's containers once and remembers what was in them.
@@ -130,7 +130,7 @@ func read(ctx context.Context, reader Reader, src Source) (*contents, error) {
 		held.members, held.bodies = members, bodies
 	}
 	if src.Parts.Databases != "" {
-		// A backup made before cprest staged the stored passwords has the
+		// A backup made before Gniza staged the stored passwords has the
 		// grants and not the file beside them. The users are still worth
 		// listing, so a missing file is not a failure here -- the restore
 		// itself is where that becomes one.

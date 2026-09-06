@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/hookspool"
+	"github.com/shukiv/gniza/internal/hookspool"
 )
 
 func TestCPanelHookDescriptionIncludesBlockingPreRemove(t *testing.T) {
@@ -81,7 +81,7 @@ func TestHookMessageIsSingleLineAndCannotInjectBailout(t *testing.T) {
 // A service that answered is different: it reached a decision, and that
 // is worth reporting.
 func TestAnUnreachableServiceDoesNotFailAPostHook(t *testing.T) {
-	if serviceAnswered(errors.New("dial unix /var/run/cprest/hook.sock: connect: no such file")) {
+	if serviceAnswered(errors.New("dial unix /var/run/gniza/hook.sock: connect: no such file")) {
 		t.Error("a service that could not be reached was treated as having answered")
 	}
 	for _, status := range []int{400, 409, 500, 503} {
@@ -91,7 +91,7 @@ func TestAnUnreachableServiceDoesNotFailAPostHook(t *testing.T) {
 		}
 	}
 	// And wrapping must not lose it: the transport wraps the cause.
-	wrapped := fmt.Errorf("notify cprest service: %w", &hookServiceError{StatusCode: 409})
+	wrapped := fmt.Errorf("notify Gniza service: %w", &hookServiceError{StatusCode: 409})
 	if !serviceAnswered(wrapped) {
 		t.Error("a wrapped service error was not recognised")
 	}

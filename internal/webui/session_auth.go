@@ -29,16 +29,16 @@ const (
 	teamRoleCheckTimeout    = 5 * time.Second
 	maxCPanelSessionSize    = 64 << 10
 	maxTeamResponse         = 256 << 10
-	capabilityHeader        = "X-Cprest-Capability"
-	cpanelAccountHeader     = "X-Cprest-Cpanel-Account"
-	cpanelPrincipalHeader   = "X-Cprest-Cpanel-Principal"
-	cpanelSessionHeader     = "X-Cprest-Cpanel-Session"
-	cpanelSessionKeyHeader  = "X-Cprest-Cpanel-Session-Key"
-	cpanelTokenHeader       = "X-Cprest-Cpanel-Token"
-	capabilityMethodHeader  = "X-Cprest-Request-Method"
-	capabilityTargetHeader  = "X-Cprest-Request-Target"
-	capabilityEndpoint      = "/_cprest/capability"
-	adminCapabilityEndpoint = "/_cprest/user-capability"
+	capabilityHeader        = "X-Gniza-Capability"
+	cpanelAccountHeader     = "X-Gniza-Cpanel-Account"
+	cpanelPrincipalHeader   = "X-Gniza-Cpanel-Principal"
+	cpanelSessionHeader     = "X-Gniza-Cpanel-Session"
+	cpanelSessionKeyHeader  = "X-Gniza-Cpanel-Session-Key"
+	cpanelTokenHeader       = "X-Gniza-Cpanel-Token"
+	capabilityMethodHeader  = "X-Gniza-Request-Method"
+	capabilityTargetHeader  = "X-Gniza-Request-Target"
+	capabilityEndpoint      = "/_gniza/capability"
+	adminCapabilityEndpoint = "/_gniza/user-capability"
 	accountCapabilityScope  = "account-backup-ui"
 )
 
@@ -622,7 +622,7 @@ func (s *Server) issueUserCapability(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.userAuth == nil {
 		s.log.Error("cPanel session validation unavailable", "account", account)
-		http.Error(w, "cP:Restic could not verify your cPanel session. Ask your host to check the service.", http.StatusServiceUnavailable)
+		http.Error(w, "Gniza could not verify your cPanel session. Ask your host to check the service.", http.StatusServiceUnavailable)
 		return
 	}
 	token, err := s.userAuth.issue(r.Context(), account,
@@ -631,10 +631,10 @@ func (s *Server) issueUserCapability(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, errSessionUnavailable) {
 			s.log.Error("cPanel session validation unavailable", "account", account)
-			http.Error(w, "cP:Restic could not verify your cPanel session. Ask your host to check the service.", http.StatusServiceUnavailable)
+			http.Error(w, "Gniza could not verify your cPanel session. Ask your host to check the service.", http.StatusServiceUnavailable)
 			return
 		}
-		http.Error(w, "cP:Restic is available to the account owner and Administrator team users only.", http.StatusForbidden)
+		http.Error(w, "Gniza is available to the account owner and Administrator team users only.", http.StatusForbidden)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store, max-age=0")
@@ -652,7 +652,7 @@ func (s *Server) issueAdminUserCapability(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if s.userAuth == nil {
-		http.Error(w, "cP:Restic session validation is unavailable.", http.StatusServiceUnavailable)
+		http.Error(w, "Gniza session validation is unavailable.", http.StatusServiceUnavailable)
 		return
 	}
 	account := r.Header.Get(cpanelAccountHeader)
@@ -663,7 +663,7 @@ func (s *Server) issueAdminUserCapability(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		if errors.Is(err, errSessionUnavailable) {
 			s.log.Error("cPanel AdminBin session validation unavailable", "account", account)
-			http.Error(w, "cP:Restic session validation is unavailable.", http.StatusServiceUnavailable)
+			http.Error(w, "Gniza session validation is unavailable.", http.StatusServiceUnavailable)
 			return
 		}
 		http.Error(w, "cPanel session was not accepted.", http.StatusForbidden)
@@ -682,11 +682,11 @@ func (s *Server) requireUserCapability(next http.Handler) http.Handler {
 			return
 		}
 		if s.userAuth == nil {
-			http.Error(w, "Open cP:Restic from your current cPanel session.", http.StatusForbidden)
+			http.Error(w, "Open Gniza from your current cPanel session.", http.StatusForbidden)
 			return
 		}
 		if err := s.userAuth.consume(account, r.Header.Get(capabilityHeader), r.Method, r.URL.RequestURI()); err != nil {
-			http.Error(w, "Open cP:Restic from your current cPanel session.", http.StatusForbidden)
+			http.Error(w, "Open Gniza from your current cPanel session.", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -694,5 +694,5 @@ func (s *Server) requireUserCapability(next http.Handler) http.Handler {
 }
 
 func accountAttributionError(w http.ResponseWriter) {
-	http.Error(w, "cP:Restic could not tell which account this is. Open it from inside cPanel.", http.StatusForbidden)
+	http.Error(w, "Gniza could not tell which account this is. Open it from inside cPanel.", http.StatusForbidden)
 }

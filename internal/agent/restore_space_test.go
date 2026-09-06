@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/destination"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/staging"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/destination"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/staging"
 )
 
 func TestRestorePreflightDoesNotSubstituteLiveSizeForUnknownHistory(t *testing.T) {

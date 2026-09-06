@@ -35,6 +35,15 @@ var releaseKeyPEM []byte
 // The three files a release publishes. The tarball is the plugin; the
 // sums are what says which tarball; the signature is what says the sums
 // came from whoever holds the release key.
+//
+// The tarball still carries the name this program had before it was called
+// Gniza, and so does the word this file's manifest is read by and the
+// directory inside the tarball. Every server already running an older
+// release has those three spellings compiled into it and asks for exactly
+// them: a release that renamed the asset could be downloaded by nobody who
+// has not already upgraded, which is the one set of servers an upgrade has
+// to reach. They are names on a published artefact rather than anything a
+// person reads, and they cost nothing to leave alone.
 const (
 	TarballName = "cprest-plugin-amd64.tar.gz"
 	SumsName    = "SHA256SUMS"
@@ -84,7 +93,7 @@ type Source struct {
 	// long enough for a 16 MB download is made here.
 	Client *http.Client
 	// Base is the directory releases live under, without the tag. It is
-	// GitHub unless CPREST_RELEASE_BASE says otherwise, which exists so
+	// GitHub unless GNIZA_RELEASE_BASE says otherwise, which exists so
 	// this can be exercised against a server on the machine itself: the
 	// signature is checked against the compiled-in key either way, so an
 	// address that points somewhere else can still only deliver what the
@@ -107,7 +116,7 @@ func DistSource(repo string) Source {
 	if repo == "" {
 		repo = Repo
 	}
-	base := strings.TrimSpace(os.Getenv("CPREST_DIST_BASE"))
+	base := strings.TrimSpace(os.Getenv("GNIZA_DIST_BASE"))
 	if base == "" {
 		base = "https://raw.githubusercontent.com/" + repo + "/" + DistBranch
 	}
@@ -123,12 +132,12 @@ func SourceFor(channel Channel, repo string) Source {
 }
 
 // DefaultSource reads releases from GitHub, or from wherever
-// CPREST_RELEASE_BASE says.
+// GNIZA_RELEASE_BASE says.
 func DefaultSource(repo string) Source {
 	if repo == "" {
 		repo = Repo
 	}
-	base := strings.TrimSpace(os.Getenv("CPREST_RELEASE_BASE"))
+	base := strings.TrimSpace(os.Getenv("GNIZA_RELEASE_BASE"))
 	if base == "" {
 		base = "https://github.com/" + repo + "/releases/download"
 	}
@@ -235,7 +244,7 @@ func (s Source) signedSums(ctx context.Context, version string) ([]byte, Manifes
 		// Everything after this point is a file this server runs as root,
 		// so this is the end of the road rather than a warning.
 		return nil, Manifest{}, fmt.Errorf(
-			"update: what is published %s is not signed by the cP:Restic release key", at(version))
+			"update: what is published %s is not signed by the Gniza release key", at(version))
 	}
 	manifest := manifestIn(sums)
 	if manifest.Version == "" {
@@ -276,7 +285,11 @@ func IsRelease(version string) bool {
 }
 
 // manifestIn reads what a set of checksums says about itself, which the
-// build writes as its first line: "# cprest v1.2.3" for a release, and
+// build writes as its first line. The word is "cprest" and not "gniza" for
+// the reason given at TarballName: an older agent reads this line and
+// accepts no other spelling.
+//
+// The line is "# cprest v1.2.3" for a release, and
 // "# cprest v1.2.3-18-gabc1234 2026-09-06T10:11:12Z" for a branch build,
 // where the commit time is the only thing that puts two of them in order.
 func manifestIn(sums []byte) Manifest {
@@ -371,7 +384,7 @@ func (s Source) open(ctx context.Context, version, name string) (*http.Response,
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("User-Agent", "cprest")
+	request.Header.Set("User-Agent", "gniza")
 
 	response, err := s.client().Do(request)
 	if err != nil {

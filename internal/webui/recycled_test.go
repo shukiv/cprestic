@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/node"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/node"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
 // TestARecycledNameCannotCollectTheLastHoldersRestore: a username goes

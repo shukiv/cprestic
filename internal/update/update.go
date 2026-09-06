@@ -18,7 +18,7 @@ import (
 )
 
 // Repo is where releases are published.
-const Repo = "shukiv/cprestic"
+const Repo = "shukiv/gniza"
 
 // Release is one published release, as much of it as is worth showing.
 type Release struct {
@@ -56,7 +56,7 @@ func latestFrom(ctx context.Context, client *http.Client, address string) (Relea
 	// is nowhere near the limit, and a token here would be a credential
 	// stored on every cPanel server for the sake of reading a version
 	// number that is public.
-	request.Header.Set("User-Agent", "cprest")
+	request.Header.Set("User-Agent", "gniza")
 
 	response, err := client.Do(request)
 	if err != nil {

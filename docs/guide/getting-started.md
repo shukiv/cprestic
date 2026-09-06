@@ -18,7 +18,7 @@ second machine, no database to run.
 On the cPanel server, as root:
 
 ```bash
-curl -fsSL https://github.com/shukiv/cprestic/releases/latest/download/get.sh | sh
+curl -fsSL https://github.com/shukiv/gniza/releases/latest/download/get.sh | sh
 ```
 
 One command. It fetches the newest release, checks it against the checksums
@@ -26,14 +26,14 @@ published beside it, and runs the installer inside it. To read the script
 before a root shell does, download it with its checksums first:
 
 ```bash
-curl -fsSLO https://github.com/shukiv/cprestic/releases/latest/download/get.sh
-curl -fsSLO https://github.com/shukiv/cprestic/releases/latest/download/SHA256SUMS
+curl -fsSLO https://github.com/shukiv/gniza/releases/latest/download/get.sh
+curl -fsSLO https://github.com/shukiv/gniza/releases/latest/download/SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS
 less get.sh
 sh get.sh
 ```
 
-`CPREST_VERSION=v1.2.3` before `sh` installs that release rather than the
+`GNIZA_VERSION=v1.2.3` before `sh` installs that release rather than the
 newest.
 
 The checksums are signed and `get.sh` carries the public half of the release
@@ -46,7 +46,7 @@ registers the plugin with WHM through AppConfig, confirms WHM kept the
 registration, and registers cPanel hooks for account create, modify, suspend,
 unsuspend and remove. Running it again upgrades in place.
 
-Then open WHM and look for **cP:Restic Backups** in the sidebar's **Plugins**
+Then open WHM and look for **Gniza Backups** in the sidebar's **Plugins**
 group. Not under **Manage Plugins** — that page lists cPanel's own RPM addons;
 an AppConfig plugin appears in the sidebar, and its registration under
 **Development → Apps Managed by AppConfig**.
@@ -57,6 +57,8 @@ For a change you have made, or a machine you would rather not download to.
 On a machine with Go:
 
 ```bash
+# The tarball keeps the name this project had before Gniza: a server on an
+# older release asks for that exact file, and would never find a renamed one.
 make plugin           # builds bin/cprest-plugin-amd64.tar.gz
 scp bin/cprest-plugin-amd64.tar.gz root@your-server:/root/
 ```
@@ -73,7 +75,7 @@ unpacked there will not run otherwise.
 
 ## The first ten minutes
 
-1. **Destinations → Add a destination.** Fill in where the backups go. cP:Restic
+1. **Destinations → Add a destination.** Fill in where the backups go. Gniza
    tests the connection and initialises the repository before saving anything.
 2. **Write down the recovery key.** It is shown once, on the recovery card. Without
    it those backups cannot be read — not by this program, not by the machine
@@ -86,10 +88,10 @@ unpacked there will not run otherwise.
 
 ## Keeping it current
 
-Every page says so when a newer cP:Restic has been released: the version, what
+Every page says so when a newer Gniza has been released: the version, what
 changed, and the version this server runs.
 
-**Settings → This copy of cP:Restic** installs it. The button names the
+**Settings → This copy of Gniza** installs it. The button names the
 version; the page that follows says what happens and asks for a tick, because
 this replaces the program on the server and restarts it. Then the card follows
 it through — downloading, installing, and what the installer said — and keeps
@@ -98,7 +100,7 @@ page that tells them it worked.
 
 What it does is what a hand install does: download the release, check it, run
 `install.sh`. What is different is what happens before the installer is handed
-anything. The checksums published with a release are signed with the cP:Restic
+anything. The checksums published with a release are signed with the Gniza
 release key, which is compiled into this program; a release whose signature
 does not verify, or which arrives without one, stops there, with nothing
 unpacked and nothing run. Then the tarball is checked against those signed
@@ -120,13 +122,13 @@ was built last.
 On the machine that holds the release key, publishing to it is one command:
 
 ```bash
-make release CPREST_SIGNING_KEY_FILE=~/.cprest/cprest-release.pem
+make release GNIZA_SIGNING_KEY_FILE=~/.gniza/gniza-release.pem
 ```
 
 It builds the plugin, signs the checksums with that key, and pushes the
 tarball, the checksums and the signature to the `dist` branch — written with
 git's plumbing, so the working tree is untouched and no branch is checked out.
-`CPREST_DIST_PUSH=0` stops before the push if you would rather look first.
+`GNIZA_DIST_PUSH=0` stops before the push if you would rather look first.
 
 Servers on that channel read those three files and check them exactly as they
 check a release. Nothing about the checking is relaxed; what is relaxed is
@@ -156,7 +158,7 @@ the button.
 
 ## Uninstalling
 
-**Settings → Remove cP:Restic from this server** is at the bottom of the
+**Settings → Remove Gniza from this server** is at the bottom of the
 settings page. It asks first, on a page that says the two things worth
 knowing: this removes the interface you are standing in, and it does not
 touch a single backup. What runs is the script below, started as a transient
@@ -166,14 +168,14 @@ halfway through answering you.
 In a root shell it is:
 
 ```bash
-sh /usr/local/share/cprest/uninstall.sh
+sh /usr/local/share/gniza/uninstall.sh
 ```
 
 The installer leaves that copy on the server, so this never means finding the
 package again. It stops the service and unregisters the WHM plugin, the cPanel
 hooks and the account tile, and clears restic's cache.
 
-It keeps `/etc/cprest/master.key` and `/var/lib/cprest/state.db`, so a
+It keeps `/etc/gniza/master.key` and `/var/lib/gniza/state.db`, so a
 reinstall comes back with the same destinations, schedules and history.
 Deleting the key deletes the only way to read the backups in those
 destinations; that one is left for you to do on purpose, and only once you can
@@ -185,19 +187,19 @@ Backups already written to a destination are not touched either way.
 
 | Path | What |
 |---|---|
-| `/usr/local/bin/cprest-agent` | the service |
-| `/usr/local/cpanel/whostmgr/docroot/cgi/cprest.cgi` | the WHM plugin |
-| `/etc/cprest/master.key` | the key that encrypts stored destination credentials |
-| `/var/lib/cprest/state.db` | jobs, schedules, destinations, account identities |
-| `/var/lib/cprest/staging` | where an account is rebuilt before upload |
-| `/var/run/cprest/admin/ui.sock` | the interface, root only |
-| `/var/run/cprest/account/user.sock` | the account-facing socket |
+| `/usr/local/bin/gniza-agent` | the service |
+| `/usr/local/cpanel/whostmgr/docroot/cgi/gniza.cgi` | the WHM plugin |
+| `/etc/gniza/master.key` | the key that encrypts stored destination credentials |
+| `/var/lib/gniza/state.db` | jobs, schedules, destinations, account identities |
+| `/var/lib/gniza/staging` | where an account is rebuilt before upload |
+| `/var/run/gniza/admin/ui.sock` | the interface, root only |
+| `/var/run/gniza/account/user.sock` | the account-facing socket |
 
 The interface listens on a unix socket, not a port. cPanel servers are
 multi-tenant and this interface can read every stored credential, so it is not
 reachable over the network at all: the WHM plugin proxies to it.
 
 ```bash
-systemctl status cprest
-journalctl -u cprest -f
+systemctl status gniza
+journalctl -u gniza -f
 ```

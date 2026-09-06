@@ -1,4 +1,4 @@
-# cP:Restic documentation
+# Gniza documentation
 
 cPanel/WHM backup orchestration on top of [restic](https://restic.net/).
 
@@ -25,6 +25,6 @@ Start here if you run the WHM plugin.
 
 ## The one thing to do today
 
-Copy `/etc/cprest/master.key` somewhere that is not this server. Destination
+Copy `/etc/gniza/master.key` somewhere that is not this server. Destination
 credentials are encrypted with it. Without that file, a rebuilt machine cannot
 read its own stored credentials — and cannot reach the backups it wrote.

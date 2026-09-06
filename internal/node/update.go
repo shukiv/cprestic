@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/shuki/cprest/internal/agent"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/update"
+	"github.com/shukiv/gniza/internal/agent"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/update"
 )
 
 // updateCheckEvery is a day. A release is not published often, and this

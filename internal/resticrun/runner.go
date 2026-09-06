@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/shuki/cprest/internal/destination"
+	"github.com/shukiv/gniza/internal/destination"
 )
 
 // Repository is a restic repository: a path inside a destination, plus the
@@ -334,7 +334,7 @@ func (r *Runner) pathEnv() string {
 // RESTIC_PASSWORD so it is not inherited by any grandchild process restic's
 // backends may spawn.
 func writePasswordFile(runtimeDir, password string) (path string, cleanup func(), err error) {
-	dir, err := os.MkdirTemp(runtimeDir, "cprest-run-")
+	dir, err := os.MkdirTemp(runtimeDir, "gniza-run-")
 	if err != nil {
 		return "", func() {}, fmt.Errorf("resticrun: create runtime dir: %w", err)
 	}

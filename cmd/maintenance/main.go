@@ -1,4 +1,4 @@
-// Command cprest-maintenance performs repository upkeep from trusted
+// Command gniza-maintenance performs repository upkeep from trusted
 // infrastructure.
 //
 // It exists because destinations we control run rest-server with
@@ -19,16 +19,16 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/shuki/cprest/internal/maintenance"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/store"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/maintenance"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/store"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
 func main() {
-	databaseURL := flag.String("database-url", os.Getenv("CPREST_DATABASE_URL"),
+	databaseURL := flag.String("database-url", os.Getenv("GNIZA_DATABASE_URL"),
 		"PostgreSQL connection string")
-	masterKeyPath := flag.String("master-key", os.Getenv("CPREST_MASTER_KEY"),
+	masterKeyPath := flag.String("master-key", os.Getenv("GNIZA_MASTER_KEY"),
 		"vault master key file")
 	kind := flag.String("kind", "provision",
 		"work to perform: provision, forget, check, drill")
@@ -57,7 +57,7 @@ func main() {
 		resticBinary: *resticBinary, runtimeDir: *runtimeDir, cacheDir: *cacheDir,
 		caCert: *caCert, account: *account, logLevel: *logLevel,
 	}); err != nil && !errors.Is(err, context.Canceled) {
-		fmt.Fprintf(os.Stderr, "cprest-maintenance: %v\n", err)
+		fmt.Fprintf(os.Stderr, "gniza-maintenance: %v\n", err)
 		os.Exit(1)
 	}
 }

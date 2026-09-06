@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/pkgacct"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/pkgacct"
 )
 
 // Fake builds a synthetic account tree with the same shape the real
@@ -484,7 +484,7 @@ func (f *Fake) populateHome(home, user string) error {
 
 func sqlDumpFor(name string) []byte {
 	return []byte(fmt.Sprintf(
-		"-- cprest fake dump of %s\nCREATE TABLE posts (id int, body text);\n"+
+		"-- Gniza fake dump of %s\nCREATE TABLE posts (id int, body text);\n"+
 			"INSERT INTO posts VALUES (1, 'hello');\n", name))
 }
 
@@ -508,7 +508,7 @@ func (f *Fake) StageSystem(_ context.Context, stagingDir string) (pkgacct.Payloa
 	for name, body := range map[string]string{
 		filepath.Join(root, "files", "etc", "wwwacct.conf"): "HOST fake.example.com\n",
 		filepath.Join(root, "ea4-profile.json"):             `{"os":"fake","pkgs":["ea-apache24"]}` + "\n",
-		filepath.Join(root, "manifest.txt"):                 "# cprest system backup\npaths_copied\t1\n",
+		filepath.Join(root, "manifest.txt"):                 "# Gniza system backup\npaths_copied\t1\n",
 	} {
 		if err := writeFile(name, []byte(body)); err != nil {
 			return pkgacct.Payload{}, err

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draw the cP:R mark from the bundled Fira Sans, as paths.
+"""Draw the GZ mark from the bundled Fira Sans, as paths.
 
 The other artwork here sets <text> and pins it with textLength, which is
 what you do when the mark has to survive a machine that has none of our
@@ -26,7 +26,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 FONT = ROOT / "internal/webui/fonts/fira-sans-700.woff2"
 
-TEXT = "cP:R"
+TEXT = "GZ"
 TRACKING = -0.03  # em; .cpr-brand-mark's letter-spacing
 BOX = 300
 RADIUS = 64  # 9/42 of the box, the badge's own proportion
@@ -91,7 +91,7 @@ HEAD = ('<?xml version="1.0" encoding="UTF-8"?>\n'
 def badge():
     return HEAD + (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {BOX} {BOX}"'
-        f' width="{BOX}" height="{BOX}" role="img" aria-label="cP:R">\n'
+        f' width="{BOX}" height="{BOX}" role="img" aria-label="GZ">\n'
         f'  <rect width="{BOX}" height="{BOX}" rx="{RADIUS}" fill="{ORANGE}"/>\n'
         f'  <path fill="{WHITE}" d="{path()}"/>\n'
         '</svg>\n')
@@ -114,31 +114,31 @@ def mark(colour, name):
         f'<svg xmlns="http://www.w3.org/2000/svg"'
         f' viewBox="0 0 {width:.0f} {height:.0f}"'
         f' width="{width:.0f}" height="{height:.0f}"'
-        f' role="img" aria-label="cP:R">\n'
+        f' role="img" aria-label="GZ">\n'
         f'  <path fill="{colour}" d="{" ".join(commands)}"/>\n'
         '</svg>\n')
 
 
 def main():
-    (HERE / "cpr-badge.svg").write_text(badge())
-    (HERE / "cpr-mark.svg").write_text(mark(CPANEL_ORANGE, "cpr-mark"))
-    (HERE / "cpr-mark-white.svg").write_text(mark(WHITE, "cpr-mark-white"))
+    (HERE / "badge.svg").write_text(badge())
+    (HERE / "mark.svg").write_text(mark(CPANEL_ORANGE, "mark"))
+    (HERE / "mark-white.svg").write_text(mark(WHITE, "mark-white"))
 
     png = HERE / "png"
     png.mkdir(exist_ok=True)
     for size in PNG_SIZES:
         subprocess.run([
             "rsvg-convert", "-w", str(size), "-h", str(size),
-            str(HERE / "cpr-badge.svg"),
-            "-o", str(png / f"cpr-badge-{size}.png"),
+            str(HERE / "badge.svg"),
+            "-o", str(png / f"badge-{size}.png"),
         ], check=True)
     for size in (256, 512):
         subprocess.run([
             "rsvg-convert", "-w", str(size),
-            str(HERE / "cpr-mark.svg"),
-            "-o", str(png / f"cpr-mark-{size}.png"),
+            str(HERE / "mark.svg"),
+            "-o", str(png / f"mark-{size}.png"),
         ], check=True)
-    print("wrote", HERE / "cpr-badge.svg", "and", len(PNG_SIZES) + 2, "PNGs")
+    print("wrote", HERE / "badge.svg", "and", len(PNG_SIZES) + 2, "PNGs")
 
 
 if __name__ == "__main__":

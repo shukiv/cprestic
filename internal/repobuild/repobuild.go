@@ -11,8 +11,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/shuki/cprest/internal/destination"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/destination"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
 // Sealed is a repository and its destination as they are stored: config in

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/destination"
+	"github.com/shukiv/gniza/internal/destination"
 )
 
 func completionRepo(t *testing.T) Repository {

@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/shuki/cprest/migrations"
+	"github.com/shukiv/gniza/migrations"
 )
 
 // Migrate applies every embedded migration that has not been applied yet,

@@ -20,8 +20,8 @@ func TestBuildEachType(t *testing.T) {
 			name: "sftp",
 			spec: Spec{Type: TypeSFTP, Config: map[string]string{
 				"host": "backup.example.com", "port": "2222", "user": "cpbackup",
-				"root": "/backup", "identity_file": "/etc/cprest/id",
-				"known_hosts_file": "/etc/cprest/known_hosts",
+				"root": "/backup", "identity_file": "/etc/gniza/id",
+				"known_hosts_file": "/etc/gniza/known_hosts",
 			}},
 			want: "sftp://cpbackup@backup.example.com:2222//backup/cp01",
 		},

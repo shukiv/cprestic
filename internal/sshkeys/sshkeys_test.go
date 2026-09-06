@@ -17,7 +17,7 @@ func TestGeneratedKeyIsReadableByOpenSSH(t *testing.T) {
 		t.Skip("ssh-keygen not installed; skipping")
 	}
 
-	pair, err := Generate("cprest@cp01.example.com")
+	pair, err := Generate("gniza@cp01.example.com")
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestGeneratedKeyIsReadableByOpenSSH(t *testing.T) {
 		t.Errorf("our authorized_keys line does not match OpenSSH's:\n  ours:    %s\n  openssh: %s",
 			pair.AuthorizedKey, strings.TrimSpace(string(derived)))
 	}
-	if !strings.HasSuffix(pair.AuthorizedKey, "cprest@cp01.example.com") {
+	if !strings.HasSuffix(pair.AuthorizedKey, "gniza@cp01.example.com") {
 		t.Errorf("comment missing from %q", pair.AuthorizedKey)
 	}
 
@@ -77,7 +77,7 @@ func TestGenerateIsUniquePerCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Each destination gets its own key, so revoking one on the far side
-	// does not lock cprest out of the others.
+	// does not lock Gniza out of the others.
 	if first.AuthorizedKey == second.AuthorizedKey || first.Fingerprint == second.Fingerprint {
 		t.Error("two generated keys were identical")
 	}
@@ -148,7 +148,7 @@ func TestInstallScriptToleratesUnchangeablePermissions(t *testing.T) {
 	}
 
 	home := t.TempDir()
-	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 cprest@example"
+	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 gniza@example"
 	quoted := shellQuote(key)
 	script := "set -eu\n" +
 		"umask 077\n" +
@@ -190,7 +190,7 @@ func TestInstallScriptToleratesUnchangeablePermissions(t *testing.T) {
 // built from strings an operator typed. Every one of them is quoted.
 func TestProvisionScriptQuotesWhatItWasGiven(t *testing.T) {
 	script := ProvisionScript("cpbackup; rm -rf /", "/backups' ; touch /tmp/pwned; '",
-		"ssh-ed25519 AAAA cprest@host")
+		"ssh-ed25519 AAAA gniza@host")
 
 	for _, unquoted := range []string{
 		"user=cpbackup; rm",
@@ -202,7 +202,7 @@ func TestProvisionScriptQuotesWhatItWasGiven(t *testing.T) {
 		}
 	}
 	// What it should contain: the values, quoted.
-	for _, want := range []string{`user='cpbackup; rm -rf /'`, `key='ssh-ed25519 AAAA cprest@host'`} {
+	for _, want := range []string{`user='cpbackup; rm -rf /'`, `key='ssh-ed25519 AAAA gniza@host'`} {
 		if !strings.Contains(script, want) {
 			t.Errorf("the script does not carry %s:\n%s", want, script)
 		}
@@ -212,7 +212,7 @@ func TestProvisionScriptQuotesWhatItWasGiven(t *testing.T) {
 // Running it twice must change nothing the second time: an operator who
 // retries after a typo should not end up with two half-made accounts.
 func TestProvisionScriptIsSafeToRunTwice(t *testing.T) {
-	script := ProvisionScript("cpbackup", "/backups", "ssh-ed25519 AAAA cprest@host")
+	script := ProvisionScript("cpbackup", "/backups", "ssh-ed25519 AAAA gniza@host")
 	for _, want := range []string{
 		`if ! id "$user"`,   // the user is only created when missing
 		"grep -qxF",         // the key is only appended when absent

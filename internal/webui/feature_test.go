@@ -5,7 +5,7 @@ import (
 
 	"context"
 	"errors"
-	"github.com/shuki/cprest/internal/job"
+	"github.com/shukiv/gniza/internal/job"
 	"io"
 	"log/slog"
 	"net/http"
@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 func TestFeatureResponseMustExplicitlyAllowTheAccount(t *testing.T) {
@@ -122,9 +122,9 @@ func TestPublicSocketEnforcesFeatureManagerBehindThePHPFrontend(t *testing.T) {
 func TestAccountRestoreHistoryDoesNotExposeRootDiagnostics(t *testing.T) {
 	restore := accountSafeRestore(nodestore.Restore{
 		Error:       "restic: unable to open sftp:backup-admin@internal.example:/root/archive",
-		Detail:      "/var/lib/cprest/staging/restore-studio",
-		ArchivePath: "/var/lib/cprest/staging/restore-studio/account.tar",
-		RestoredTo:  "/var/lib/cprest/staging/restore-studio/tree",
+		Detail:      "/var/lib/gniza/staging/restore-studio",
+		ArchivePath: "/var/lib/gniza/staging/restore-studio/account.tar",
+		RestoredTo:  "/var/lib/gniza/staging/restore-studio/tree",
 	})
 	if strings.Contains(restore.Error, "internal.example") || restore.Detail != "" ||
 		restore.ArchivePath != "" || restore.RestoredTo != "" {
@@ -327,11 +327,11 @@ func TestTheRecoveryPageOffersPuttingBackOnlyWhereItIsPossible(t *testing.T) {
 	}
 
 	databases := render(granular.KindDatabase, userView{
-		Root: "/var/lib/cprest/staging/stage-studio/databases",
-		Path: "/var/lib/cprest/staging/stage-studio/databases",
+		Root: "/var/lib/gniza/staging/stage-studio/databases",
+		Path: "/var/lib/gniza/staging/stage-studio/databases",
 		Entries: []browseEntry{{
 			Name: "studio_wp.sql", Item: "studio_wp",
-			Path: "/var/lib/cprest/staging/stage-studio/databases/studio_wp.sql",
+			Path: "/var/lib/gniza/staging/stage-studio/databases/studio_wp.sql",
 		}},
 	})
 	for _, want := range []string{
@@ -350,7 +350,7 @@ func TestTheRecoveryPageOffersPuttingBackOnlyWhereItIsPossible(t *testing.T) {
 		t.Error("downloading a copy is blocked by the confirmation the other button needs")
 	}
 	// Where the backup happens to be staged is root's business.
-	if strings.Contains(databases, "/var/lib/cprest") {
+	if strings.Contains(databases, "/var/lib/gniza") {
 		t.Error("the account page shows the server's staging directory")
 	}
 

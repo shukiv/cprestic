@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	cprestFeature       = "cprest"
+	gnizaFeature        = "gniza"
 	cpanelWHMAPI        = "/usr/local/cpanel/bin/whmapi1"
 	featureCacheTTL     = 30 * time.Second
 	featureCheckTimeout = 5 * time.Second
@@ -76,7 +76,7 @@ func cpanelFeatureEnabled(ctx context.Context, account string) (bool, error) {
 	checkCtx, cancel := context.WithTimeout(ctx, featureCheckTimeout)
 	defer cancel()
 	output, err := exec.CommandContext(checkCtx, cpanelWHMAPI, "--output=json",
-		"verify_user_has_feature", "user="+account, "feature="+cprestFeature).Output()
+		"verify_user_has_feature", "user="+account, "feature="+gnizaFeature).Output()
 	if err != nil {
 		return false, fmt.Errorf("check cPanel feature access for %s: %w", account, err)
 	}

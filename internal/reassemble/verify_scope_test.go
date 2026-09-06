@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/pkgacct"
-	"github.com/shuki/cprest/internal/reassemble"
+	"github.com/shukiv/gniza/internal/pkgacct"
+	"github.com/shukiv/gniza/internal/reassemble"
 )
 
 // buildTree writes the shape a rebuilt split account has: an archive, an

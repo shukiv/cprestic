@@ -19,7 +19,7 @@
     <p class="cpr-hint" style="margin-top:0">This is the only thing that can read those backups.
     The destination holds nothing but ciphertext, and the key that unlocks it lives on this
     server. If {{.Hostname}} is lost and this is not written down somewhere else, the backups it
-    made cannot be read by anyone — including cprest.</p>
+    made cannot be read by anyone — including gniza.</p>
     <div class="cpr-log" style="font-size:14px; user-select:all">{{.Password}}</div>
     <p class="cpr-hint">To read this repository from this server:</p>
     <div class="cpr-log">export RESTIC_REPOSITORY='{{.URI}}'
@@ -117,7 +117,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
             </form>
             {{end}}
             <form method="post" action="?p=destinations/delete"
-                  data-confirm="Remove this destination from cprest? The backups already stored there are left alone.">
+                  data-confirm="Remove this destination from Gniza? The backups already stored there are left alone.">
               <input type="hidden" name="csrf" value="{{$.CSRF}}">
               <input type="hidden" name="id" value="{{.ID}}">
               <button class="cpr-menu-item cpr-menu-danger">Remove</button>
@@ -180,7 +180,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
           </form>
           {{else if .PlanApprovable}}
           <form method="post" action="?p=destinations/retention/approve" class="cpr-inline"
-                data-confirm="Allow cP:Restic to delete backups from this destination from now on?">
+                data-confirm="Allow Gniza to delete backups from this destination from now on?">
             <input type="hidden" name="csrf" value="{{$.CSRF}}">
             <input type="hidden" name="repository" value="{{.Repository.ID}}">
             <button class="cpr-btn cpr-danger">Approve</button>
@@ -231,7 +231,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
         <p class="cpr-hint" style="margin-top:var(--s2)">If backups to this destination fail to
         authenticate, add this line to
         <span class="cpr-mono">{{.RemoteTarget}}:~/.ssh/authorized_keys</span> on the remote
-        server. cprest holds the matching private key; nothing else can use it.</p>
+        server. Gniza holds the matching private key; nothing else can use it.</p>
         <div class="cpr-log" id="cpr-key-{{.ID}}" style="margin-top:var(--s2)">{{.PublicKey}}</div>
         <div class="cpr-row" style="margin-top:var(--s2)">
           <button type="button" class="cpr-btn" data-copy="#cpr-key-{{.ID}}">Copy</button>
@@ -372,7 +372,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
       Without it, nothing can ever prune old backups.</small>
 
       <label for="ca_bundle">CA bundle file (optional)</label>
-      <input type="text" id="ca_bundle" name="ca_bundle" value="{{$data.Field "ca_bundle"}}" placeholder="/etc/cprest/backup-ca.pem">
+      <input type="text" id="ca_bundle" name="ca_bundle" value="{{$data.Field "ca_bundle"}}" placeholder="/etc/gniza/backup-ca.pem">
       <small class="cpr-help">Only if the backup server uses a private certificate authority.</small>
     </div>
 
@@ -400,10 +400,10 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
       <input type="password" id="password" name="password" autocomplete="new-password">
 
       <div class="cpr-banner cpr-warn" style="margin-top:var(--s4)">
-        <div class="cpr-body"><b>cprest makes its own key.</b> Give the remote password once and
+        <div class="cpr-body"><b>Gniza makes its own key.</b> Give the remote password once and
         it installs the key, checks it works and creates the folder. The password is used for
         that and never stored. Leave it empty and you get the public key to add yourself.
-        cprest also learns the server's host key on first connection, so there is no
+        Gniza also learns the server's host key on first connection, so there is no
         ssh-keygen and no known_hosts file to write.</div>
       </div>
 
@@ -412,7 +412,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
         <div class="cpr-body">
           <b>Here is the key.</b> Add this line to
           <span class="cpr-mono">~/.ssh/authorized_keys</span> of the SSH user above, on the
-          backup server, then save this destination. cprest keeps the private half; nothing
+          backup server, then save this destination. Gniza keeps the private half; nothing
           else can use it.
           <div class="cpr-log" id="cpr-prepared-key" style="margin-top:var(--s2)">{{.AuthorizedKey}}</div>
           <div class="cpr-row" style="margin-top:var(--s2)">
@@ -434,7 +434,7 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
         <label for="identity_file">Private key on this server</label>
         <input type="text" id="identity_file" name="identity_file" value="{{$data.Field "identity_file"}}"
                placeholder="/root/.ssh/id_ed25519">
-        <small class="cpr-help">Leave empty to have cprest generate one.</small>
+        <small class="cpr-help">Leave empty to have Gniza generate one.</small>
       </details>
     </div>
 

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // TestTestingADestinationCreatesTheRepository covers the state an operator

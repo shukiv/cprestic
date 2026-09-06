@@ -33,7 +33,7 @@ func PostgresDSN(t *testing.T) string {
 
 	// initdb refuses a socket directory whose path is too long for
 	// sockaddr_un, so keep the base short.
-	base, err := os.MkdirTemp("", "cprest-pg-")
+	base, err := os.MkdirTemp("", "gniza-pg-")
 	if err != nil {
 		t.Fatalf("testsupport: temp dir: %v", err)
 	}
@@ -47,7 +47,7 @@ func PostgresDSN(t *testing.T) string {
 		}
 	}
 
-	run("initdb", "-D", dataDir, "-U", "cprest", "--auth=trust", "--no-sync")
+	run("initdb", "-D", dataDir, "-U", "gniza", "--auth=trust", "--no-sync")
 	// -h '' disables TCP entirely; -k sets the unix socket directory.
 	run("pg_ctl", "-D", dataDir, "-o", fmt.Sprintf("-k %s -h ''", base),
 		"-l", filepath.Join(base, "postgres.log"), "-w", "start")
@@ -58,13 +58,13 @@ func PostgresDSN(t *testing.T) string {
 		_ = os.RemoveAll(base)
 	})
 
-	dbName := fmt.Sprintf("cprest_%d", time.Now().UnixNano())
-	createDB := exec.Command(filepath.Join(binDir, "createdb"), "-h", base, "-U", "cprest", dbName)
+	dbName := fmt.Sprintf("gniza_%d", time.Now().UnixNano())
+	createDB := exec.Command(filepath.Join(binDir, "createdb"), "-h", base, "-U", "gniza", dbName)
 	if output, err := createDB.CombinedOutput(); err != nil {
 		t.Fatalf("testsupport: createdb failed: %v\n%s", err, output)
 	}
 
-	return fmt.Sprintf("postgres://cprest@/%s?host=%s", dbName, base)
+	return fmt.Sprintf("postgres://gniza@/%s?host=%s", dbName, base)
 }
 
 // findPostgresBinDir locates initdb, preferring PATH and falling back to the

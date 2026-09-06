@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/destination"
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/reassemble"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/staging"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/destination"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/reassemble"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/staging"
 )
 
 // RunRestore brings an account, or named files from it, back from a

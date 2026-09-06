@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/reassemble"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/reassemble"
 )
 
 // restoredTree is what restoreItems leaves behind before anything is done

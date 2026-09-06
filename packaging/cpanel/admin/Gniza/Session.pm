@@ -1,4 +1,4 @@
-package Cpanel::Admin::Modules::Cprest::Session;
+package Cpanel::Admin::Modules::Gniza::Session;
 
 use strict;
 use warnings;
@@ -9,7 +9,7 @@ use IO::Socket::UNIX ();
 use Socket qw(SOCK_STREAM);
 
 use constant _actions => ('ISSUE_CAPABILITY');
-use constant ADMIN_SOCKET => '/var/run/cprest/admin/ui.sock';
+use constant ADMIN_SOCKET => '/var/run/gniza/admin/ui.sock';
 
 sub ISSUE_CAPABILITY {
     my ( $self, $method, $target ) = @_;
@@ -18,7 +18,7 @@ sub ISSUE_CAPABILITY {
     return _denied() if !defined($target) || !length($target) || length($target) > 4096;
     return _denied() if $target =~ /[\x00-\x1f\x7f]/;
 
-    $self->cpuser_has_feature_or_die('cprest');
+    $self->cpuser_has_feature_or_die('Gniza');
 
     my $account   = $self->get_caller_username();
     my $principal = $account;
@@ -62,16 +62,16 @@ sub _request_capability {
     return { status => 503, token => '' } if !$socket;
     $socket->autoflush(1);
 
-    my $request = "POST /_cprest/user-capability HTTP/1.1\r\n"
-      . "Host: cprest\r\n"
+    my $request = "POST /_gniza/user-capability HTTP/1.1\r\n"
+      . "Host: Gniza\r\n"
       . "Connection: close\r\n"
       . "Content-Length: 0\r\n"
-      . "X-Cprest-Cpanel-Account: $account\r\n"
-      . "X-Cprest-Cpanel-Principal: $principal\r\n"
-      . "X-Cprest-Cpanel-Session: $session_name\r\n"
-      . "X-Cprest-Cpanel-Token: $security_token\r\n"
-      . "X-Cprest-Request-Method: $method\r\n"
-      . "X-Cprest-Request-Target: $target\r\n\r\n";
+      . "X-Gniza-Cpanel-Account: $account\r\n"
+      . "X-Gniza-Cpanel-Principal: $principal\r\n"
+      . "X-Gniza-Cpanel-Session: $session_name\r\n"
+      . "X-Gniza-Cpanel-Token: $security_token\r\n"
+      . "X-Gniza-Request-Method: $method\r\n"
+      . "X-Gniza-Request-Target: $target\r\n\r\n";
 
     if ( !print {$socket} $request ) {
         close $socket;

@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/shuki/cprest/internal/pkgacct"
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/pkgacct"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // Layout names the subdirectories a cpmove archive keeps its parts in.
@@ -27,7 +27,7 @@ const (
 	// the databases. Checked against what /scripts/pkgacct produces on
 	// cPanel 136.
 	DatabaseUsersFile = "mysql.sql"
-	// StagedDatabaseUsersFile is what cprest names the same thing where
+	// StagedDatabaseUsersFile is what Gniza names the same thing where
 	// it dumps it, beside the databases. It is granular.DatabaseUsersFile
 	// spelt out rather than imported: granular imports this package.
 	StagedDatabaseUsersFile = "_users.sql"
@@ -347,7 +347,7 @@ func restoreSplit(ctx context.Context, restorer Restorer, req Request,
 // placeDatabaseUsers moves the grants file to the name cPanel's own
 // restore reads.
 //
-// cprest dumps the account's database users beside its databases, because
+// Gniza dumps the account's database users beside its databases, because
 // that is where they are produced. A cpmove archive keeps them somewhere
 // else: one file per database under mysql/, and the users and their
 // grants in mysql.sql at the top of the tree. restorepkg reads the
@@ -357,7 +357,7 @@ func placeDatabaseUsers(root string) error {
 	from := filepath.Join(root, DatabaseDir, StagedDatabaseUsersFile)
 	if _, err := os.Stat(from); err != nil {
 		// No users file: an account with no databases, or a backup taken
-		// before cprest dumped them.
+		// before Gniza dumped them.
 		return nil
 	}
 	to := filepath.Join(root, DatabaseUsersFile)

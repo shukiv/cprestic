@@ -9,7 +9,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/shuki/cprest/internal/store"
+	"github.com/shukiv/gniza/internal/store"
 )
 
 // Scheduler turns policy schedules into queued jobs and returns abandoned

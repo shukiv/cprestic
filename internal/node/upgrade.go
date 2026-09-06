@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/shuki/cprest/internal/agent"
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/update"
+	"github.com/shukiv/gniza/internal/agent"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/update"
 )
 
 // upgradeGivesUp is when an upgrade that has said nothing is called
@@ -28,7 +28,7 @@ const upgradeGivesUp = 30 * time.Minute
 // and interpolates nothing: it works from its own directory, so the only
 // thing that decides what it installs is where it was written.
 const installerWrapper = `#!/bin/sh
-# Written by cprest. Runs the installer of a release that has already been
+# Written by gniza. Runs the installer of a release that has already been
 # checked against the release key, and records what it said.
 cd "$(dirname "$0")" || exit 1
 exec >install.log 2>&1
@@ -49,7 +49,7 @@ func (e *Engine) upgradeDir() string {
 // done by path -- write the tarball, unpack it, write the wrapper, run the
 // wrapper -- so a directory anybody else may write to is a directory where
 // somebody else may swap what root ends up running in between two of those
-// steps. On an installed server this is /var/lib/cprest, made 0700 by root
+// steps. On an installed server this is /var/lib/gniza, made 0700 by root
 // at startup; the check is here because the cost of being wrong about that
 // is the whole machine.
 func ownedByUsAlone(dir string) error {
@@ -243,9 +243,9 @@ func (e *Engine) runUpgrade(state nodestore.UpgradeState) error {
 	// A transient unit, so the installer lives in a cgroup of its own and
 	// survives the restart it performs. A child of this process would be
 	// killed with it.
-	unit := "cprest-upgrade-" + nodestore.NewID()[:8]
+	unit := "gniza-upgrade-" + nodestore.NewID()[:8]
 	run := exec.Command("systemd-run", "--collect", "--unit="+unit,
-		"--description=cP:Restic upgrade to "+state.Version, "/bin/sh", wrapper)
+		"--description=Gniza upgrade to "+state.Version, "/bin/sh", wrapper)
 	output, err := run.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("start the installer: %w: %s", err, strings.TrimSpace(string(output)))
@@ -255,10 +255,10 @@ func (e *Engine) runUpgrade(state nodestore.UpgradeState) error {
 }
 
 // uninstaller is the copy of the uninstall script the installer leaves on
-// the server, so removing cP:Restic never means finding the package again.
-const uninstaller = "/usr/local/share/cprest/uninstall.sh"
+// the server, so removing Gniza never means finding the package again.
+const uninstaller = "/usr/local/share/gniza/uninstall.sh"
 
-// StartUninstall removes cP:Restic from this server.
+// StartUninstall removes Gniza from this server.
 //
 // It runs the same script an administrator would run in a root shell, and
 // for the same reason as an upgrade it runs outside this process: the
@@ -281,19 +281,19 @@ func (e *Engine) StartUninstall() error {
 	if busy, err := e.workInFlight(); err != nil {
 		return err
 	} else if busy != "" {
-		return fmt.Errorf("%s is being worked on now, and removing cP:Restic stops it "+
+		return fmt.Errorf("%s is being worked on now, and removing Gniza stops it "+
 			"halfway; try again when it has finished", busy)
 	}
 
-	unit := "cprest-uninstall-" + nodestore.NewID()[:8]
+	unit := "gniza-uninstall-" + nodestore.NewID()[:8]
 	run := exec.Command("systemd-run", "--collect", "--unit="+unit,
 		"--on-active=5", "--timer-property=AccuracySec=1s",
-		"--description=Remove cP:Restic", "/bin/sh", uninstaller)
+		"--description=Remove Gniza", "/bin/sh", uninstaller)
 	output, err := run.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("start the uninstaller: %w: %s", err, strings.TrimSpace(string(output)))
 	}
-	e.log.Warn("removing cP:Restic from this server", "unit", unit, "script", uninstaller)
+	e.log.Warn("removing Gniza from this server", "unit", unit, "script", uninstaller)
 	return nil
 }
 

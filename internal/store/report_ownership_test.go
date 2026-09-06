@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/store"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/store"
 )
 
 // TestOneServerCannotReportOnAnothersWork: an agent's certificate says

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/notify"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/notify"
 )
 
 // Channels lists where this server sends word of what happened.
@@ -100,7 +100,7 @@ func (e *Engine) TestChannel(ctx context.Context, id string) error {
 	}
 	message := notify.Message{
 		Event:   notify.EventRestore,
-		Subject: "cP:Restic is set up to reach you here",
+		Subject: "Gniza is set up to reach you here",
 		Body: "This is a test, sent because somebody pressed the button. " +
 			"Nothing has gone wrong.",
 		Host: e.settings.Hostname,

@@ -11,18 +11,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/reassemble"
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/reassemble"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // TestDumpAccountRecoveryPages is the account-side counterpart to
-// TestDumpPages. It is off during normal tests; CPREST_USER_DUMP turns the
+// TestDumpPages. It is off during normal tests; GNIZA_USER_DUMP turns the
 // real server-rendered fragments into local files for browser inspection.
 func TestDumpAccountRecoveryPages(t *testing.T) {
-	dir := os.Getenv("CPREST_USER_DUMP")
+	dir := os.Getenv("GNIZA_USER_DUMP")
 	if dir == "" {
-		t.Skip("set CPREST_USER_DUMP to a directory to dump account pages")
+		t.Skip("set GNIZA_USER_DUMP to a directory to dump account pages")
 	}
 	server, err := New(nil, slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	if err != nil {

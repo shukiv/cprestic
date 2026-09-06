@@ -19,8 +19,8 @@ import (
 	"context"
 	"io"
 
-	"github.com/shuki/cprest/internal/reassemble"
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/reassemble"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // Item is one thing in a backup that a person can point at.

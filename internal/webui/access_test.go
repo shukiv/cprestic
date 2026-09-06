@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/webui"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/webui"
 )
 
 // TestAnAccountCannotAskForTheThingsThePageDoesNotOffer covers a gap

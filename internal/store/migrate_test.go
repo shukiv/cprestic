@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/shuki/cprest/internal/store"
-	"github.com/shuki/cprest/internal/testsupport"
+	"github.com/shukiv/gniza/internal/store"
+	"github.com/shukiv/gniza/internal/testsupport"
 )
 
 func TestMigrateAppliesAndIsIdempotent(t *testing.T) {

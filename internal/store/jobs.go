@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/shuki/cprest/internal/job"
+	"github.com/shukiv/gniza/internal/job"
 )
 
 // ErrNoWork means no job is ready for this agent right now.

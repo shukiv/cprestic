@@ -10,9 +10,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/reassemble"
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/reassemble"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // A cpmove archive as pkgacct writes one, cut down to the members a page
@@ -50,9 +50,9 @@ const stagedGrants = "-- Database users and grants for studio\n" +
 // fakeRepo is a snapshot this package can read, with the paths a split
 // backup produces.
 var fakeParts = reassemble.Parts{
-	Metadata:  "/var/lib/cprest/staging/stage-backup-studio/metadata",
+	Metadata:  "/var/lib/gniza/staging/stage-backup-studio/metadata",
 	Homedir:   "/home/studio",
-	Databases: "/var/lib/cprest/staging/stage-backup-studio/databases",
+	Databases: "/var/lib/gniza/staging/stage-backup-studio/databases",
 }
 
 // fakeReader serves the snapshot without a restic binary.
@@ -243,7 +243,7 @@ func TestTheArchiveIsReadOncePerRestorePoint(t *testing.T) {
 	}
 }
 
-// A backup made before cprest staged the stored passwords still holds the
+// A backup made before Gniza staged the stored passwords still holds the
 // grants. The users are worth listing from a backup that cannot restore
 // them: knowing they were there is what tells somebody to look for a more
 // recent restore point.

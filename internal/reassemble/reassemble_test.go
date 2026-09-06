@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/pkgacct"
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/pkgacct"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // fakeRestorer serves a snapshot from a directory tree on disk, so
@@ -113,15 +113,15 @@ func buildSplitSnapshot(t *testing.T) (*fakeRestorer, string) {
 			ShortID: "40dc1520",
 			Tags:    []string{"account:customer1", "mode:split"},
 			Paths: []string{
-				"/var/lib/cprest/staging/stage-customer1/metadata",
+				"/var/lib/gniza/staging/stage-customer1/metadata",
 				"/home/customer1",
-				"/var/lib/cprest/staging/stage-customer1/databases",
+				"/var/lib/gniza/staging/stage-customer1/databases",
 			},
 		},
 		source: map[string]string{
-			"/var/lib/cprest/staging/stage-customer1/metadata": metadataDir,
+			"/var/lib/gniza/staging/stage-customer1/metadata": metadataDir,
 			"/home/customer1": homeDir,
-			"/var/lib/cprest/staging/stage-customer1/databases": databaseDir,
+			"/var/lib/gniza/staging/stage-customer1/databases": databaseDir,
 		},
 	}
 	return restorer, root
@@ -355,7 +355,7 @@ func contains(values []string, want string) bool {
 // A backup of the server itself has one part and none of an account's, so
 // it is recognised rather than rejected for having no metadata.
 func TestClassifyRecognisesASystemSnapshot(t *testing.T) {
-	found, err := Classify([]string{"/var/lib/cprest/staging/stage-@system/system"})
+	found, err := Classify([]string{"/var/lib/gniza/staging/stage-@system/system"})
 	if err != nil {
 		t.Fatalf("classify: %v", err)
 	}

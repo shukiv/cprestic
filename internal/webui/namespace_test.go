@@ -15,7 +15,7 @@ import (
 const classPrefix = "cpr-"
 
 // wrapperClass scopes our own stylesheet and is deliberately unprefixed.
-const wrapperClass = "cprest"
+const wrapperClass = "gniza"
 
 var (
 	classAttr   = regexp.MustCompile(`class="([^"]*)"`)

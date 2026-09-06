@@ -53,7 +53,7 @@ See [ADR 14](../adr/0014-account-termination-safety.md).
 
 ## Suspension preservation
 
-Also optional. When cPanel suspends an account, cP:Restic queues the smallest
+Also optional. When cPanel suspends an account, Gniza queues the smallest
 set of enabled full-account schedules needed to reach every destination those
 schedules promise, then returns without waiting for `pkgacct` or the network.
 Repeated suspension events add no work while that account already has a job

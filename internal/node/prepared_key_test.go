@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shukiv/gniza/internal/nodestore"
 )
 
 // TestPreparedKeyAt covers the form coming back: the key made a moment ago

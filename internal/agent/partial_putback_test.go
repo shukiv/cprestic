@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/protocol"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/protocol"
 )
 
 // A restore that writes into a live account has no transaction, and cannot

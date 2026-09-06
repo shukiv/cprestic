@@ -7,7 +7,7 @@ key that encrypts what lands there. One server can write to several.
 
 | Kind | Use it for | Needs |
 |---|---|---|
-| **Another Linux server (SFTP)** | a second box you already own | host, port, SSH user, and a key cP:Restic can generate for you |
+| **Another Linux server (SFTP)** | a second box you already own | host, port, SSH user, and a key Gniza can generate for you |
 | **Backup server (restic REST)** | a dedicated restic REST server, which can be made append-only | URL, credentials |
 | **S3 or S3-compatible** | Backblaze B2, Wasabi, MinIO, AWS | endpoint, bucket, access key, secret |
 | **Local disk or mounted NAS** | an attached disk or an already-mounted share | a path |
@@ -18,7 +18,7 @@ servers can share one bucket without colliding.
 
 ## Adding one
 
-**Destinations → Add a destination.** cP:Restic tests the connection, then
+**Destinations → Add a destination.** Gniza tests the connection, then
 initialises the repository, before the destination is saved. A destination that
 appears in the list is one that answered.
 
@@ -28,11 +28,11 @@ noise.
 
 ## The SSH key for another Linux server
 
-cP:Restic makes its own key, one per destination, so revoking one does not
+Gniza makes its own key, one per destination, so revoking one does not
 lock it out of the others. There are two ways round:
 
 - **You have the remote password.** Type it into *Remote password* once.
-  cP:Restic installs the public key on that server, checks that logging in
+  Gniza installs the public key on that server, checks that logging in
   with it works, creates the folder, and forgets the password. It is never
   stored.
 - **You do not, or somebody else administers that server.** Press **Make the
@@ -68,7 +68,7 @@ holds, remove it — is under the row menu.
 
 ## Credentials
 
-Stored encrypted with the key in `/etc/cprest/master.key`. **Back that file up
+Stored encrypted with the key in `/etc/gniza/master.key`. **Back that file up
 somewhere other than this server.** Without it the stored credentials cannot be
 read, which on a rebuilt machine means re-entering every destination by hand —
 and re-entering a recovery key you may not have kept.

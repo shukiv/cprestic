@@ -12,9 +12,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/shuki/cprest/internal/certs"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/store"
+	"github.com/shukiv/gniza/internal/certs"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/store"
 )
 
 // API serves the agent-facing endpoints.
@@ -73,7 +73,7 @@ func ServerTLSConfig(serverCert tls.Certificate, clientCAs *x509.CertPool) *tls.
 
 type contextKey string
 
-const serverContextKey contextKey = "cprest.server"
+const serverContextKey contextKey = "gniza.server"
 
 // authenticated resolves the client certificate to a registered server.
 func (a *API) authenticated(next func(http.ResponseWriter, *http.Request, store.Server)) http.Handler {

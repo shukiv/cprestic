@@ -13,6 +13,9 @@ import (
 
 // TopDir is the one directory a release tarball may contain, and where
 // install.sh is found afterwards.
+// It keeps the name from before the rename to Gniza, for the reason given
+// at update.TarballName: an agent from an older release looks for exactly
+// this directory in the tarball it downloaded.
 const TopDir = "cprest-plugin"
 
 // What a release tarball may hold. It is a plugin of a dozen files and a

@@ -1,20 +1,20 @@
 # Brand assets
 
 The mark is **cP:R** — cPanel's two letters, then what does the work. Full
-name in prose is **cP:Restic**; `cprest` stays the name of the binaries, the
+name in prose is **Gniza**; `gniza` stays the name of the binaries, the
 paths and the Go module.
 
 | File | What it is |
 |---|---|
-| `cpr-badge.svg` | the badge: white letters on the orange rounded square, 300×300 |
-| `cpr-mark.svg` | the letters alone, cPanel orange, transparent, trimmed to the ink |
-| `cpr-mark-white.svg` | the same in white, for a dark or coloured ground |
-| `png/cpr-badge-{16,32,48,64,128,256,512}.png` | the badge, rasterised |
-| `png/cpr-mark-{256,512}.png` | the letters, rasterised, transparent |
-| `cprestic-logo.svg` | the wordmark, *cP:Restic* in full |
+| `badge.svg` | the badge: white letters on the orange rounded square, 300×300 |
+| `mark.svg` | the letters alone, cPanel orange, transparent, trimmed to the ink |
+| `mark-white.svg` | the same in white, for a dark or coloured ground |
+| `png/badge-{16,32,48,64,128,256,512}.png` | the badge, rasterised |
+| `png/mark-{256,512}.png` | the letters, rasterised, transparent |
+| `gniza-logo.svg` | the wordmark, *Gniza* in full |
 
-`cpr-badge.svg` is the plugin's icon: WHM draws it in the sidebar from
-`addon_plugins/cprest.svg`, and cPanel draws the account tile from the 48px
+`badge.svg` is the plugin's icon: WHM draws it in the sidebar from
+`addon_plugins/gniza.svg`, and cPanel draws the account tile from the 48px
 PNG, because cPanel's SVG installer rewrites geometry attributes in custom
 artwork.
 
@@ -28,7 +28,7 @@ artwork.
 
 ## Why the letters are paths
 
-`cprestic-logo.svg` sets `<text>` and pins it with `textLength`, which is what
+`gniza-logo.svg` sets `<text>` and pins it with `textLength`, which is what
 you do when the artwork has to hold its shape on a machine that has none of
 your fonts. It holds; it is not identical — the fallback face still decides
 the letterforms.

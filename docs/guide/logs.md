@@ -1,13 +1,13 @@
 # Logs
 
-Everything cP:Restic has done on this server, split by the kind of work.
+Everything Gniza has done on this server, split by the kind of work.
 
 | Tab | What is in it |
 |---|---|
 | **Backups** | account backup runs: what was stored, what was new, how long it took |
 | **System backups** | the server's own settings — EasyApache, packages, tweak settings |
 | **Restores** | restores and rehearsals, with the archive path or the error |
-| **cPanel events** | what cPanel told cP:Restic as accounts were created, renamed, suspended or removed |
+| **cPanel events** | what cPanel told Gniza as accounts were created, renamed, suspended or removed |
 
 ## While something is running
 
@@ -34,7 +34,7 @@ detail says which.
 
 ## cPanel events
 
-A removal marked **Blocked** is cP:Restic refusing to let cPanel delete an
+A removal marked **Blocked** is Gniza refusing to let cPanel delete an
 account it has no complete copy of — [termination safety](accounts.md#termination-safety)
 doing its job. **Allowed** with a note means the copies were there.
 

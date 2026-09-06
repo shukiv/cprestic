@@ -3,7 +3,7 @@ package nodestore
 import (
 	"time"
 
-	"github.com/shuki/cprest/internal/job"
+	"github.com/shukiv/gniza/internal/job"
 )
 
 // Destination is a storage endpoint. Config holds non-secret settings;
@@ -479,7 +479,7 @@ type Settings struct {
 	ResticBinary           string     `json:"restic_binary"`
 	ResticCache            string     `json:"restic_cache"`
 	ResticCACert           string     `json:"restic_cacert,omitempty"`
-	// ConfigDir holds the SSH keys and known_hosts files cprest generates
+	// ConfigDir holds the SSH keys and known_hosts files Gniza generates
 	// for SFTP destinations.
 	ConfigDir string `json:"config_dir"`
 	Hostname  string `json:"hostname"`
@@ -511,7 +511,7 @@ type Settings struct {
 	// default; a negative number keeps them until somebody says otherwise.
 	DeletedAccountDays int `json:"deleted_account_days,omitempty"`
 	// BugEmail is retained for settings-file compatibility only. Reports now
-	// go to the fixed cprestic intake, never to the old email destination.
+	// go to the fixed bug tracker intake, never to the old email destination.
 	BugEmail string `json:"bug_email,omitempty"`
 	// SendmailPath is retained for compatibility; bug reporting no longer
 	// invokes sendmail. Notification channel settings are unaffected.

@@ -1,11 +1,11 @@
 #!/usr/local/cpanel/3rdparty/bin/perl
-#WHMADDON:cprest:cP:Restic Backups
+#WHMADDON:Gniza:Gniza Backups
 #ACLS:all
 #
-# The cprest WHM plugin.
+# The Gniza WHM plugin.
 #
 # It renders nothing itself. WHM's own header and footer go around a body
-# fragment fetched from the cprest service, which listens on a unix socket
+# fragment fetched from the Gniza service, which listens on a unix socket
 # rather than a port: cPanel servers are multi-tenant, the untrusted users
 # are already on the box, and this interface can read every stored
 # credential.
@@ -22,7 +22,7 @@ use Whostmgr::ACLS   ();
 use Whostmgr::HTMLInterface ();
 
 # A compile-time constant, so nothing writable can redirect the plugin.
-my $SOCKET = '/var/run/cprest/admin/ui.sock';
+my $SOCKET = '/var/run/gniza/admin/ui.sock';
 my $TIMEOUT = 300;
 my $MAX_BODY = 1024 * 1024;
 
@@ -31,11 +31,11 @@ run() unless caller();
 sub run {
     Whostmgr::ACLS::init_acls();
 
-    # cprest can read and delete every backup on this server, so it is
+    # Gniza can read and delete every backup on this server, so it is
     # root's tool only. The AppConfig registration also restricts it, but
     # this is the check enforced here, on every request.
     if ( !Whostmgr::ACLS::hasroot() ) {
-        deny('cprest is available to the root WHM account only.');
+        deny('Gniza is available to the root WHM account only.');
         return;
     }
 
@@ -56,8 +56,8 @@ sub run {
     my ( $status, $headers, $body, $socket ) = request();
 
     if ( !defined $status ) {
-        chrome( 'The cprest service is not running on this server. '
-              . 'Start it with: <code>systemctl start cprest</code>' );
+        chrome( 'The Gniza service is not running on this server. '
+              . 'Start it with: <code>systemctl start gniza</code>' );
         return;
     }
 
@@ -113,7 +113,7 @@ sub request {
     }
 
     my $request = "$method $path HTTP/1.0\r\n"
-      . "Host: cprest\r\n"
+      . "Host: Gniza\r\n"
       . "Connection: close\r\n";
     if ( $method eq 'POST' ) {
         $request .= "Content-Type: " . ( $ENV{'CONTENT_TYPE'} || 'application/x-www-form-urlencoded' ) . "\r\n";
@@ -165,7 +165,7 @@ sub chrome {
     # No copy of a page that shows a repository password or a private key
     # should outlive the session that was allowed to see it.
     print "Content-type: text/html\r\nCache-Control: no-store, max-age=0\r\nPragma: no-cache\r\n\r\n";
-    Whostmgr::HTMLInterface::defheader( 'cP:Restic Backups', '', '/cgi/cprest.cgi' );
+    Whostmgr::HTMLInterface::defheader( 'Gniza Backups', '', '/cgi/gniza.cgi' );
     print $fragment;
     Whostmgr::HTMLInterface::deffooter();
 }
@@ -173,6 +173,6 @@ sub chrome {
 sub deny {
     my ($message) = @_;
     print "Content-type: text/html\r\nStatus: 403 Forbidden\r\nCache-Control: no-store, max-age=0\r\n\r\n";
-    print '<div style="font:14px system-ui,sans-serif;padding:2rem"><h1>cprest backups</h1><p>'
+    print '<div style="font:14px system-ui,sans-serif;padding:2rem"><h1>Gniza backups</h1><p>'
       . $message . '</p></div>';
 }

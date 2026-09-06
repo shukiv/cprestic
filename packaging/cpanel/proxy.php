@@ -1,8 +1,8 @@
 <?php
 /**
- * cP:Restic — the account-facing plugin.
+ * Gniza — the account-facing plugin.
  *
- * It renders nothing itself. Every request is passed to the cP:Restic
+ * It renders nothing itself. Every request is passed to the Gniza
  * service over a unix socket, and the answer is passed back.
  *
  * There is no account parameter anywhere in here on purpose. cPanel runs
@@ -12,8 +12,8 @@
  * they are.
  */
 
-const CPREST_SOCKET = '/var/run/cprest/account/user.sock';
-const CPREST_MAX_BODY = 1048576;
+const GNIZA_SOCKET = '/var/run/gniza/account/user.sock';
+const GNIZA_MAX_BODY = 1048576;
 
 require_once '/usr/local/cpanel/php/cpanel.php';
 
@@ -21,7 +21,7 @@ require_once '/usr/local/cpanel/php/cpanel.php';
  * Keep one LiveAPI connection for the page. cPanel explicitly requires a
  * .live.php application to instantiate this object only once.
  */
-function cprest_cpanel(): CPANEL {
+function gniza_cpanel(): CPANEL {
     static $cpanel = null;
     if ($cpanel === null) {
         $cpanel = new CPANEL();
@@ -29,15 +29,15 @@ function cprest_cpanel(): CPANEL {
     return $cpanel;
 }
 
-function cprest_feature_enabled(): bool {
+function gniza_feature_enabled(): bool {
     static $enabled = null;
     if ($enabled === null) {
-        $enabled = (bool) cprest_cpanel()->cpanelfeature('cprest');
+        $enabled = (bool) gniza_cpanel()->cpanelfeature('Gniza');
     }
     return $enabled;
 }
 
-function cprest_write_all($socket, string $request): bool {
+function gniza_write_all($socket, string $request): bool {
     $written = 0;
     $length = strlen($request);
     while ($written < $length) {
@@ -56,7 +56,7 @@ function cprest_write_all($socket, string $request): bool {
  * deliberately withholds browser cookies from LivePHP, so the exchange goes
  * through the installed UAPI/AdminBin bridge rather than reading $_COOKIE.
  */
-function cprest_capability(string $method, string $target): array {
+function gniza_capability(string $method, string $target): array {
     if (strlen($target) === 0 || strlen($target) > 4096 ||
         preg_match('/[\x00-\x1F\x7F]/', $target) ||
         !in_array($method, ['GET', 'POST'], true)) {
@@ -64,7 +64,7 @@ function cprest_capability(string $method, string $target): array {
     }
 
     try {
-        $response = cprest_cpanel()->uapi('Cprest', 'issue_capability', [
+        $response = gniza_cpanel()->uapi('Gniza', 'issue_capability', [
             'method' => $method,
             'target' => $target,
         ]);
@@ -83,14 +83,14 @@ function cprest_capability(string $method, string $target): array {
     return ['status' => 200, 'token' => $token];
 }
 
-function cprest_page(string $path): void {
+function gniza_page(string $path): void {
     // Feature Manager must be an authorization boundary, not just a hidden
     // tile. Without this check an account denied the feature can type the
     // .live.php URL directly and still ask the root service for restores.
-    if (!cprest_feature_enabled()) {
+    if (!gniza_feature_enabled()) {
         http_response_code(403);
         header('Cache-Control: no-store, max-age=0');
-        echo '<p>cP:Restic is not enabled for this account.</p>';
+        echo '<p>Gniza is not enabled for this account.</p>';
         return;
     }
 
@@ -98,15 +98,15 @@ function cprest_page(string $path): void {
     $target = $path . ($query === '' ? '' : '?' . $query);
     $method = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' ? 'POST' : 'GET';
 
-    $capability = cprest_capability($method, $target);
+    $capability = gniza_capability($method, $target);
     if ($capability['status'] !== 200) {
         $status = $capability['status'] === 503 ? 503 : 403;
         http_response_code($status);
         header('Cache-Control: no-store, max-age=0');
         if ($status === 503) {
-            echo '<p>cP:Restic could not verify your cPanel session. Ask your host to check the service.</p>';
+            echo '<p>Gniza could not verify your cPanel session. Ask your host to check the service.</p>';
         } else {
-            echo '<p>Open cP:Restic from a current cPanel session as the account owner or an Administrator team user.</p>';
+            echo '<p>Open Gniza from a current cPanel session as the account owner or an Administrator team user.</p>';
         }
         return;
     }
@@ -114,7 +114,7 @@ function cprest_page(string $path): void {
     $body = '';
     if ($method === 'POST') {
         $declared = $_SERVER['CONTENT_LENGTH'] ?? '0';
-        if (!is_string($declared) || !ctype_digit($declared) || (int) $declared > CPREST_MAX_BODY) {
+        if (!is_string($declared) || !ctype_digit($declared) || (int) $declared > GNIZA_MAX_BODY) {
             http_response_code(413);
             header('Cache-Control: no-store, max-age=0');
             echo '<p>The submitted form is too large.</p>';
@@ -122,7 +122,7 @@ function cprest_page(string $path): void {
         }
         $body = file_get_contents('php://input');
         if ($body === false) { $body = ''; }
-        if (strlen($body) > CPREST_MAX_BODY) {
+        if (strlen($body) > GNIZA_MAX_BODY) {
             http_response_code(413);
             header('Cache-Control: no-store, max-age=0');
             echo '<p>The submitted form is too large.</p>';
@@ -130,28 +130,28 @@ function cprest_page(string $path): void {
         }
     }
 
-    $socket = @stream_socket_client('unix://' . CPREST_SOCKET, $errno, $errstr, 15);
+    $socket = @stream_socket_client('unix://' . GNIZA_SOCKET, $errno, $errstr, 15);
     if ($socket === false) {
         http_response_code(503);
-        echo '<p>cP:Restic is not running on this server. Ask your host to start it.</p>';
+        echo '<p>Gniza is not running on this server. Ask your host to start it.</p>';
         return;
     }
     stream_set_timeout($socket, 300);
 
     $request = $method . ' ' . $target . " HTTP/1.1\r\n"
-        . "Host: cprest\r\n"
+        . "Host: Gniza\r\n"
         . "Connection: close\r\n"
-        . "X-Cprest-Capability: " . $capability['token'] . "\r\n";
+        . "X-Gniza-Capability: " . $capability['token'] . "\r\n";
     if ($method === 'POST') {
         $request .= "Content-Type: application/x-www-form-urlencoded\r\n"
             . 'Content-Length: ' . strlen($body) . "\r\n";
     }
     $request .= "\r\n" . $body;
 
-    if (!cprest_write_all($socket, $request)) {
+    if (!gniza_write_all($socket, $request)) {
         fclose($socket);
         http_response_code(502);
-        echo '<p>cP:Restic could not receive this request.</p>';
+        echo '<p>Gniza could not receive this request.</p>';
         return;
     }
 
@@ -168,7 +168,7 @@ function cprest_page(string $path): void {
     if ($head === []) {
         fclose($socket);
         http_response_code(502);
-        echo '<p>cP:Restic answered something this page could not read.</p>';
+        echo '<p>Gniza answered something this page could not read.</p>';
         return;
     }
 
@@ -202,7 +202,7 @@ function cprest_page(string $path): void {
     // its own framing to the browser, so the framing is read here and only
     // the body is echoed.
     if ($chunked) {
-        cprest_pipe_chunked($socket);
+        gniza_pipe_chunked($socket);
     } else {
         while (!feof($socket)) {
             $chunk = fread($socket, 65536);
@@ -221,7 +221,7 @@ function cprest_page(string $path): void {
  * at a time, then that chunk's bytes straight out. A truncated answer ends
  * the loop rather than looping on a socket that will never fill.
  */
-function cprest_pipe_chunked($socket): void {
+function gniza_pipe_chunked($socket): void {
     while (true) {
         $header = fgets($socket);
         if ($header === false) { return; }

@@ -6,11 +6,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/pkgacct"
-	"github.com/shuki/cprest/internal/reassemble"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/staging"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/pkgacct"
+	"github.com/shukiv/gniza/internal/reassemble"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/staging"
 )
 
 // DrillRequest asks for a restore rehearsal.
@@ -82,7 +82,7 @@ func (r *Runner) Drill(ctx context.Context, req DrillRequest) (DrillResult, erro
 
 		workDir := req.WorkDir
 		if workDir == "" {
-			workDir, err = os.MkdirTemp("", "cprest-drill-")
+			workDir, err = os.MkdirTemp("", "gniza-drill-")
 			if err != nil {
 				return "", fmt.Errorf("maintenance: create drill scratch: %w", err)
 			}

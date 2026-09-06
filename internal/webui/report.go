@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/agent"
-	"github.com/shuki/cprest/internal/bugreport"
-	"github.com/shuki/cprest/internal/job"
+	"github.com/shukiv/gniza/internal/agent"
+	"github.com/shukiv/gniza/internal/bugreport"
+	"github.com/shukiv/gniza/internal/job"
 )
 
 // gatherReport collects what a maintainer needs to act on a report.
@@ -50,7 +50,7 @@ func (s *Server) gatherReport(ctx context.Context, subject, body string) bugrepo
 
 func (s *Server) reportEnvironment(ctx context.Context) string {
 	var out strings.Builder
-	fmt.Fprintf(&out, "cprest       %s\n", agent.Version)
+	fmt.Fprintf(&out, "gniza       %s\n", agent.Version)
 	fmt.Fprintf(&out, "go           %s (%s/%s)\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	if version, err := os.ReadFile("/usr/local/cpanel/version"); err == nil {
 		fmt.Fprintf(&out, "cpanel       %s\n", strings.TrimSpace(string(version)))
@@ -163,7 +163,7 @@ func (s *Server) reportSettings() string {
 func (s *Server) reportLog(ctx context.Context) string {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "journalctl", "-u", "cprest",
+	out, err := exec.CommandContext(ctx, "journalctl", "-u", "gniza",
 		"-n", "200", "--no-pager", "--output", "short-iso").Output()
 	if err != nil {
 		return "the service log could not be read: " + err.Error()
@@ -266,7 +266,7 @@ func (s *Server) handleSendReport(w http.ResponseWriter, r *http.Request) {
 	// A file, for a server with no intake key or an operator who would rather
 	// send it themselves. It is the whole report, the same text.
 	if r.PostFormValue("download") == "1" {
-		name := fmt.Sprintf("cprest-report-%s.md", time.Now().UTC().Format("20060102-1504"))
+		name := fmt.Sprintf("gniza-report-%s.md", time.Now().UTC().Format("20060102-1504"))
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 		w.Header().Set("X-Content-Type-Options", "nosniff")

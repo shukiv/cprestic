@@ -1,16 +1,16 @@
 [
   {
-    "icon": "cprest.png",
+    "icon": "gniza.png",
     "group_id": "files",
     "order": 1,
-    "name": "cP:Restic",
+    "name": "Gniza",
     "type": "link",
-    "id": "cprest",
-    "uri": "cprest/index.live.php",
+    "id": "gniza",
+    "uri": "gniza/index.live.php",
     "target": "_self",
     "featuremanager": 1,
-    "feature": "cprest",
-    "description": "Restore files and databases from a cP:Restic backup.",
-    "key": "cprest"
+    "feature": "gniza",
+    "description": "Restore files and databases from a Gniza backup.",
+    "key": "gniza"
   }
 ]

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/destination"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/destination"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // AttachRequest points a fresh server at backups that already exist.

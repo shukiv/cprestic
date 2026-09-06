@@ -8,11 +8,11 @@ import (
 
 // TestDumpPages is a development aid: it writes every page as WHM would
 // receive it, so the rendered result can be checked against WHM's own
-// stylesheets outside this process. Off unless CPREST_DUMP names a directory.
+// stylesheets outside this process. Off unless GNIZA_DUMP names a directory.
 func TestDumpPages(t *testing.T) {
-	dir := os.Getenv("CPREST_DUMP")
+	dir := os.Getenv("GNIZA_DUMP")
 	if dir == "" {
-		t.Skip("set CPREST_DUMP to a directory to dump rendered pages")
+		t.Skip("set GNIZA_DUMP to a directory to dump rendered pages")
 	}
 	client, _, _ := newUI(t)
 	for _, path := range []string{"/", "/destinations", "/schedule", "/accounts", "/restore", "/jobs", "/settings"} {

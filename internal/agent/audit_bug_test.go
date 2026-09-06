@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/pkgacct"
-	"github.com/shuki/cprest/internal/reassemble"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/pkgacct"
+	"github.com/shukiv/gniza/internal/reassemble"
 )
 
 // TestARestoreThatDidNotPutTheDatabasesBackIsNotASuccess covers what

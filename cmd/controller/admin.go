@@ -9,10 +9,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/shuki/cprest/internal/certs"
-	"github.com/shuki/cprest/internal/repobuild"
-	"github.com/shuki/cprest/internal/store"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/certs"
+	"github.com/shukiv/gniza/internal/repobuild"
+	"github.com/shukiv/gniza/internal/store"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
 // adminFlags adds the connection flags every administrative command needs.
@@ -23,9 +23,9 @@ type adminFlags struct {
 
 func addAdminFlags(flags *flag.FlagSet) adminFlags {
 	return adminFlags{
-		databaseURL: flags.String("database-url", os.Getenv("CPREST_DATABASE_URL"),
+		databaseURL: flags.String("database-url", os.Getenv("GNIZA_DATABASE_URL"),
 			"PostgreSQL connection string"),
-		masterKeyPath: flags.String("master-key", os.Getenv("CPREST_MASTER_KEY"),
+		masterKeyPath: flags.String("master-key", os.Getenv("GNIZA_MASTER_KEY"),
 			"vault master key file"),
 	}
 }
@@ -230,7 +230,7 @@ func runAddRepository(ctx context.Context, args []string) error {
 		fmt.Printf("chunker parameters will be copied from repository %s\n",
 			repo.ChunkerSourceRepoID)
 	}
-	fmt.Println("run cprest-maintenance -kind provision to create it on the destination")
+	fmt.Println("run gniza-maintenance -kind provision to create it on the destination")
 	return nil
 }
 

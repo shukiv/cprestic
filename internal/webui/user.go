@@ -15,12 +15,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/inventory"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/reassemble"
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/inventory"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/reassemble"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // accountKey carries the account a request belongs to, taken from the
@@ -205,12 +205,12 @@ func (s *Server) userPage(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		account := accountOf(r)
 		if account == "" {
-			http.Error(w, "cP:Restic could not tell which account this is. "+
+			http.Error(w, "Gniza could not tell which account this is. "+
 				"Open it from inside cPanel.", http.StatusForbidden)
 			return
 		}
 		if !s.userBusy.enter(account) {
-			http.Error(w, "cP:Restic is already working on a request for this account. "+
+			http.Error(w, "Gniza is already working on a request for this account. "+
 				"Wait for it to finish.", http.StatusTooManyRequests)
 			return
 		}
@@ -218,12 +218,12 @@ func (s *Server) userPage(next http.HandlerFunc) http.HandlerFunc {
 		allowed, err := s.userFeatures.allowed(r.Context(), account)
 		if err != nil {
 			s.log.Error("account feature check failed", "account", account, "error", err)
-			http.Error(w, "cP:Restic could not verify that this feature is enabled. "+
+			http.Error(w, "Gniza could not verify that this feature is enabled. "+
 				"Ask your host to check cPanel Feature Manager.", http.StatusServiceUnavailable)
 			return
 		}
 		if !allowed {
-			http.Error(w, "cP:Restic is not enabled for this account.", http.StatusForbidden)
+			http.Error(w, "Gniza is not enabled for this account.", http.StatusForbidden)
 			return
 		}
 		next(w, r)

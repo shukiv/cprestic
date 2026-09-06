@@ -9,8 +9,8 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/nodestore"
 )
 
 // RemovalSafety is the fast, local answer returned to cPanel's blocking

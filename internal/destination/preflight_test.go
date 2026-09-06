@@ -151,8 +151,8 @@ func TestS3PreflightRejectsPlaintextEndpoint(t *testing.T) {
 func TestSFTPOptionsPinHostKeyAndIdentity(t *testing.T) {
 	dest := &SFTP{
 		Host: "backup.example.com", User: "cpbackup", Root: "/backup",
-		IdentityFile:   "/etc/cprest/id_ed25519",
-		KnownHostsFile: "/etc/cprest/known_hosts",
+		IdentityFile:   "/etc/gniza/id_ed25519",
+		KnownHostsFile: "/etc/gniza/known_hosts",
 	}
 	options, err := dest.Options()
 	if err != nil {
@@ -160,8 +160,8 @@ func TestSFTPOptionsPinHostKeyAndIdentity(t *testing.T) {
 	}
 	args := options["sftp.args"]
 	for _, want := range []string{
-		"-i /etc/cprest/id_ed25519",
-		"UserKnownHostsFile=/etc/cprest/known_hosts",
+		"-i /etc/gniza/id_ed25519",
+		"UserKnownHostsFile=/etc/gniza/known_hosts",
 		"StrictHostKeyChecking=yes",
 		// An unattended agent must never be able to sit at a prompt.
 		"BatchMode=yes",
@@ -181,8 +181,8 @@ func TestSFTPOptionsPinHostKeyAndIdentity(t *testing.T) {
 func TestSFTPRejectsPathsShellSplittingWouldMangle(t *testing.T) {
 	dest := &SFTP{
 		Host: "h", User: "u", Root: "/b",
-		IdentityFile:   "/etc/cprest/my key",
-		KnownHostsFile: "/etc/cprest/known_hosts",
+		IdentityFile:   "/etc/gniza/my key",
+		KnownHostsFile: "/etc/gniza/known_hosts",
 	}
 	if _, err := dest.Options(); err == nil {
 		t.Error("an identity path containing a space should be rejected")
@@ -275,7 +275,7 @@ func TestAppendOnlyIsCheckedRatherThanBelieved(t *testing.T) {
 		{"a server that does not", accepting, false},
 	} {
 		dest := &REST{
-			BaseURL: probe.server.URL, Username: "cprest", Password: "x",
+			BaseURL: probe.server.URL, Username: "gniza", Password: "x",
 			AppendOnly: true, HTTPClient: probe.server.Client(),
 		}
 		base, err := url.Parse(probe.server.URL)

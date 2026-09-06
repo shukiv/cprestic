@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/nodestore"
 )
 
 func newStore(t *testing.T) *nodestore.Store {
@@ -27,7 +27,7 @@ func TestDefaultSettingsMatchFleetMode(t *testing.T) {
 	// path, so a standalone server that later joins a fleet must have been
 	// using the fleet default all along.
 	settings := nodestore.DefaultSettings()
-	if settings.StagingRoot != "/var/lib/cprest/staging" {
+	if settings.StagingRoot != "/var/lib/gniza/staging" {
 		t.Errorf("staging root = %q, does not match fleet mode", settings.StagingRoot)
 	}
 	if settings.MaxConcurrent != 1 {

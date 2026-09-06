@@ -9,7 +9,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/shuki/cprest/internal/granular"
+	"github.com/shukiv/gniza/internal/granular"
 )
 
 // confirmation is the page that stands between a button and something

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/hookspool"
+	"github.com/shukiv/gniza/internal/hookspool"
 )
 
 // TestAServiceFailureDoesNotLoseTheAccountBoundary runs the hook binary
@@ -41,7 +41,7 @@ func TestAServiceFailureDoesNotLoseTheAccountBoundary(t *testing.T) {
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { _ = server.Close() })
 
-	binary := filepath.Join(root, "cprest-agent")
+	binary := filepath.Join(root, "gniza-agent")
 	build := exec.Command("go", "build", "-o", binary, ".")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build hook binary: %v\n%s", err, output)

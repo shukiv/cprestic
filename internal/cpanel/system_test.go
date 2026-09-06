@@ -40,7 +40,7 @@ func TestTheSystemManifestCarriesWhatCannotBeRegenerated(t *testing.T) {
 	}
 	var mentionsTheKey bool
 	for _, said := range SystemNotCarried {
-		if strings.Contains(said, "/etc/cprest") {
+		if strings.Contains(said, "/etc/gniza") {
 			mentionsTheKey = true
 		}
 	}

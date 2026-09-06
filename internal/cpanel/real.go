@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/pkgacct"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/pkgacct"
 )
 
 // Real drives the cPanel tooling installed on the host.
@@ -71,7 +71,7 @@ type Real struct {
 	// PATH.
 	Crontab string
 	// ReplacedDir is where a copy of what a restore wrote over is kept.
-	// Empty means the standard location under /var/lib/cprest.
+	// Empty means the standard location under /var/lib/gniza.
 	ReplacedDir string
 }
 

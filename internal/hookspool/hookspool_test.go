@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/hookspool"
+	"github.com/shukiv/gniza/internal/hookspool"
 )
 
 // The order matters more than anything else here: a remove and a create

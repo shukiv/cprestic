@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/node"
+	"github.com/shukiv/gniza/internal/node"
 )
 
 // TestAnUnconfirmedHostIsToldAboutRatherThanTrusted covers what "trust on

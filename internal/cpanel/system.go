@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/shuki/cprest/internal/pkgacct"
+	"github.com/shukiv/gniza/internal/pkgacct"
 )
 
 // SystemAccount is the name a server's own configuration is backed up
@@ -98,7 +98,7 @@ var SystemNotCarried = []string{
 	"cPanel's own installed files. A replacement server installs cPanel first; " +
 		"this restores what was configured on top of it.",
 	"Third-party software installed outside cPanel, and anything under /usr or /opt.",
-	"cprest's own configuration in /etc/cprest, including the key that decrypts " +
+	"gniza's own configuration in /etc/gniza, including the key that decrypts " +
 		"these backups. A backup that contained the key to itself would protect nothing.",
 }
 
@@ -173,7 +173,7 @@ func (r *Real) writeEasyApacheProfile(ctx context.Context, root string) error {
 // a restore on a different machine can be judged rather than guessed at.
 func (r *Real) writeSystemManifest(ctx context.Context, root string, copied int) error {
 	var manifest strings.Builder
-	manifest.WriteString("# cprest system backup\n")
+	manifest.WriteString("# Gniza system backup\n")
 	fmt.Fprintf(&manifest, "paths_copied\t%d\n", copied)
 
 	if version, err := os.ReadFile("/usr/local/cpanel/version"); err == nil {

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/shuki/cprest/internal/destination"
+	"github.com/shukiv/gniza/internal/destination"
 )
 
 // A local destination reports the filesystem holding it. The numbers are
@@ -110,8 +110,8 @@ func TestRemoteDFIsReadFromTheEndOfTheRow(t *testing.T) {
 // host has to be refused as well.
 func TestTheRemoteProbeCannotBeTalkedIntoRunningSomethingElse(t *testing.T) {
 	sftp := &destination.SFTP{
-		Host: "backup.example", User: "cprest", Root: "/srv/restic",
-		IdentityFile: "/etc/cprest/id_ed25519", KnownHostsFile: "/etc/cprest/known_hosts",
+		Host: "backup.example", User: "gniza", Root: "/srv/restic",
+		IdentityFile: "/etc/gniza/id_ed25519", KnownHostsFile: "/etc/gniza/known_hosts",
 	}
 	args := destination.DFArgsForTest(sftp)
 
@@ -132,8 +132,8 @@ func TestTheRemoteProbeCannotBeTalkedIntoRunningSomethingElse(t *testing.T) {
 	// The far end runs the command through a shell, so the path is one
 	// word there whatever is in it.
 	hostile := &destination.SFTP{
-		Host: "backup.example", User: "cprest", Root: "/srv/restic'; rm -rf /tmp/x; '",
-		IdentityFile: "/etc/cprest/id_ed25519", KnownHostsFile: "/etc/cprest/known_hosts",
+		Host: "backup.example", User: "gniza", Root: "/srv/restic'; rm -rf /tmp/x; '",
+		IdentityFile: "/etc/gniza/id_ed25519", KnownHostsFile: "/etc/gniza/known_hosts",
 	}
 	last := destination.DFArgsForTest(hostile)
 	quoted := last[len(last)-1]
@@ -158,13 +158,13 @@ func TestASFTPDestinationRefusesAHostThatIsAnOption(t *testing.T) {
 		sftp destination.SFTP
 	}{
 		{"host is an ssh option", destination.SFTP{
-			Host: "-oProxyCommand=/bin/sh", User: "cprest", Root: "/srv",
+			Host: "-oProxyCommand=/bin/sh", User: "gniza", Root: "/srv",
 			IdentityFile: "/k", KnownHostsFile: "/kh"}},
 		{"host carries whitespace", destination.SFTP{
-			Host: "backup.example -oProxyCommand=x", User: "cprest", Root: "/srv",
+			Host: "backup.example -oProxyCommand=x", User: "gniza", Root: "/srv",
 			IdentityFile: "/k", KnownHostsFile: "/kh"}},
 		{"root carries a newline", destination.SFTP{
-			Host: "backup.example", User: "cprest", Root: "/srv\nrm -rf /",
+			Host: "backup.example", User: "gniza", Root: "/srv\nrm -rf /",
 			IdentityFile: "/k", KnownHostsFile: "/kh"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

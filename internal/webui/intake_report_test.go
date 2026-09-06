@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/shuki/cprest/internal/bugreport"
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shukiv/gniza/internal/bugreport"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/nodestore"
 )
 
 type reportTransport func(*http.Request) (*http.Response, error)

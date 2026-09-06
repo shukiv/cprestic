@@ -38,10 +38,10 @@
     var counter = document.querySelector('[data-count-for="' + selector + '"]');
     if (counter) { counter.textContent = String(shown); }
 
-    if (table && typeof window.cprestRepaginate === "function") {
+    if (table && typeof window.gnizaRepaginate === "function") {
       // A filtered list is a shorter list: back to the first page, or the
       // operator is looking at page four of a single match.
-      window.cprestRepaginate(table, true);
+      window.gnizaRepaginate(table, true);
     }
   }
 
@@ -52,7 +52,7 @@
 
   // A live refresh replaces rows, which loses the filter the operator set.
   // Re-applying it is the one thing outside this closure needs from here.
-  window.cprestReapplyFilters = function () {
+  window.gnizaReapplyFilters = function () {
     Array.prototype.forEach.call(document.querySelectorAll("[data-filter]"), function (input) {
       applyFilters(input.dataset.filter);
     });
@@ -70,7 +70,7 @@
     });
   });
 
-  // The administrator to log in as only matters when cprest is being
+  // The administrator to log in as only matters when Gniza is being
   // asked to create the account.
   var createAccount = document.querySelector("[data-quick-create]");
   var adminFields = document.querySelector("[data-quick-admin]");
@@ -111,7 +111,7 @@
   // across those loads in this tab's own storage.
   var chosen = document.querySelector("[data-chosen-paths]");
   if (chosen) {
-    var key = "cprest.chosen." + (chosen.dataset.chosenKey || "");
+    var key = "gniza.chosen." + (chosen.dataset.chosenKey || "");
 
     var remember = function () {
       try { window.sessionStorage.setItem(key, chosen.value); } catch (e) {}
@@ -324,7 +324,7 @@
   "use strict";
 
   var SIZES = [20, 50, 100];
-  var STORAGE = "cprest.rows";
+  var STORAGE = "gniza.rows";
   var states = [];
 
   function preferred() {
@@ -448,7 +448,7 @@
 
   // Sorting reorders the rows under the page, and a live refresh replaces
   // them; both leave the page showing whatever landed in the slice.
-  window.cprestRepaginate = function (table, toFirstPage) {
+  window.gnizaRepaginate = function (table, toFirstPage) {
     states.forEach(function (state) {
       if (table && state.table !== table) { return; }
       if (toFirstPage) { state.page = 1; }
@@ -520,8 +520,8 @@
 
     // The rows moved, so which of them are on this page did too. Sorting
     // is a new question, and the answer starts at the top of it.
-    if (typeof window.cprestRepaginate === "function") {
-      window.cprestRepaginate(table, true);
+    if (typeof window.gnizaRepaginate === "function") {
+      window.gnizaRepaginate(table, true);
     }
   }
 
@@ -566,7 +566,7 @@
 
   // Live refresh replaces the rows wholesale. Without this the operator's
   // chosen order silently reverts to the server's every three seconds.
-  window.cprestReapplySort = function () {
+  window.gnizaReapplySort = function () {
     chosen.forEach(function (state) {
       if (document.contains(state.table)) {
         apply(state.table, state.column, state.descending);
@@ -600,18 +600,18 @@
         swapped = true;
       }
     });
-    if (swapped && typeof window.cprestReapplyFilters === "function") {
+    if (swapped && typeof window.gnizaReapplyFilters === "function") {
       // The rows are new, so the filter the operator typed has to be put
       // back over them.
-      window.cprestReapplyFilters();
+      window.gnizaReapplyFilters();
     }
-    if (swapped && typeof window.cprestReapplySort === "function") {
-      window.cprestReapplySort();
+    if (swapped && typeof window.gnizaReapplySort === "function") {
+      window.gnizaReapplySort();
     }
-    if (swapped && typeof window.cprestRepaginate === "function") {
+    if (swapped && typeof window.gnizaRepaginate === "function") {
       // Stay on the page the operator was reading rather than snapping
       // back to the first one every three seconds.
-      window.cprestRepaginate(null, false);
+      window.gnizaRepaginate(null, false);
     }
   }
 
@@ -625,7 +625,7 @@
     inFlight = true;
     window.fetch(window.location.href, {
       credentials: "same-origin",
-      headers: { "X-Cprest-Live": "1" }
+      headers: { "X-Gniza-Live": "1" }
     }).then(function (response) {
       return response.ok ? response.text() : null;
     }).then(function (html) {
@@ -779,7 +779,7 @@
 
   function stored() {
     var choice;
-    try { choice = localStorage.getItem("cprest.theme"); } catch (e) { return "light"; }
+    try { choice = localStorage.getItem("gniza.theme"); } catch (e) { return "light"; }
     return (choice === "dark" || choice === "system") ? choice : "light";
   }
 
@@ -792,7 +792,7 @@
     Array.prototype.forEach.call(group.querySelectorAll("button"), function (button) {
       button.setAttribute("aria-pressed", String(button.dataset.themeChoice === choice));
     });
-    try { localStorage.setItem("cprest.theme", choice); } catch (e) {}
+    try { localStorage.setItem("gniza.theme", choice); } catch (e) {}
   }
 
   // Only offered when it can actually work.

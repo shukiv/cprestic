@@ -1,4 +1,4 @@
-// Command cprest-controller is the control plane and its administration
+// Command gniza-controller is the control plane and its administration
 // CLI. It owns servers, accounts, policies, destinations, repositories,
 // schedules, the credential vault and job history, and serves the agent
 // API.
@@ -59,7 +59,7 @@ func main() {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
-			fmt.Fprintf(os.Stderr, "cprest-controller %s: %v\n", cmd.name, err)
+			fmt.Fprintf(os.Stderr, "gniza-controller %s: %v\n", cmd.name, err)
 			os.Exit(1)
 		}
 		return
@@ -71,7 +71,7 @@ func main() {
 }
 
 func usage(commands []command) {
-	fmt.Fprintln(os.Stderr, "usage: cprest-controller <command> [flags]")
+	fmt.Fprintln(os.Stderr, "usage: gniza-controller <command> [flags]")
 	fmt.Fprintln(os.Stderr, "\ncommands:")
 	for _, cmd := range commands {
 		fmt.Fprintf(os.Stderr, "  %-16s %s\n", cmd.name, cmd.summary)

@@ -1,4 +1,4 @@
-# cP:Restic — Design
+# Gniza — Design
 
 cPanel fleet backup orchestration built on [restic](https://restic.net/).
 
@@ -79,7 +79,7 @@ There are four components, not three. The maintenance runner is load-bearing —
 
 **Maintenance runner.** Runs on trusted infrastructure — *not* on cPanel servers. Holds the only credentials that can delete from a repository. Executes retention, integrity checks, and restore drills.
 
-**Destinations.** Dumb storage. No cprest software required on the far end, except optionally the `rest-server` package.
+**Destinations.** Dumb storage. No Gniza software required on the far end, except optionally the `rest-server` package.
 
 ---
 
@@ -381,7 +381,7 @@ A restore runs **on the cPanel server**, through the same machinery as a backup:
 The controller chooses the source repository. The agent is told which repository and which snapshot, and never picks for itself — the same trust boundary as a backup, where the agent is told where to write.
 
 ```
-operator: cprest-controller restore -server cp01 -user customer1 -snapshot 40dc1520
+operator: gniza-controller restore -server cp01 -user customer1 -snapshot 40dc1520
         ↓
 restore_jobs row, status pending
         ↓
@@ -432,11 +432,11 @@ This is the most common real-world request and does not require a full account r
 
 ### Restore drills
 
-`cprest-maintenance -kind drill` rehearses a restore from trusted infrastructure: rebuild the newest snapshot for an account into scratch space, assert what can be asserted, record the result in `maintenance_runs`, delete the scratch.
+`gniza-maintenance -kind drill` rehearses a restore from trusted infrastructure: rebuild the newest snapshot for an account into scratch space, assert what can be asserted, record the result in `maintenance_runs`, delete the scratch.
 
 The checks are structural — the archive exists and is non-empty, the extracted tree has exactly one top-level directory, the home directory contains files, every SQL dump is non-empty and contains a `CREATE` statement. Nothing here can tell you cPanel would accept the archive; only a real `restorepkg` on a real host can. But a drill that fails means the backup certainly cannot be restored, which is the question worth answering nightly.
 
-For acceptance testing, `cprest-agent -certify-live-archive` runs on an
+For acceptance testing, `gniza-agent -certify-live-archive` runs on an
 isolated cPanel certification host. It restores under a caller-supplied
 disposable username with Restricted Restore enabled and DNS updates disabled,
 checks that the account entered cPanel's registry, and removes it with

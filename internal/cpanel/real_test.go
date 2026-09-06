@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/pkgacct"
+	"github.com/shukiv/gniza/internal/pkgacct"
 )
 
 // newFakeHost lays out the parts of a cPanel server the real provider reads.

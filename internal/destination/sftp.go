@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// SFTP is a repository reached over SSH. No cprest software runs on the
+// SFTP is a repository reached over SSH. No Gniza software runs on the
 // far end; restic drives the system ssh client.
 type SFTP struct {
 	Host string

@@ -8,7 +8,7 @@ package cpanel
 import (
 	"context"
 
-	"github.com/shuki/cprest/internal/pkgacct"
+	"github.com/shukiv/gniza/internal/pkgacct"
 )
 
 // AccountInfo is what the provider knows about an account.

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/shuki/cprest/internal/pkgacct"
+	"github.com/shukiv/gniza/internal/pkgacct"
 )
 
 // Databases names the account databases a rebuilt tree holds, read from

@@ -4,14 +4,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/reassemble"
+	"github.com/shukiv/gniza/internal/reassemble"
 )
 
 // A split snapshot of one account, as the agent records it.
 var split = reassemble.Parts{
-	Metadata:  "/var/lib/cprest/staging/stage-backup-studio/metadata",
+	Metadata:  "/var/lib/gniza/staging/stage-backup-studio/metadata",
 	Homedir:   "/home/studio",
-	Databases: "/var/lib/cprest/staging/stage-backup-studio/databases",
+	Databases: "/var/lib/gniza/staging/stage-backup-studio/databases",
 }
 
 func TestEachKindAsksForTheRightPartOfTheSnapshot(t *testing.T) {
@@ -27,7 +27,7 @@ func TestEachKindAsksForTheRightPartOfTheSnapshot(t *testing.T) {
 		{KindMailbox, []string{"studio.co.il/sales"},
 			[]string{"/home/studio/mail/studio.co.il/sales", split.Metadata}, true},
 		{KindDatabase, []string{"studio_kpeh1"},
-			[]string{"/var/lib/cprest/staging/stage-backup-studio/databases/studio_kpeh1.sql"}, false},
+			[]string{"/var/lib/gniza/staging/stage-backup-studio/databases/studio_kpeh1.sql"}, false},
 		{KindDNS, nil, []string{split.Metadata}, true},
 		{KindSSL, nil, []string{split.Metadata}, true},
 		{KindSettings, nil, []string{split.Metadata}, true},
@@ -77,7 +77,7 @@ func TestADatabaseIsANameNotAPath(t *testing.T) {
 // A plan that asks for nothing would report success having restored
 // nothing, so an empty or impossible request has to fail here.
 func TestAnImpossibleRequestFailsRatherThanAskingForNothing(t *testing.T) {
-	monolithic := reassemble.Parts{Archive: "/var/lib/cprest/staging/stage-backup-studio/cpmove-studio.tar"}
+	monolithic := reassemble.Parts{Archive: "/var/lib/gniza/staging/stage-backup-studio/cpmove-studio.tar"}
 
 	for _, tc := range []struct {
 		what  string

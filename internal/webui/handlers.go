@@ -17,22 +17,22 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/shuki/cprest/internal/agent"
-	"github.com/shuki/cprest/internal/bugreport"
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/destination"
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/inventory"
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/node"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/notify"
-	"github.com/shuki/cprest/internal/pkgacct"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/reassemble"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/staging"
-	"github.com/shuki/cprest/internal/update"
+	"github.com/shukiv/gniza/internal/agent"
+	"github.com/shukiv/gniza/internal/bugreport"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/destination"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/inventory"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/node"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/notify"
+	"github.com/shukiv/gniza/internal/pkgacct"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/reassemble"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/staging"
+	"github.com/shukiv/gniza/internal/update"
 )
 
 // --- dashboard ---
@@ -470,7 +470,7 @@ func (s *Server) handleRecoveryCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body strings.Builder
-	fmt.Fprintf(&body, `cprest recovery key
+	fmt.Fprintf(&body, `gniza recovery key
 ===================
 
 Server        %s
@@ -485,7 +485,7 @@ This password is the only thing that can read those backups. The
 destination holds nothing but ciphertext, and the key that unlocks it
 lives on %s. If that server is lost and this password is not written down
 somewhere else, the backups it made cannot be read by anyone, including
-cprest.
+gniza.
 
 `, card.Hostname, card.Destination, card.Repository, card.URI,
 		card.Password, card.Hostname)
@@ -508,15 +508,15 @@ Reaching it from anywhere else
 That server's own SSH key is below. Write it to a file, make it readable
 only by you, and point restic at it:
 
-    install -m 600 /dev/null /root/cprest-key
-    cat > /root/cprest-key <<'KEY'
+    install -m 600 /dev/null /root/gniza-key
+    cat > /root/gniza-key <<'KEY'
 %s
 KEY
-    printf '%%s\n' '%s' > /root/cprest-known-hosts
+    printf '%%s\n' '%s' > /root/gniza-known-hosts
 
     export RESTIC_REPOSITORY='%s'
     export RESTIC_PASSWORD='%s'
-    restic -o sftp.args="-i /root/cprest-key -o UserKnownHostsFile=/root/cprest-known-hosts -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes" snapshots
+    restic -o sftp.args="-i /root/gniza-key -o UserKnownHostsFile=/root/gniza-known-hosts -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes" snapshots
 
 If that key no longer works — the account was removed, or its
 authorized_keys was rebuilt — any account with SSH access to
@@ -531,7 +531,7 @@ password:
 			card.SSHUser, card.SSHHost, card.URI)
 
 	default:
-		fmt.Fprintf(&body, `To restore without cprest, on any machine with restic installed:
+		fmt.Fprintf(&body, `To restore without Gniza, on any machine with restic installed:
 
     export RESTIC_REPOSITORY='%s'
     export RESTIC_PASSWORD='%s'
@@ -556,7 +556,7 @@ Written %s
 		s.log.Error("record that the recovery key was taken away", "error", err)
 	}
 
-	filename := fmt.Sprintf("cprest-recovery-%s-%s.txt", card.Hostname, card.Repository)
+	filename := fmt.Sprintf("gniza-recovery-%s-%s.txt", card.Hostname, card.Repository)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("Content-Length", strconv.Itoa(body.Len()))
@@ -870,7 +870,7 @@ func (s *Server) saveDestination(w http.ResponseWriter, r *http.Request,
 
 // addSFTPDestination sets up another Linux server as a destination.
 //
-// cprest generates its own key, reads the server's host key, and — if the
+// Gniza generates its own key, reads the server's host key, and — if the
 // operator supplied the remote password — installs the key and proves it
 // works. The password is used for that and discarded.
 func (s *Server) addSFTPDestination(w http.ResponseWriter, r *http.Request, name, repositoryPath string) {
@@ -952,13 +952,13 @@ func (s *Server) finishSFTP(w http.ResponseWriter, r *http.Request, request node
 		}
 		if result.Created {
 			s.redirect(w, r, "/destinations", "ok", fmt.Sprintf(
-				"%s is ready. cprest created %s on that server, gave it a locked password so "+
+				"%s is ready. Gniza created %s on that server, gave it a locked password so "+
 					"the key is the only way in, made the backup directory and created the "+
 					"repository.", result.Destination.Name, request.User))
 			return
 		}
 		s.redirect(w, r, "/destinations", "ok", fmt.Sprintf(
-			"%s is ready. cprest installed its own key and the repository is created.",
+			"%s is ready. Gniza installed its own key and the repository is created.",
 			result.Destination.Name))
 	case result.Warning != "":
 		// The login is not proved yet -- typically the key still has to be
@@ -995,7 +995,7 @@ func repositoryPathFrom(r *http.Request, hostname string) string {
 		path = hostname
 	}
 	if path == "" {
-		path = "cprest"
+		path = "gniza"
 	}
 	return path
 }
@@ -1124,7 +1124,7 @@ func (s *Server) handleDeleteDestination(w http.ResponseWriter, r *http.Request)
 	}
 	s.redirect(w, r, "/destinations", "ok",
 		"Destination removed. Anything already stored there is untouched, "+
-			"but cprest no longer knows how to read it.")
+			"but Gniza no longer knows how to read it.")
 }
 
 // --- schedules ---
@@ -3879,7 +3879,7 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			settings.DeletedAccountDays = days
 		}
 	}
-	// Bug-report delivery is fixed to the cprestic intake. Retain legacy
+	// Bug-report delivery is fixed to the bug tracker intake. Retain legacy
 	// email settings on disk for compatibility, but never send through them.
 	settings.ProtectAccountRemoval = r.PostFormValue("protect_account_removal") == "1"
 	// Stored the other way round: checking for a newer version is what a

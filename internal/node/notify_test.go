@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shukiv/gniza/internal/nodestore"
 )
 
 // TestSavingAChannelKeepsItsStoredSecret covers the way notifications go

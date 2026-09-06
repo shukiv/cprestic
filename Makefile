@@ -27,28 +27,39 @@ GOVULNCHECK         := golang.org/x/vuln/cmd/govulncheck@v1.7.0
 all: fmt vet test build
 
 build:
-	go build -o $(BIN)/cprest-agent       ./cmd/agent
-	go build -o $(BIN)/cprest-controller  ./cmd/controller
-	go build -o $(BIN)/cprest-maintenance ./cmd/maintenance
+	go build -o $(BIN)/gniza-agent       ./cmd/agent
+	go build -o $(BIN)/gniza-controller  ./cmd/controller
+	go build -o $(BIN)/gniza-maintenance ./cmd/maintenance
 
 # The WHM plugin tarball: statically linked so it runs on any cPanel server
 # without matching libc versions, and stripped because it ships over ssh.
+#
+# The tarball, the directory inside it and the word at the top of SHA256SUMS
+# keep the name this program had before it was called Gniza. Servers running
+# an older release have those spellings compiled in and ask for exactly them;
+# see internal/update/install.go. Everything inside the tarball is named
+# gniza.
 plugin:
+	# From scratch every time. This directory is assembled by copying into
+	# it, so a file that was in the package yesterday and is not in it today
+	# stays there and ships -- which is how a build after the rename to
+	# Gniza put both cprest-agent and gniza-agent in the tarball.
+	rm -rf $(BIN)/cprest-plugin
 	mkdir -p $(BIN)/cprest-plugin
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(PLUGIN_ARCH) go build -trimpath \
-		-ldflags="-s -w -X github.com/shuki/cprest/internal/agent.Version=$(VERSION) \
-			-X github.com/shuki/cprest/internal/agent.BuiltAt=$(BUILT_AT)" \
-		-o $(BIN)/cprest-plugin/cprest-agent ./cmd/agent
-	cp packaging/whm/cprest.cgi packaging/whm/install.sh packaging/whm/uninstall.sh $(BIN)/cprest-plugin/
+		-ldflags="-s -w -X github.com/shukiv/gniza/internal/agent.Version=$(VERSION) \
+			-X github.com/shukiv/gniza/internal/agent.BuiltAt=$(BUILT_AT)" \
+		-o $(BIN)/cprest-plugin/gniza-agent ./cmd/agent
+	cp packaging/whm/gniza.cgi packaging/whm/install.sh packaging/whm/uninstall.sh $(BIN)/cprest-plugin/
 	mkdir -p $(BIN)/cprest-plugin/cpanel/uapi \
-		$(BIN)/cprest-plugin/cpanel/admin/Cprest $(BIN)/cprest-plugin/branding
+		$(BIN)/cprest-plugin/cpanel/admin/Gniza $(BIN)/cprest-plugin/branding
 	cp packaging/cpanel/*.php packaging/cpanel/install.json $(BIN)/cprest-plugin/cpanel/
-	cp packaging/cpanel/uapi/Cprest.pm $(BIN)/cprest-plugin/cpanel/uapi/
-	cp packaging/cpanel/admin/Cprest/Session.pm $(BIN)/cprest-plugin/cpanel/admin/Cprest/
-	cp packaging/branding/cpr-badge.svg packaging/branding/cprestic-logo.svg \
+	cp packaging/cpanel/uapi/Gniza.pm $(BIN)/cprest-plugin/cpanel/uapi/
+	cp packaging/cpanel/admin/Gniza/Session.pm $(BIN)/cprest-plugin/cpanel/admin/Gniza/
+	cp packaging/branding/badge.svg packaging/branding/gniza-logo.svg \
 		$(BIN)/cprest-plugin/branding/
-	cp packaging/branding/png/cpr-badge-48.png $(BIN)/cprest-plugin/branding/
-	chmod +x $(BIN)/cprest-plugin/install.sh $(BIN)/cprest-plugin/uninstall.sh $(BIN)/cprest-plugin/cprest.cgi
+	cp packaging/branding/png/badge-48.png $(BIN)/cprest-plugin/branding/
+	chmod +x $(BIN)/cprest-plugin/install.sh $(BIN)/cprest-plugin/uninstall.sh $(BIN)/cprest-plugin/gniza.cgi
 	tar -C $(BIN) --owner=0 --group=0 --numeric-owner --mode='u+rwX,go+rX,go-w' \
 		-czf $(BIN)/cprest-plugin-$(PLUGIN_ARCH).tar.gz cprest-plugin
 	cp packaging/whm/get.sh $(BIN)/get.sh
@@ -73,7 +84,7 @@ plugin:
 # server exactly as a release is -- same key, same signature, same refusal
 # if either is wrong.
 #
-# CPREST_SIGNING_KEY_FILE says where the private key is. It is never read
+# GNIZA_SIGNING_KEY_FILE says where the private key is. It is never read
 # from the repository and never written into one.
 # What the artifact was really built from.
 #
@@ -83,22 +94,22 @@ plugin:
 # stamped in the file has to be the one this checkout selects, or the
 # release is of something other than what was reviewed.
 provenance:
-	@built=$$(go version -m $(BIN)/cprest-plugin/cprest-agent | awk 'NR==1 {print $$2}'); \
+	@built=$$(go version -m $(BIN)/cprest-plugin/gniza-agent | awk 'NR==1 {print $$2}'); \
 	want=$$(go env GOVERSION); \
 	if [ "$$built" != "$$want" ]; then \
 		echo "the plugin binary was built by $$built, but this tree builds with $$want" >&2; \
 		echo "run 'make plugin' again with the toolchain go.mod asks for" >&2; \
 		exit 1; \
 	fi; \
-	echo "$(BIN)/cprest-plugin/cprest-agent: built by $$built"
+	echo "$(BIN)/cprest-plugin/gniza-agent: built by $$built"
 
 release: plugin
 	$(MAKE) provenance
-	@[ -n "$(CPREST_SIGNING_KEY_FILE)" ] || { \
-		echo "set CPREST_SIGNING_KEY_FILE to the release key, e.g."; \
-		echo "  make release CPREST_SIGNING_KEY_FILE=~/.cprest/cprest-release.pem"; \
+	@[ -n "$(GNIZA_SIGNING_KEY_FILE)" ] || { \
+		echo "set GNIZA_SIGNING_KEY_FILE to the release key, e.g."; \
+		echo "  make release GNIZA_SIGNING_KEY_FILE=~/.gniza/gniza-release.pem"; \
 		exit 1; }
-	openssl dgst -sha256 -sign "$(CPREST_SIGNING_KEY_FILE)" \
+	openssl dgst -sha256 -sign "$(GNIZA_SIGNING_KEY_FILE)" \
 		-out $(BIN)/SHA256SUMS.sig $(BIN)/SHA256SUMS
 	@# Verified here with the key that is compiled into the agent, so a
 	@# mismatched private key fails on this machine rather than on a server.

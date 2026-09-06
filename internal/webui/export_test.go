@@ -3,7 +3,7 @@ package webui
 import (
 	"os"
 
-	"github.com/shuki/cprest/internal/granular"
+	"github.com/shukiv/gniza/internal/granular"
 )
 
 // PrepareSocketDirForTest exposes the directory rule to the test package.

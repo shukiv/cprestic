@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/store"
-	"github.com/shuki/cprest/internal/testsupport"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/store"
+	"github.com/shukiv/gniza/internal/testsupport"
 )
 
 // fixture is a fully wired controller database: one server, one account,
@@ -485,7 +485,7 @@ func TestRestoreLifecycle(t *testing.T) {
 	if err := f.db.ApplyRestoreReport(ctx, f.serverID, jobID, claimed.ClaimToken,
 		store.RestoreOutcome{
 			Status: job.StatusSuccess, BytesRestored: 4096,
-			ArchivePath: "/var/lib/cprest/staging/stage-restore-customer1/cpmove-customer1.tar",
+			ArchivePath: "/var/lib/gniza/staging/stage-restore-customer1/cpmove-customer1.tar",
 		}); err != nil {
 		t.Fatalf("ApplyRestoreReport: %v", err)
 	}

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/agent"
-	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shukiv/gniza/internal/agent"
+	"github.com/shukiv/gniza/internal/nodestore"
 )
 
 func TestFooterShowsRunningVersionNotAvailableUpdate(t *testing.T) {
@@ -32,13 +32,13 @@ func TestFooterShowsRunningVersionNotAvailableUpdate(t *testing.T) {
 func TestReportDialogStaysInsidePluginStyleScope(t *testing.T) {
 	client, _, _ := newUI(t)
 	_, page := get(t, client, "/settings?tab=version")
-	start := strings.Index(page, `<div class="cprest">`)
+	start := strings.Index(page, `<div class="gniza">`)
 	dialog := strings.Index(page, `<dialog id="report-problem"`)
 	if start < 0 || dialog <= start {
 		t.Fatal("missing plugin wrapper or report dialog")
 	}
 	// The report used to follow the wrapper's closing tag, so every
-	// .cprest-scoped rule missed it despite being present in the stylesheet.
+	// .gniza-scoped rule missed it despite being present in the stylesheet.
 	prefix := page[start:dialog]
 	depth := len(regexp.MustCompile(`<div(?:\s|>)`).FindAllStringIndex(prefix, -1)) - strings.Count(prefix, "</div>")
 	if depth != 1 {

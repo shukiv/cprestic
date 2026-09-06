@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/shuki/cprest/internal/granular"
+	"github.com/shukiv/gniza/internal/granular"
 )
 
 // PutHomeDir copies a restored tree into an account's home directory.
@@ -317,7 +317,7 @@ func (r *Real) replacedDir() string {
 	if r.ReplacedDir != "" {
 		return r.ReplacedDir
 	}
-	return "/var/lib/cprest/replaced"
+	return "/var/lib/gniza/replaced"
 }
 
 func (r *Real) crontab() string {

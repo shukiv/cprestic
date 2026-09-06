@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/protocol"
+	"github.com/shukiv/gniza/internal/protocol"
 )
 
 // ErrNoWork means the controller had nothing queued for this server.

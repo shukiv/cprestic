@@ -264,7 +264,7 @@ func dialSMTP(address, host, port string, timeout time.Duration) (*smtp.Client, 
 // account name does not arrive as mojibake.
 func mailBody(from string, to []string, message Message) string {
 	var out strings.Builder
-	out.WriteString("From: cP:Restic <" + from + ">\r\n")
+	out.WriteString("From: Gniza <" + from + ">\r\n")
 	out.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
 	out.WriteString("Subject: " + mime.QEncoding.Encode("utf-8", message.Line()) + "\r\n")
 	out.WriteString("Date: " + time.Now().Format(time.RFC1123Z) + "\r\n")

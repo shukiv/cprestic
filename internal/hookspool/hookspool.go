@@ -32,7 +32,7 @@ import (
 
 // DefaultDir is where the spool lives on a cPanel server. It sits under
 // the service's own state directory, which is root-owned and 0700.
-const DefaultDir = "/var/lib/cprest/hooks"
+const DefaultDir = "/var/lib/gniza/hooks"
 
 // maxPayload matches the limit the lifecycle socket accepts, so nothing
 // can be spooled that the service would have refused.

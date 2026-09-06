@@ -16,7 +16,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/shuki/cprest/internal/reassemble"
+	"github.com/shukiv/gniza/internal/reassemble"
 )
 
 // Kind names a thing an operator restores on its own.

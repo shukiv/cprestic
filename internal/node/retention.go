@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // Retention is what keeps a repository from growing forever.

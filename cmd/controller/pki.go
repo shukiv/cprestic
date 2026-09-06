@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/certs"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/certs"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
 func runKeygen(_ context.Context, args []string) error {
@@ -42,7 +42,7 @@ func runKeygen(_ context.Context, args []string) error {
 func runInitCA(_ context.Context, args []string) error {
 	flags := flag.NewFlagSet("init-ca", flag.ExitOnError)
 	dir := flags.String("dir", "pki", "directory to write ca.pem and ca-key.pem into")
-	commonName := flags.String("cn", "cprest agent CA", "certificate authority name")
+	commonName := flags.String("cn", "gniza agent CA", "certificate authority name")
 	validFor := flags.Duration("valid-for", 10*365*24*time.Hour, "certificate lifetime")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -126,7 +126,7 @@ func runIssueCert(_ context.Context, args []string) error {
 		// Authorisation is by pinned fingerprint, not by certificate
 		// subject: a name is a label, a fingerprint is an identity.
 		fmt.Printf("fingerprint: %s\n", fingerprint)
-		fmt.Printf("register it with:\n  cprest-controller add-server -hostname %s -fingerprint %s\n",
+		fmt.Printf("register it with:\n  gniza-controller add-server -hostname %s -fingerprint %s\n",
 			*name, fingerprint)
 	}
 	return nil

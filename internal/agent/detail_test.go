@@ -1,7 +1,7 @@
 package agent
 
 import (
-	"github.com/shuki/cprest/internal/pkgacct"
+	"github.com/shukiv/gniza/internal/pkgacct"
 	"strings"
 	"testing"
 )

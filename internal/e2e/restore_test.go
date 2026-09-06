@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/maintenance"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/reassemble"
-	"github.com/shuki/cprest/internal/store"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/maintenance"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/reassemble"
+	"github.com/shukiv/gniza/internal/store"
 )
 
 // TestRestoreRoundTrip is the question a backup product exists to answer:

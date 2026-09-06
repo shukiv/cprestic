@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/destination"
+	"github.com/shukiv/gniza/internal/destination"
 )
 
 func TestBackupArgs(t *testing.T) {
@@ -386,8 +386,8 @@ func TestRunnerPassesBackendOptionsAsGlobalFlags(t *testing.T) {
 	repo := Repository{
 		Dest: &destination.SFTP{
 			Host: "backup.example.com", User: "cpbackup", Root: "/backup",
-			IdentityFile:   "/etc/cprest/id_ed25519",
-			KnownHostsFile: "/etc/cprest/known_hosts",
+			IdentityFile:   "/etc/gniza/id_ed25519",
+			KnownHostsFile: "/etc/gniza/known_hosts",
 		},
 		Path:     "cp01",
 		Password: "p",
@@ -401,7 +401,7 @@ func TestRunnerPassesBackendOptionsAsGlobalFlags(t *testing.T) {
 		t.Fatalf("args = %v, want -o flags before the subcommand", fake.got.Args)
 	}
 	joined := strings.Join(fake.got.Args, " ")
-	if !strings.Contains(joined, "sftp.args=-i /etc/cprest/id_ed25519") {
+	if !strings.Contains(joined, "sftp.args=-i /etc/gniza/id_ed25519") {
 		t.Errorf("args = %q, missing the ssh identity", joined)
 	}
 	if !strings.Contains(joined, "backup --json") {

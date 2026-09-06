@@ -43,13 +43,13 @@ func TestNtfyCarriesTheTitleAndUrgency(t *testing.T) {
 	defer server.Close()
 
 	channel := Channel{Kind: KindNtfy, Config: map[string]string{
-		"server": server.URL, "topic": "cprest-alerts",
+		"server": server.URL, "topic": "gniza-alerts",
 	}, Secrets: map[string]string{"token": "tk_secret"}}
 	if err := Send(context.Background(), channel, testMessage()); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 
-	if got.URL.Path != "/cprest-alerts" {
+	if got.URL.Path != "/gniza-alerts" {
 		t.Errorf("posted to %q", got.URL.Path)
 	}
 	if got.Header.Get("Title") != "mx.7171.online: The backup of studio failed" {

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/shuki/cprest/internal/granular"
+	"github.com/shukiv/gniza/internal/granular"
 )
 
 // itemsOf turns what was read out of a snapshot into what the page lists.

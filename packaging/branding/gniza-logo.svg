@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Gniza, as a wordmark.
+
+  The badge in badge.svg is for a 48x48 tile; this is the
+  name in full, for a README or a page heading. Same rules apply: an
+  <img> inherits neither font nor colour from the page around it, so the
+  face is pinned with textLength and the ink follows the reader's theme.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 96" width="300" height="96"
+     role="img" aria-label="Gniza — Backup. Restore. Repeat.">
+  <style>
+    .cpr-ink { fill:#141A22; }
+    .cpr-g   { fill:#CF470C; }
+    .cpr-tag { fill:#5B6675; }
+    text {
+      font-family:"Fira Sans","Inter","Helvetica Neue",Helvetica,Arial,sans-serif;
+      font-weight:700; letter-spacing:-0.015em;
+    }
+    .cpr-tagline { font-weight:400; letter-spacing:0.04em; }
+    @media (prefers-color-scheme: dark) {
+      .cpr-ink { fill:#E8EDF2; }
+      .cpr-tag { fill:#9AA6B4; }
+    }
+  </style>
+  <text class="cpr-ink" x="8" y="56" font-size="60" textLength="160" lengthAdjust="spacingAndGlyphs"><tspan class="cpr-g">G</tspan>niza</text>
+  <text class="cpr-tag cpr-tagline" x="9" y="82" font-size="17" textLength="228" lengthAdjust="spacingAndGlyphs">Backup. Restore. Repeat.</text>
+</svg>

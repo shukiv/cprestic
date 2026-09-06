@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/shuki/cprest/internal/destination"
-	"github.com/shuki/cprest/internal/repobuild"
+	"github.com/shukiv/gniza/internal/destination"
+	"github.com/shukiv/gniza/internal/repobuild"
 )
 
 // testLogger keeps component logs out of passing test output while leaving

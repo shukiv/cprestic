@@ -13,11 +13,11 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/repobuild"
-	"github.com/shuki/cprest/internal/store"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/repobuild"
+	"github.com/shukiv/gniza/internal/store"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
 // Service holds the controller's dependencies.

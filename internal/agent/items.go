@@ -11,14 +11,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/inventory"
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/reassemble"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/staging"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/inventory"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/reassemble"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/staging"
 )
 
 // restoreItems takes one part of an account out of a snapshot: a mailbox,
@@ -596,7 +596,7 @@ func checkDatabaseUsers(account string, wanted []string, present map[string]bool
 	if err != nil {
 		// A more recent restore point, not an earlier one. What a backup
 		// can be missing here is the file that carries the stored
-		// passwords, which cprest has not always written -- so going
+		// passwords, which Gniza has not always written -- so going
 		// further back is going further from having it.
 		return nil, "This backup does not hold the account's database users. Try a " +
 			"more recent restore point, or download this one and ask your host.", err

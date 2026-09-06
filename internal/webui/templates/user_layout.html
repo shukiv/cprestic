@@ -4,7 +4,7 @@
 (function () {
   var choice = "light";
   try {
-    var stored = localStorage.getItem("cprest.theme");
+    var stored = localStorage.getItem("gniza.theme");
     if (stored === "light" || stored === "dark" || stored === "system") { choice = stored; }
   } catch (e) {}
   if (choice !== "system") {
@@ -14,12 +14,12 @@
 </script>
 <style>{{.Assets.CSS}}</style>
 
-<div class="cprest cpr-user" dir="ltr">
-  <a class="cpr-skip" href="#cprest-user-main">Skip to content</a>
+<div class="gniza cpr-user" dir="ltr">
+  <a class="cpr-skip" href="#gniza-user-main">Skip to content</a>
   <header class="cpr-userbar">
-    <a class="cpr-userbrand" href="index.live.php" aria-label="cP Restic overview">
-      <span class="cpr-brand-mark" aria-hidden="true">cP:R</span>
-      <span>Restic backups</span>
+    <a class="cpr-userbrand" href="index.live.php" aria-label="Gniza overview">
+      <span class="cpr-brand-mark" aria-hidden="true">GZ</span>
+      <span>Gniza backups</span>
     </a>
     <nav class="cpr-usernav" aria-label="Backup pages">
       <a href="index.live.php" {{if eq .Nav "overview"}}aria-current="page"{{end}}>Overview</a>
@@ -39,7 +39,7 @@
     </div>
   </header>
 
-  <main id="cprest-user-main" tabindex="-1">
+  <main id="gniza-user-main" tabindex="-1">
     {{with .Flash}}<div class="cpr-banner {{if eq .Kind "ok"}}cpr-ok{{else if eq .Kind "warn"}}cpr-warn{{else}}cpr-bad{{end}}" role="status">
       <div class="cpr-body">{{.Message}}</div>
     </div>{{end}}

@@ -12,8 +12,8 @@ set -eu
 
 BIN=${1:?usage: publish-dist.sh <bin dir> <version>}
 VERSION=${2:?usage: publish-dist.sh <bin dir> <version>}
-BRANCH=${CPREST_DIST_BRANCH:-dist}
-REMOTE=${CPREST_DIST_REMOTE:-origin}
+BRANCH=${GNIZA_DIST_BRANCH:-dist}
+REMOTE=${GNIZA_DIST_REMOTE:-origin}
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -46,17 +46,17 @@ if [ -n "$parent" ]; then
         say "the dist branch already has this build ($VERSION)"
         exit 0
     fi
-    commit=$(git commit-tree "$tree" -p "$parent" -m "cprest $VERSION")
+    commit=$(git commit-tree "$tree" -p "$parent" -m "gniza $VERSION")
 else
     say "starting the $BRANCH branch"
-    commit=$(git commit-tree "$tree" -m "cprest $VERSION")
+    commit=$(git commit-tree "$tree" -m "gniza $VERSION")
 fi
 
 git update-ref "refs/heads/$BRANCH" "$commit"
 say "committed $VERSION to $BRANCH as $(git rev-parse --short "$commit")"
 
-if [ "${CPREST_DIST_PUSH:-1}" = "0" ]; then
-    say "not pushed (CPREST_DIST_PUSH=0); push it with: git push $REMOTE $BRANCH"
+if [ "${GNIZA_DIST_PUSH:-1}" = "0" ]; then
+    say "not pushed (GNIZA_DIST_PUSH=0); push it with: git push $REMOTE $BRANCH"
     exit 0
 fi
 git push "$REMOTE" "$BRANCH"

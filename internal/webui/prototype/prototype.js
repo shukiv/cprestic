@@ -1,4 +1,4 @@
-/* PROTOTYPE — read-only UI exploration. Nothing here calls cprest. */
+/* PROTOTYPE — read-only UI exploration. Nothing here calls gniza. */
 "use strict";
 
 const variants = {
@@ -37,7 +37,7 @@ const accounts = [
 
 const destinations = [
   { name: "Wasabi EU", kind: "S3 compatible", place: "eu-central-2", state: "Reachable", tone: "good", last: "Checked 4 min ago", stored: "184 GB", key: "Saved offline" },
-  { name: "Local vault", kind: "Local disk", place: "/backup/cprest", state: "Reachable", tone: "good", last: "Checked 4 min ago", stored: "201 GB", key: "Saved offline" },
+  { name: "Local vault", kind: "Local disk", place: "/backup/gniza", state: "Reachable", tone: "good", last: "Checked 4 min ago", stored: "201 GB", key: "Saved offline" },
   { name: "Archive SFTP", kind: "SFTP", place: "backup-02.internal", state: "Needs attention", tone: "warn", last: "Last reached 3 days ago", stored: "96 GB", key: "Not confirmed" },
 ];
 
@@ -203,7 +203,7 @@ function standardHistoryTable() {
   return table([
     { label: "When" }, { label: "Account" }, { label: "Result" }, { label: "Copies", className: "optional" },
     { label: "Storage", className: "optional" }, { label: "Action", className: "right" },
-  ], jobRows(), "Recent cprest jobs");
+  ], jobRows(), "Recent Gniza jobs");
 }
 
 function restoreProgress(step) {
@@ -403,7 +403,7 @@ function settingsA() {
     <div class="a-two"><div class="stack">
       <section class="card"><div class="card-head"><div><h2 class="section-title">Backup engine</h2><p class="section-copy">Paths and limits used for every run.</p></div></div><div class="card-pad grid-2"><div class="field"><label for="a-host">Server name</label><input id="a-host" value="mx.7171.online"><small>Written into every snapshot.</small></div><div class="field"><label for="a-concurrency">Accounts at once</label><input id="a-concurrency" type="number" value="1"><small>One account can consume its full staged size.</small></div><div class="field"><label for="a-restic">restic binary</label><input id="a-restic" value="/usr/local/bin/restic"></div><div class="field"><label for="a-output">Keep restored files</label><select id="a-output"><option>7 days</option><option>14 days</option><option>Until deleted</option></select></div></div></section>
       <section class="card"><div class="card-head"><div><h2 class="section-title">cPanel lifecycle safeguards</h2><p class="section-copy">Automation around suspension and termination.</p></div></div><div class="card-pad"><label class="check-row"><input type="checkbox"><span><span class="check-title">Block unsafe account termination</span><span class="check-copy">Require recent complete copies at every promised destination before cPanel removes an account.</span></span></label><label class="check-row"><input type="checkbox"><span><span class="check-title">Preserve accounts when suspended</span><span class="check-copy">Queue full-account copies when cPanel reports a suspension.</span></span></label></div></section>
-    </div><aside class="stack"><section class="card card-pad"><p class="eyebrow">Staging</p><div class="metric"><div class="value">6.2 GB</div><div class="detail">Free at /var/lib/cprest/staging</div></div></section><section class="card card-pad"><p class="eyebrow">Notifications</p><div class="spread"><div><strong>Operations email</strong><div class="subcell">Failures and overdue copies</div></div>${status("Working", "good")}</div><div class="button-row" style="margin-top:16px">${action("Send test")}</div></section></aside></div>`;
+    </div><aside class="stack"><section class="card card-pad"><p class="eyebrow">Staging</p><div class="metric"><div class="value">6.2 GB</div><div class="detail">Free at /var/lib/gniza/staging</div></div></section><section class="card card-pad"><p class="eyebrow">Notifications</p><div class="spread"><div><strong>Operations email</strong><div class="subcell">Failures and overdue copies</div></div>${status("Working", "good")}</div><div class="button-row" style="margin-top:16px">${action("Send test")}</div></section></aside></div>`;
 }
 
 function pageA() {
@@ -411,12 +411,12 @@ function pageA() {
 }
 
 function renderA() {
-  return `<div class="variant-a"><div class="a-shell"><aside class="a-rail"><div class="brand"><span class="brand-mark">cP</span><span class="brand-name">cP:Restic</span></div><div class="a-server">mx.7171.online</div><nav class="a-nav" aria-label="cP:Restic pages">${pages.map(([key, label, iconName]) => pageButton(key, label, iconName)).join("")}</nav><div class="a-rail-foot"><span>${status("Service healthy", "good")}</span><span>cPanel 136 · root</span></div></aside><div class="a-main"><header class="a-topbar"><span class="a-breadcrumb">WHM / Plugins / cP:Restic</span><div class="button-row"><button type="button" class="icon-btn" data-action="Open notifications" aria-label="Open notifications">${icon("bell")}</button><button type="button" class="btn compact" data-action="Open server menu">root@mx.7171.online</button></div></header><main id="prototype-main" class="a-content" tabindex="-1">${pageA()}</main></div></div></div>`;
+  return `<div class="variant-a"><div class="a-shell"><aside class="a-rail"><div class="brand"><span class="brand-mark">cP</span><span class="brand-name">Gniza</span></div><div class="a-server">mx.7171.online</div><nav class="a-nav" aria-label="Gniza pages">${pages.map(([key, label, iconName]) => pageButton(key, label, iconName)).join("")}</nav><div class="a-rail-foot"><span>${status("Service healthy", "good")}</span><span>cPanel 136 · root</span></div></aside><div class="a-main"><header class="a-topbar"><span class="a-breadcrumb">WHM / Plugins / Gniza</span><div class="button-row"><button type="button" class="icon-btn" data-action="Open notifications" aria-label="Open notifications">${icon("bell")}</button><button type="button" class="btn compact" data-action="Open server menu">root@mx.7171.online</button></div></header><main id="prototype-main" class="a-content" tabindex="-1">${pageA()}</main></div></div></div>`;
 }
 
 function guidedHeader(primaryAction = "") {
   const [title, copy] = pageMeta[page];
-  return `<div class="b-section-head"><div class="title-block"><p class="eyebrow">${page === "overview" ? "Good evening" : "cP:Restic"}</p><h1>${title}</h1><p>${copy}</p></div>${primaryAction ? `<div>${primaryAction}</div>` : ""}</div>`;
+  return `<div class="b-section-head"><div class="title-block"><p class="eyebrow">${page === "overview" ? "Good evening" : "Gniza"}</p><h1>${title}</h1><p>${copy}</p></div>${primaryAction ? `<div>${primaryAction}</div>` : ""}</div>`;
 }
 
 function overviewB() {
@@ -475,7 +475,7 @@ function pageB() {
 }
 
 function renderB() {
-  return `<div class="variant-b"><header class="b-top"><div class="b-top-inner"><div class="brand"><span class="brand-mark">cP</span><span>cP:Restic</span></div><nav class="b-nav" aria-label="cP:Restic pages">${pages.map(([key, label]) => `<button type="button" data-page="${key}" ${page === key ? 'aria-current="page"' : ""}>${label}</button>`).join("")}</nav><button type="button" class="icon-btn" data-action="Open notifications" aria-label="Open notifications">${icon("bell")}</button></div></header><div class="b-context"><div class="b-context-inner"><span><strong>mx.7171.online</strong> · cPanel 136 · standalone node</span>${status("Service healthy", "good")}</div></div><main id="prototype-main" class="b-content" tabindex="-1">${pageB()}</main></div>`;
+  return `<div class="variant-b"><header class="b-top"><div class="b-top-inner"><div class="brand"><span class="brand-mark">cP</span><span>Gniza</span></div><nav class="b-nav" aria-label="Gniza pages">${pages.map(([key, label]) => `<button type="button" data-page="${key}" ${page === key ? 'aria-current="page"' : ""}>${label}</button>`).join("")}</nav><button type="button" class="icon-btn" data-action="Open notifications" aria-label="Open notifications">${icon("bell")}</button></div></header><div class="b-context"><div class="b-context-inner"><span><strong>mx.7171.online</strong> · cPanel 136 · standalone node</span>${status("Service healthy", "good")}</div></div><main id="prototype-main" class="b-content" tabindex="-1">${pageB()}</main></div>`;
 }
 
 function consoleSummary() {
@@ -518,7 +518,7 @@ function historyC() {
 }
 
 function settingsC() {
-  return `${consolePagebar(action("Save", "primary", "check"))}<section class="c-panel"><div class="c-panel-head"><h2>Node configuration</h2><span class="muted mono">/var/lib/cprest/state.db</span></div><div class="c-master-detail"><div class="c-master"><div class="card-pad stack-lg"><div class="grid-2"><div class="field"><label for="c-host">Hostname tag</label><input id="c-host" value="mx.7171.online"></div><div class="field"><label for="c-workers">Concurrent accounts</label><input id="c-workers" type="number" value="1"></div><div class="field"><label for="c-restic">restic path</label><input id="c-restic" value="/usr/local/bin/restic"></div><div class="field"><label for="c-days">Restore output days</label><input id="c-days" type="number" value="7"></div></div><fieldset style="border:0;padding:0;margin:0"><legend class="eyebrow">Lifecycle hooks</legend><label class="check-row"><input type="checkbox"><span><span class="check-title">Protect account removal</span><span class="check-copy">Block termination without current complete copies.</span></span></label><label class="check-row"><input type="checkbox"><span><span class="check-title">Backup on suspension</span><span class="check-copy">Queue a preservation plan after suspendacct.</span></span></label></fieldset></div></div><aside class="c-detail"><p class="eyebrow">Runtime</p><h2>Healthy</h2>${status("Service active", "good")}<h3>Paths</h3><dl><dt>State</dt><dd class="mono">/var/lib/cprest</dd><dt>Staging</dt><dd class="mono">/var/lib/cprest/staging</dd><dt>Cache</dt><dd class="mono">/var/cache/cprest/restic</dd><dt>Free</dt><dd>6.2 GB</dd></dl><h3>Notifications</h3><p>Operations email is working. Last test sent yesterday.</p>${action("Send test")}</aside></div></section>`;
+  return `${consolePagebar(action("Save", "primary", "check"))}<section class="c-panel"><div class="c-panel-head"><h2>Node configuration</h2><span class="muted mono">/var/lib/gniza/state.db</span></div><div class="c-master-detail"><div class="c-master"><div class="card-pad stack-lg"><div class="grid-2"><div class="field"><label for="c-host">Hostname tag</label><input id="c-host" value="mx.7171.online"></div><div class="field"><label for="c-workers">Concurrent accounts</label><input id="c-workers" type="number" value="1"></div><div class="field"><label for="c-restic">restic path</label><input id="c-restic" value="/usr/local/bin/restic"></div><div class="field"><label for="c-days">Restore output days</label><input id="c-days" type="number" value="7"></div></div><fieldset style="border:0;padding:0;margin:0"><legend class="eyebrow">Lifecycle hooks</legend><label class="check-row"><input type="checkbox"><span><span class="check-title">Protect account removal</span><span class="check-copy">Block termination without current complete copies.</span></span></label><label class="check-row"><input type="checkbox"><span><span class="check-title">Backup on suspension</span><span class="check-copy">Queue a preservation plan after suspendacct.</span></span></label></fieldset></div></div><aside class="c-detail"><p class="eyebrow">Runtime</p><h2>Healthy</h2>${status("Service active", "good")}<h3>Paths</h3><dl><dt>State</dt><dd class="mono">/var/lib/gniza</dd><dt>Staging</dt><dd class="mono">/var/lib/gniza/staging</dd><dt>Cache</dt><dd class="mono">/var/cache/gniza/restic</dd><dt>Free</dt><dd>6.2 GB</dd></dl><h3>Notifications</h3><p>Operations email is working. Last test sent yesterday.</p>${action("Send test")}</aside></div></section>`;
 }
 
 function pageC() {
@@ -527,7 +527,7 @@ function pageC() {
 
 function renderC() {
   const nav = pages.map(([key, label, iconName]) => `${pageButton(key, label, iconName)}${key === "accounts" ? "" : ""}`).join("");
-  return `<div class="variant-c"><div class="c-shell"><header class="c-commandbar"><div class="brand"><span class="brand-mark">cP</span><span>Recovery console</span></div><label class="c-command">${icon("search")}<span class="visually-hidden">Search or run a command</span><input type="search" placeholder="Search account, snapshot, or command"><span class="key">/</span></label><div class="c-statusline">${status("Healthy", "good")}<span>root · mx.7171.online</span></div></header><div class="c-body"><nav class="c-nav" aria-label="cP:Restic pages"><div class="c-nav-label">Workspace</div>${nav}</nav><main id="prototype-main" class="c-workbench" tabindex="-1">${pageC()}</main></div></div></div>`;
+  return `<div class="variant-c"><div class="c-shell"><header class="c-commandbar"><div class="brand"><span class="brand-mark">cP</span><span>Recovery console</span></div><label class="c-command">${icon("search")}<span class="visually-hidden">Search or run a command</span><input type="search" placeholder="Search account, snapshot, or command"><span class="key">/</span></label><div class="c-statusline">${status("Healthy", "good")}<span>root · mx.7171.online</span></div></header><div class="c-body"><nav class="c-nav" aria-label="Gniza pages"><div class="c-nav-label">Workspace</div>${nav}</nav><main id="prototype-main" class="c-workbench" tabindex="-1">${pageC()}</main></div></div></div>`;
 }
 
 const url = new URL(window.location.href);

@@ -12,12 +12,12 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/shuki/cprest/internal/destination"
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/repobuild"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/store"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/destination"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/repobuild"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/store"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
 // Kind names a maintenance operation. The values match the

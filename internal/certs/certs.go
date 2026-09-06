@@ -63,7 +63,7 @@ func NewAuthority(commonName string, validFor time.Duration) (*Authority, error)
 
 	template := &x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: commonName, Organization: []string{"cprest"}},
+		Subject:               pkix.Name{CommonName: commonName, Organization: []string{"gniza"}},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(validFor),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
@@ -143,7 +143,7 @@ func (a *Authority) issue(commonName string, hosts []string,
 
 	template := &x509.Certificate{
 		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: commonName, Organization: []string{"cprest"}},
+		Subject:      pkix.Name{CommonName: commonName, Organization: []string{"gniza"}},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(validFor),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,

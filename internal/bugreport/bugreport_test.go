@@ -61,15 +61,15 @@ func TestTheReportCarriesEverySection(t *testing.T) {
 		Subject: "A restore failed",
 		Body:    "It said success and the account was not there.",
 		Sections: []Section{
-			{Title: "Versions and environment", Text: "cprest 0.1.0"},
+			{Title: "Versions and environment", Text: "gniza 0.1.0"},
 			{Title: "Empty", Text: "  "},
 			{Title: "Service log", Text: "msg=\"restore finished\""},
 		},
 	}
 	markdown := report.Markdown()
 	for _, want := range []string{
-		"It said success", "### Versions and environment", "cprest 0.1.0",
-		"### Service log", "Reported from cP:Restic on",
+		"It said success", "### Versions and environment", "gniza 0.1.0",
+		"### Service log", "Reported from Gniza on",
 	} {
 		if !strings.Contains(markdown, want) {
 			t.Errorf("the report does not carry %q:\n%s", want, markdown)
@@ -93,7 +93,7 @@ func TestTheMessageCannotBeUsedToWriteHeaders(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Mail(context.Background(), fake, "cprest@host.example.com", "maintainer@example.com",
+	err := Mail(context.Background(), fake, "gniza@host.example.com", "maintainer@example.com",
 		"Restore failed\r\nBcc: somebody@elsewhere.example",
 		"a line\n.\nafter the dot\n")
 	if err != nil {

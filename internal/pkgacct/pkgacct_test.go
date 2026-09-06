@@ -47,7 +47,7 @@ func TestPlanSplit(t *testing.T) {
 		Account:    "customer1",
 		HomeDir:    "/home/customer1",
 		Databases:  []string{"customer1_wp", "customer1_shop"},
-		StagingDir: "/var/cprest/staging/job-42",
+		StagingDir: "/var/gniza/staging/job-42",
 		Mode:       ModeSplit,
 		Caps:       ProbeCapabilities(helpModern),
 	})
@@ -62,9 +62,9 @@ func TestPlanSplit(t *testing.T) {
 	// loses a database. Paths that change would put every run in its own
 	// retention group, and a group of one is never pruned.
 	want := []string{
-		"/var/cprest/staging/job-42/metadata",
+		"/var/gniza/staging/job-42/metadata",
 		"/home/customer1",
-		"/var/cprest/staging/job-42/databases",
+		"/var/gniza/staging/job-42/databases",
 	}
 	got := payload.Paths()
 	if len(got) != len(want) {
@@ -77,7 +77,7 @@ func TestPlanSplit(t *testing.T) {
 	}
 
 	for _, database := range []string{"customer1_wp", "customer1_shop"} {
-		want := "/var/cprest/staging/job-42/databases/" + database + ".sql"
+		want := "/var/gniza/staging/job-42/databases/" + database + ".sql"
 		if got := payload.DumpPaths[database]; got != want {
 			t.Errorf("dump path for %s = %q, want %q", database, got, want)
 		}
@@ -338,7 +338,7 @@ func TestSkipEmailAlsoLeavesOutTheMailConfiguration(t *testing.T) {
 			"them out", caps.SkipMailConfigFlag)
 	}
 
-	args := strings.Join(CommandArgs("customer1", "/var/cprest/staging/job-42",
+	args := strings.Join(CommandArgs("customer1", "/var/gniza/staging/job-42",
 		ModeSplit, caps, true), " ")
 	for _, want := range []string{"--skipmail", "--skipmailconfig"} {
 		if !strings.Contains(args, want) {
@@ -347,7 +347,7 @@ func TestSkipEmailAlsoLeavesOutTheMailConfiguration(t *testing.T) {
 	}
 
 	// A schedule that keeps email passes neither.
-	kept := strings.Join(CommandArgs("customer1", "/var/cprest/staging/job-42",
+	kept := strings.Join(CommandArgs("customer1", "/var/gniza/staging/job-42",
 		ModeSplit, caps, false), " ")
 	if strings.Contains(kept, "skipmail") {
 		t.Errorf("a backup that keeps email asked pkgacct to leave it out: %s", kept)
@@ -380,7 +380,7 @@ func TestMonolithicSkipEmailSaysThePasswordsAreStillInTheArchive(t *testing.T) {
 	caps := ProbeCapabilities(helpLive136)
 
 	monolithic, err := Plan(PlanRequest{
-		Account: "c1", StagingDir: "/var/cprest/staging/job-42",
+		Account: "c1", StagingDir: "/var/gniza/staging/job-42",
 		Mode: ModeMonolithic, Caps: caps, SkipEmail: true,
 	})
 	if err != nil {
@@ -398,7 +398,7 @@ func TestMonolithicSkipEmailSaysThePasswordsAreStillInTheArchive(t *testing.T) {
 
 	// The same run without the skip has nothing to say.
 	kept, err := Plan(PlanRequest{
-		Account: "c1", StagingDir: "/var/cprest/staging/job-42",
+		Account: "c1", StagingDir: "/var/gniza/staging/job-42",
 		Mode: ModeMonolithic, Caps: caps,
 	})
 	if err != nil {
@@ -412,7 +412,7 @@ func TestMonolithicSkipEmailSaysThePasswordsAreStillInTheArchive(t *testing.T) {
 	// And split mode, where the exclude does reach ~/etc, is not degraded
 	// for this.
 	split, err := Plan(PlanRequest{
-		Account: "c1", StagingDir: "/var/cprest/staging/job-42", HomeDir: "/home/c1",
+		Account: "c1", StagingDir: "/var/gniza/staging/job-42", HomeDir: "/home/c1",
 		Mode: ModeSplit, Caps: caps, SkipEmail: true,
 	})
 	if err != nil {

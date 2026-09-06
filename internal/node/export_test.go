@@ -3,7 +3,7 @@ package node
 import (
 	"time"
 
-	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shukiv/gniza/internal/nodestore"
 )
 
 // RetentionIsThrottledForTest reports whether this repository is inside

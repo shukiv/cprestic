@@ -89,7 +89,7 @@ func TestIntakeNeverTreatsErrorsOrRedirectsAsDelivery(t *testing.T) {
 	}{
 		{"credentials", 401, `{"ok":false,"error":"` + testIntakeKey + `"}`, "key was rejected"},
 		{"rate limit", 429, `{"ok":false}`, "wait 60 seconds"},
-		{"program", 400, `{"ok":false}`, "verify the cprestic program"},
+		{"program", 400, `{"ok":false}`, "verify the cprestic programme"},
 		{"too large", 413, `{"ok":false}`, "download it"},
 		{"upstream", 502, "private proxy body " + testIntakeKey, "not confirmed"},
 		{"redirect", 307, "", "not confirmed"},

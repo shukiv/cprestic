@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/hookspool"
-	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shukiv/gniza/internal/hookspool"
+	"github.com/shukiv/gniza/internal/nodestore"
 )
 
 // ListenLifecycle receives cPanel Standardized Hook notifications. It has

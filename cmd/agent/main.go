@@ -1,9 +1,9 @@
-// Command cprest-agent runs on a cPanel server. It long-polls the
+// Command gniza-agent runs on a cPanel server. It long-polls the
 // controller for backup jobs, stages a payload once, and uploads it to
 // every repository the job names.
 //
 // The agent never receives delete-capable credentials: retention and
-// pruning belong to cprest-maintenance. See docs/DESIGN.md §8.
+// pruning belong to gniza-maintenance. See docs/DESIGN.md §8.
 package main
 
 import (
@@ -21,11 +21,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/shuki/cprest/internal/agent"
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/hookspool"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/staging"
+	"github.com/shukiv/gniza/internal/agent"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/hookspool"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/staging"
 )
 
 type config struct {
@@ -80,7 +80,7 @@ func main() {
 		if err != nil {
 			if cfg.cpanelHookEvent == "remove-pre" {
 				if detail, denied := blockingHookFailure(err); denied {
-					fmt.Printf("0 BAILOUT cprest blocked account removal: %s\n", hookMessage(detail))
+					fmt.Printf("0 BAILOUT Gniza blocked account removal: %s\n", hookMessage(detail))
 					log.Warn("cPanel account removal blocked", "reason", err)
 					os.Exit(1)
 				}
@@ -88,7 +88,7 @@ func main() {
 				// backup service is restarting or unavailable. A reachable
 				// service makes policy failures explicit above; infrastructure
 				// failures are logged and deliberately fail open.
-				fmt.Println("1 cprest termination check unavailable; account removal allowed")
+				fmt.Println("1 Gniza termination check unavailable; account removal allowed")
 				log.Error("cPanel account removal check unavailable; allowed removal", "error", err)
 				return
 			}
@@ -117,29 +117,29 @@ func main() {
 				path, spoolErr := spoolCPanelHook(
 					cfg.hookSpoolDir, cfg.cpanelHookEvent, payload, happenedAt)
 				if spoolErr != nil {
-					fmt.Println("0 cprest could not record this account event; " +
+					fmt.Println("0 Gniza could not record this account event; " +
 						"back up and restore for this account may show the wrong owner")
 					log.Error("could not record a cPanel account event for replay",
 						"event", cfg.cpanelHookEvent, "error", spoolErr)
 					os.Exit(1)
 				}
-				fmt.Println("1 cprest lifecycle recorded; " +
+				fmt.Println("1 Gniza lifecycle recorded; " +
 					"the backup service could not take it now and will replay it")
 				log.Warn("recorded a cPanel account event for replay",
 					"event", cfg.cpanelHookEvent, "spooled", path, "error", err)
 				return
 			}
 			if !serviceAnswered(err) {
-				fmt.Println("1 cprest lifecycle deferred; the backup service is unavailable")
+				fmt.Println("1 Gniza lifecycle deferred; the backup service is unavailable")
 				log.Error("cPanel lifecycle hook could not reach the service; deferred",
 					"event", cfg.cpanelHookEvent, "error", err)
 				return
 			}
-			fmt.Println("0 cprest lifecycle reconciliation failed")
+			fmt.Println("0 Gniza lifecycle reconciliation failed")
 			log.Error("cPanel lifecycle hook failed", "error", err)
 			os.Exit(1)
 		}
-		fmt.Println("1 cprest lifecycle reconciled")
+		fmt.Println("1 Gniza lifecycle reconciled")
 		return
 	}
 
@@ -173,15 +173,15 @@ func parseFlags() config {
 	flag.StringVar(&cfg.clientCert, "client-cert", "", "mTLS client certificate")
 	flag.StringVar(&cfg.clientKey, "client-key", "", "mTLS client private key")
 	flag.StringVar(&cfg.caBundle, "ca-bundle", "", "CA bundle used to verify the controller")
-	flag.StringVar(&cfg.stagingRoot, "staging-root", "/var/lib/cprest/staging",
+	flag.StringVar(&cfg.stagingRoot, "staging-root", "/var/lib/gniza/staging",
 		"directory pkgacct stages into; size this volume deliberately")
-	flag.StringVar(&cfg.runtimeDir, "runtime-dir", "/run/cprest",
+	flag.StringVar(&cfg.runtimeDir, "runtime-dir", "/run/gniza",
 		"directory for the transient restic password file")
 	flag.IntVar(&cfg.maxConcurrent, "max-concurrent", 1, "accounts staged at once")
 	flag.Float64Var(&cfg.safetyMargin, "safety-margin", 0.2,
 		"extra free space required beyond the payload estimate, as a fraction")
 	flag.StringVar(&cfg.resticBinary, "restic", "restic", "path to the restic binary")
-	flag.StringVar(&cfg.resticCache, "restic-cache", "/var/cache/cprest/restic",
+	flag.StringVar(&cfg.resticCache, "restic-cache", "/var/cache/gniza/restic",
 		"restic cache directory; a warm cache markedly speeds up repeat backups")
 	flag.StringVar(&cfg.resticCACert, "restic-cacert", "",
 		"CA bundle restic should trust, for a destination behind a private CA")
@@ -196,15 +196,15 @@ func parseFlags() config {
 	flag.BoolVar(&cfg.preflightOnly, "preflight", false, "check local prerequisites and exit")
 	flag.BoolVar(&cfg.standalone, "standalone", false,
 		"run this server on its own, with local state and the WHM interface, and no controller")
-	flag.StringVar(&cfg.statePath, "state", "/var/lib/cprest/state.db",
+	flag.StringVar(&cfg.statePath, "state", "/var/lib/gniza/state.db",
 		"standalone: where this server keeps its own configuration and history")
-	flag.StringVar(&cfg.userSocketPath, "user-socket", "/var/run/cprest/account/user.sock",
+	flag.StringVar(&cfg.userSocketPath, "user-socket", "/var/run/gniza/account/user.sock",
 		"unix socket the cPanel account interface listens on")
-	flag.StringVar(&cfg.socketPath, "socket", "/var/run/cprest/admin/ui.sock",
+	flag.StringVar(&cfg.socketPath, "socket", "/var/run/gniza/admin/ui.sock",
 		"standalone: unix socket the WHM plugin connects to")
-	flag.StringVar(&cfg.masterKeyPath, "master-key", "/etc/cprest/master.key",
+	flag.StringVar(&cfg.masterKeyPath, "master-key", "/etc/gniza/master.key",
 		"standalone: key that encrypts stored destination credentials")
-	flag.StringVar(&cfg.lifecycleSocketPath, "lifecycle-socket", "/var/run/cprest/hooks/lifecycle.sock",
+	flag.StringVar(&cfg.lifecycleSocketPath, "lifecycle-socket", "/var/run/gniza/hooks/lifecycle.sock",
 		"root-only socket used by cPanel account lifecycle hooks")
 	flag.StringVar(&cfg.hookSpoolDir, "hook-spool", hookspool.DefaultDir,
 		"where a cPanel lifecycle hook leaves an account event this service was not running to hear")

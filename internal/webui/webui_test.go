@@ -15,15 +15,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/node"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/vault"
-	"github.com/shuki/cprest/internal/webui"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/node"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/vault"
+	"github.com/shukiv/gniza/internal/webui"
 )
 
 // newUI stands the interface up on a socket with a synthetic cPanel host
@@ -177,7 +177,7 @@ func TestEveryPageRenders(t *testing.T) {
 		}
 		// The page is a fragment: WHM's own interface supplies the
 		// document around it, so there is no <html> of our own.
-		if !strings.Contains(body, `<div class="cprest">`) {
+		if !strings.Contains(body, `<div class="gniza">`) {
 			t.Errorf("GET %s did not render the layout", path)
 		}
 		if !strings.Contains(body, "</main>") {
@@ -391,7 +391,7 @@ func TestSFTPFormAsksForNeitherAKeyNorKnownHosts(t *testing.T) {
 	client, _, _ := newUI(t)
 	_, page := get(t, client, "/destinations")
 
-	// cprest generates its own key and learns the host key itself, so
+	// Gniza generates its own key and learns the host key itself, so
 	// neither is something an operator should have to prepare.
 	if strings.Contains(page, `name="known_hosts_file"`) {
 		t.Error("the form still asks for a known_hosts file")
@@ -1487,7 +1487,7 @@ func TestTheDrawerIsOnlyVisibleWhenItIsOpen(t *testing.T) {
 
 	_, page := get(t, client, "/destinations")
 	for _, rule := range []string{
-		".cprest .cpr-sheet[open] { display:flex; }",
+		".gniza .cpr-sheet[open] { display:flex; }",
 	} {
 		if !strings.Contains(page, rule) {
 			t.Errorf("the stylesheet does not say %q", rule)
@@ -1495,7 +1495,7 @@ func TestTheDrawerIsOnlyVisibleWhenItIsOpen(t *testing.T) {
 	}
 	// Nothing may give a dialog a display of its own outside [open].
 	for _, forbidden := range []string{
-		".cprest .cpr-sheet {\n  position:fixed; inset:0 0 0 auto; margin:0;\n  width:min(520px, 94vw); max-width:none; height:100%; max-height:none;\n  padding:0; border:0; border-left:1px solid var(--line-strong); border-radius:0;\n  background:var(--surface); color:var(--ink);\n  box-shadow:-8px 0 28px rgba(10,14,20,.22);\n  display:flex;",
+		".gniza .cpr-sheet {\n  position:fixed; inset:0 0 0 auto; margin:0;\n  width:min(520px, 94vw); max-width:none; height:100%; max-height:none;\n  padding:0; border:0; border-left:1px solid var(--line-strong); border-radius:0;\n  background:var(--surface); color:var(--ink);\n  box-shadow:-8px 0 28px rgba(10,14,20,.22);\n  display:flex;",
 	} {
 		if strings.Contains(page, forbidden) {
 			t.Error("the drawer is displayed whether or not it is open")
@@ -1725,7 +1725,7 @@ func TestTheRecoveryKeyIsShownAndNagsUntilItIsSaved(t *testing.T) {
 		t.Error("the recovery key was not shown when it was asked for")
 	}
 	if !strings.Contains(revealed, "RESTIC_REPOSITORY") {
-		t.Error("the page does not say how to use it without cprest")
+		t.Error("the page does not say how to use it without gniza")
 	}
 	if !strings.Contains(revealed, "RESTIC_PASSWORD='"+password+"'") {
 		t.Error("the commands still ask the reader to paste the key in themselves")
@@ -1961,7 +1961,7 @@ func TestBrowsingStartsAtTheDestinations(t *testing.T) {
 func TestTheRecoveryCardCarriesWhatIsNeededToReachTheDestination(t *testing.T) {
 	client, _, engine := newUI(t)
 
-	// A destination reached over SSH, with the files cprest writes for it.
+	// A destination reached over SSH, with the files Gniza writes for it.
 	dir := t.TempDir()
 	identity := filepath.Join(dir, "id_ed25519")
 	knownHosts := filepath.Join(dir, "known_hosts")
@@ -2054,7 +2054,7 @@ func TestThePluginDoesNotDrawWHMsBreadcrumbAgain(t *testing.T) {
 	client, _, _ := newUI(t)
 
 	_, page := get(t, client, "/")
-	for _, gone := range []string{"cpr-topbar", "cpr-breadcrumb", "WHM / Plugins / cP:Restic"} {
+	for _, gone := range []string{"cpr-topbar", "cpr-breadcrumb", "WHM / Plugins / Gniza"} {
 		if strings.Contains(page, gone) {
 			t.Errorf("the page still carries %s", gone)
 		}
@@ -2085,9 +2085,9 @@ func TestTheRailPointsAtTheSourceAndTheManual(t *testing.T) {
 
 	_, page := get(t, client, "/")
 	for _, want := range []string{
-		`href="https://github.com/shukiv/cprestic"`,
-		`href="https://github.com/shukiv/cprestic/blob/master/docs/README.md"`,
-		`aria-label="cP:Restic on GitHub"`,
+		`href="https://github.com/shukiv/gniza"`,
+		`href="https://github.com/shukiv/gniza/blob/master/docs/README.md"`,
+		`aria-label="Gniza on GitHub"`,
 		`aria-label="Documentation"`,
 		// Opening a new tab from someone else's page hands them
 		// window.opener unless this is here.
@@ -2099,28 +2099,28 @@ func TestTheRailPointsAtTheSourceAndTheManual(t *testing.T) {
 	}
 }
 
-// The name is cP:Restic, and the cP mark uses cPanel's orange. A stylesheet
-// rule that greys every span inside the brand once made it the wrong colour,
-// which is invisible in markup and only shows on the page.
+// The name is Gniza and the mark is its own colour. A stylesheet rule that
+// greys every span inside the brand once made it the wrong colour, which is
+// invisible in markup and only shows on the page.
 func TestTheBrandIsOnThePageInItsOwnColour(t *testing.T) {
 	client, _, _ := newUI(t)
 
 	_, page := get(t, client, "/")
 	for _, want := range []string{
-		`<span class="cpr-brand-mark">cP:R</span>`,
-		`<span class="cpr-brand-name">cP:Restic</span>`,
+		`<span class="cpr-brand-mark">GZ</span>`,
+		`<span class="cpr-brand-name">Gniza</span>`,
 		// The strapline sits inside the lockup, beside the mark rather
 		// than under the whole block on a margin kept in step by hand.
-		`<span class="cpr-server">WHM backup operations</span>`,
+		`<span class="cpr-server">Backup. Restore. Repeat.</span>`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the interface does not carry the name: %s is missing", want)
 		}
 	}
 	if !strings.Contains(page, "background:#E35E30; color:#FFFFFF;") {
-		t.Error("the cP mark is not in its own colour")
+		t.Error("the mark is not in its own colour")
 	}
-	if strings.Contains(page, ".cprest .cpr-brand span { color:var(--muted)") {
+	if strings.Contains(page, ".gniza .cpr-brand span { color:var(--muted)") {
 		t.Error("a rule is still greying out everything inside the brand")
 	}
 }
@@ -2140,7 +2140,7 @@ func TestTheBrandIsOnThePageInItsOwnColour(t *testing.T) {
 // stored the most, which failed, who has not been backed up. The rows are
 // already on the page, so the sort happens there; what the server has to
 // get right is a sort key on the cells whose text does not sort.
-// History was one page of backups called "everything cprest has done",
+// History was one page of backups called "everything Gniza has done",
 // which it was not: a backup of the server's own settings sat among
 // nineteen account backups, and the cPanel hook events were only on the
 // dashboard's five-row summary.
@@ -2749,7 +2749,7 @@ func TestAProblemIsReportedOnlyAfterItIsShown(t *testing.T) {
 		t.Fatalf("POST: %v", err)
 	}
 	defer file.Body.Close()
-	if got := file.Header.Get("Content-Disposition"); !strings.Contains(got, "cprest-report-") {
+	if got := file.Header.Get("Content-Disposition"); !strings.Contains(got, "gniza-report-") {
 		t.Errorf("the report does not come back as a file: %q", got)
 	}
 	saved, err := io.ReadAll(file.Body)
@@ -2794,7 +2794,7 @@ func TestWHMPagesUseTheOperationalRail(t *testing.T) {
 		`class="cpr-rail"`,
 		`class="cpr-workspace"`,
 		`href="?p=restore" aria-label="Restore" aria-current="page"`,
-		`id="cprest-main" tabindex="-1"`,
+		`id="gniza-main" tabindex="-1"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("operational rail page is missing %q", want)

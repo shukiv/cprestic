@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/agent"
-	"github.com/shuki/cprest/internal/node"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/update"
+	"github.com/shukiv/gniza/internal/agent"
+	"github.com/shukiv/gniza/internal/node"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/update"
 )
 
 // updatePanel is the settings card about the program itself: what is
@@ -86,7 +86,7 @@ func (s *Server) handleCheckUpdate(w http.ResponseWriter, r *http.Request) {
 	case state.Version == "":
 		s.redirect(w, r, settingsTab("version"), "warn", "GitHub answered, but named no release.")
 	case s.engine.UpdateOffered(state):
-		s.redirect(w, r, settingsTab("version"), "ok", "cP:Restic "+state.Version+" is available to install.")
+		s.redirect(w, r, settingsTab("version"), "ok", "Gniza "+state.Version+" is available to install.")
 	default:
 		s.redirect(w, r, settingsTab("version"), "ok",
 			"This server runs "+agent.Version+", and what is published is "+state.Version+".")
@@ -132,7 +132,7 @@ func (s *Server) handleChooseChannel(w http.ResponseWriter, r *http.Request) {
 		"Updates now come from published releases. Press Check now to see the newest.")
 }
 
-// handleUninstall removes cP:Restic from this server.
+// handleUninstall removes Gniza from this server.
 //
 // The command in a root shell is what this ran before, and it still works;
 // what it did not do was exist anywhere somebody looking at the interface
@@ -144,18 +144,18 @@ func (s *Server) handleChooseChannel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
 	if !confirmed(r) {
 		s.askFirst(w, r, confirmation{
-			Title:   "Remove cP:Restic from this server?",
+			Title:   "Remove Gniza from this server?",
 			Section: "settings",
 			Warning: "This stops the service and unregisters the WHM plugin, the cPanel hooks " +
 				"and the account tile. This page goes with it: nothing here will answer " +
 				"afterwards, and what is left to run is the installer, in a root shell.",
 			Detail: []string{
-				"Backups already on their destinations are not touched, and neither is anything on this server outside cP:Restic.",
-				"/etc/cprest/master.key and /var/lib/cprest/state.db stay, so reinstalling comes back with the same destinations, schedules and history.",
+				"Backups already on their destinations are not touched, and neither is anything on this server outside Gniza.",
+				"/etc/gniza/master.key and /var/lib/gniza/state.db stay, so reinstalling comes back with the same destinations, schedules and history.",
 				"Nothing here will take backups afterwards: whatever this server was backing up stops being backed up.",
 			},
-			Tick:   "Yes, remove cP:Restic from this server",
-			Button: "Remove cP:Restic",
+			Tick:   "Yes, remove Gniza from this server",
+			Button: "Remove Gniza",
 			Cancel: linkTo("/settings"),
 		})
 		return
@@ -165,7 +165,7 @@ func (s *Server) handleUninstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.redirect(w, r, settingsTab("version"), "warn",
-		"Removing cP:Restic. This page stops answering in a few seconds. "+
+		"Removing Gniza. This page stops answering in a few seconds. "+
 			"Reinstalling brings back the same destinations, schedules and history.")
 }
 
@@ -210,15 +210,15 @@ func (s *Server) handleUpgrade(w http.ResponseWriter, r *http.Request) {
 		// Which versions are installable is the engine's to say, since
 		// that depends on the channel: a release has a version number, a
 		// branch build has whatever git describe called it.
-		s.redirect(w, r, settingsTab("version"), "error", "That is not a build of cP:Restic.")
+		s.redirect(w, r, settingsTab("version"), "error", "That is not a build of Gniza.")
 		return
 	}
 	if !confirmed(r) {
 		s.askFirst(w, r, confirmation{
-			Title:   "Install cP:Restic " + version + "?",
+			Title:   "Install Gniza " + version + "?",
 			Section: "settings",
 			Warning: fmt.Sprintf(
-				"This downloads %s, checks that the cP:Restic release key signed it, "+
+				"This downloads %s, checks that the Gniza release key signed it, "+
 					"installs it over %s and restarts the service. Backups already queued "+
 					"stay queued and run afterwards.", version, agent.Version),
 			Detail: []string{

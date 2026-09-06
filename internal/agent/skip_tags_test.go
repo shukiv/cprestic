@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // A schedule that leaves part of the account out must say so on the

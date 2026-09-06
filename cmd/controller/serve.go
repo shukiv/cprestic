@@ -11,15 +11,15 @@ import (
 	"os"
 	"time"
 
-	"github.com/shuki/cprest/internal/controller"
-	"github.com/shuki/cprest/internal/store"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/controller"
+	"github.com/shukiv/gniza/internal/store"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
 func runServe(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("serve", flag.ExitOnError)
 	listen := flags.String("listen", ":8443", "listen address for the agent API")
-	databaseURL := flags.String("database-url", os.Getenv("CPREST_DATABASE_URL"),
+	databaseURL := flags.String("database-url", os.Getenv("GNIZA_DATABASE_URL"),
 		"PostgreSQL connection string")
 	masterKeyPath := flags.String("master-key", "", "vault master key file")
 	tlsCert := flags.String("tls-cert", "", "controller server certificate")
@@ -133,7 +133,7 @@ func openVault(masterKeyPath string) (*vault.Vault, error) {
 
 func runMigrate(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet("migrate", flag.ExitOnError)
-	databaseURL := flags.String("database-url", os.Getenv("CPREST_DATABASE_URL"),
+	databaseURL := flags.String("database-url", os.Getenv("GNIZA_DATABASE_URL"),
 		"PostgreSQL connection string")
 	if err := flags.Parse(args); err != nil {
 		return err

@@ -1,7 +1,7 @@
 #!/bin/sh
-# Put cP:Restic on this cPanel server, from a published release.
+# Put Gniza on this cPanel server, from a published release.
 #
-#   curl -fsSL https://github.com/shukiv/cprestic/releases/latest/download/get.sh | sh
+#   curl -fsSL https://github.com/shukiv/gniza/releases/latest/download/get.sh | sh
 #
 # It downloads one tarball, checks it against the checksums published beside
 # it, unpacks it into a temporary directory and hands over to the installer
@@ -17,13 +17,13 @@
 # This script is short so that reading it before running it as root is a
 # minute's work rather than an act of faith.
 #
-# CPREST_VERSION=v1.2.3   install that release instead of the newest
-# CPREST_TARBALL=/path    install a tarball already on this machine, which is
+# GNIZA_VERSION=v1.2.3   install that release instead of the newest
+# GNIZA_TARBALL=/path    install a tarball already on this machine, which is
 #                         yours to trust: nothing is downloaded, so nothing is
 #                         verified
 set -eu
 
-REPO=shukiv/cprestic
+REPO=shukiv/gniza
 RELEASES=https://github.com/$REPO/releases
 
 # The public half of the release signing key. Its private half signs
@@ -51,10 +51,13 @@ main() {
         x86_64) arch=amd64 ;;
         *)      die "the published builds are x86-64 only; on $(uname -m), build from source with 'make plugin'" ;;
     esac
+    # The published asset keeps the name from before the rename to Gniza,
+    # because servers running an older release ask for it by that name.
+    # See internal/update/install.go.
     tarball=cprest-plugin-$arch.tar.gz
 
-    if [ -n "${CPREST_VERSION:-}" ]; then
-        base=$RELEASES/download/$CPREST_VERSION
+    if [ -n "${GNIZA_VERSION:-}" ]; then
+        base=$RELEASES/download/$GNIZA_VERSION
     else
         base=$RELEASES/latest/download
     fi
@@ -63,12 +66,12 @@ main() {
         command -v "$tool" >/dev/null 2>&1 || die "$tool is needed; install it and run this again"
     done
 
-    work=$(mktemp -d /var/tmp/cprest-install.XXXXXX)
+    work=$(mktemp -d /var/tmp/gniza-install.XXXXXX)
     trap 'rm -rf -- "$work"' 0 1 2 15
 
-    if [ -n "${CPREST_TARBALL:-}" ]; then
-        say "installing from $CPREST_TARBALL"
-        cp "$CPREST_TARBALL" "$work/$tarball"
+    if [ -n "${GNIZA_TARBALL:-}" ]; then
+        say "installing from $GNIZA_TARBALL"
+        cp "$GNIZA_TARBALL" "$work/$tarball"
     else
         say "downloading $base/$tarball"
         curl -fsSL -o "$work/$tarball" "$base/$tarball" \
@@ -83,7 +86,7 @@ main() {
         release_key > "$work/release.pub"
         openssl dgst -sha256 -verify "$work/release.pub" \
             -signature "$work/SHA256SUMS.sig" "$work/SHA256SUMS" >/dev/null 2>&1 \
-            || die "the checksums are not signed by the cP:Restic release key; nothing was installed"
+            || die "the checksums are not signed by the Gniza release key; nothing was installed"
 
         # Which release those checksums were published for. The build
         # writes it into the file that gets signed, so a signature made
@@ -99,8 +102,8 @@ main() {
             "$work/SHA256SUMS" | head -1)
         [ -n "$signed_for" ] \
             || die "the published checksums do not say which release they are for; nothing was installed"
-        if [ -n "${CPREST_VERSION:-}" ] && [ "$signed_for" != "$CPREST_VERSION" ]; then
-            die "those checksums are signed for $signed_for, not $CPREST_VERSION; nothing was installed"
+        if [ -n "${GNIZA_VERSION:-}" ] && [ "$signed_for" != "$GNIZA_VERSION" ]; then
+            die "those checksums are signed for $signed_for, not $GNIZA_VERSION; nothing was installed"
         fi
         say "signature ok, for $signed_for"
 

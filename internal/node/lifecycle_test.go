@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/hookspool"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/hookspool"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
 func lifecycleEngine(t *testing.T, users map[string][]string, uids map[string]int) (*Engine, *nodestore.Store) {

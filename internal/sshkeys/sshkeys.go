@@ -3,7 +3,7 @@
 //
 // Backing up to another Linux server should not require an operator to run
 // ssh-keygen, edit authorized_keys and hand-write a known_hosts file before
-// anything works. cprest generates its own key per destination, can show
+// anything works. Gniza generates its own key per destination, can show
 // the public half for copying, and can install it itself given the remote
 // password once.
 package sshkeys
@@ -97,7 +97,7 @@ func FetchHostKey(address string, timeout time.Duration) (HostKey, error) {
 	var captured ssh.PublicKey
 
 	config := &ssh.ClientConfig{
-		User:    "cprest-hostkey-probe",
+		User:    "gniza-hostkey-probe",
 		Auth:    []ssh.AuthMethod{},
 		Timeout: timeout,
 		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
@@ -367,7 +367,7 @@ func PublicHalf(path string) (KeyPair, error) {
 // RunAsAdmin runs a script on the remote server as an account that can
 // administer it, usually root, using a password given once.
 //
-// It exists so cprest can create the account its backups will use rather
+// It exists so Gniza can create the account its backups will use rather
 // than asking an operator to do it by hand. The password is used for this
 // connection and nothing else; it is never written down.
 func RunAsAdmin(address, user, password string, host HostKey, script string,

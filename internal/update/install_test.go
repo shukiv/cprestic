@@ -89,7 +89,7 @@ func plugin(t *testing.T, entries ...*tar.Header) []byte {
 		}
 	}
 	write("cprest-plugin/install.sh", "#!/bin/sh\nexit 0\n")
-	write("cprest-plugin/cprest-agent", "not really a binary")
+	write("cprest-plugin/gniza-agent", "not really a binary")
 	for _, header := range entries {
 		if err := archive.WriteHeader(header); err != nil {
 			t.Fatal(err)
@@ -356,7 +356,7 @@ func TestFetchFollowsARedirectButNotOffHTTPS(t *testing.T) {
 }
 
 // TestFetchReadsOnlyOverHTTP is the other end of the same rule: an
-// operator's own CPREST_RELEASE_BASE moves where a release is read from,
+// operator's own GNIZA_RELEASE_BASE moves where a release is read from,
 // not how.
 func TestFetchReadsOnlyOverHTTP(t *testing.T) {
 	published := newRelease(t, plugin(t))

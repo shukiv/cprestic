@@ -29,7 +29,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/node"
+	"github.com/shukiv/gniza/internal/node"
 )
 
 //go:embed templates/*.html
@@ -256,7 +256,7 @@ func (s *Server) Handler() http.Handler {
 // route turns the "p" query parameter into a request path.
 //
 // cpsrvd will not route anything after a CGI's name — both
-// ".../cprest.cgi/" and ".../cprest.cgi/accounts" are 404s, verified
+// ".../gniza.cgi/" and ".../gniza.cgi/accounts" are 404s, verified
 // against cPanel 136 — so every route travels in a query parameter. It is
 // translated here rather than in the plugin so the rule is one thing, in
 // the language the rest of this package is written in, and can be tested.
@@ -272,7 +272,7 @@ func (s *Server) route(next http.Handler) http.Handler {
 		route := strings.TrimPrefix(query.Get("p"), "/")
 		query.Del("p")
 		if !safeRoute(route) {
-			s.fail(w, r, http.StatusBadRequest, errors.New("that address is not part of cprest"))
+			s.fail(w, r, http.StatusBadRequest, errors.New("that address is not part of gniza"))
 			return
 		}
 

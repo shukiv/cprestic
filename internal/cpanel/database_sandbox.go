@@ -38,7 +38,7 @@ func (r *Real) loadIsolatedDatabase(ctx context.Context, database string, dump i
 	}
 	login := "cpr_restore_" + hex.EncodeToString(entropy[:8])
 	password := hex.EncodeToString(entropy[8:])
-	dir, err := os.MkdirTemp("", "cprest-mysql-")
+	dir, err := os.MkdirTemp("", "gniza-mysql-")
 	if err != nil {
 		return err
 	}

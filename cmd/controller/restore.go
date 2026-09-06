@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/destination"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/repobuild"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/store"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/destination"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/repobuild"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/store"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
 func runSnapshots(ctx context.Context, args []string) error {
@@ -134,7 +134,7 @@ func runRestore(ctx context.Context, args []string) error {
 	} else {
 		fmt.Println("the agent will rebuild the archive and leave it in place; nothing is overwritten")
 	}
-	fmt.Printf("watch it with:\n  cprest-controller restore-status -job %s\n", jobID)
+	fmt.Printf("watch it with:\n  gniza-controller restore-status -job %s\n", jobID)
 	return nil
 }
 

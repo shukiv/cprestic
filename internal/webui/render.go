@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/agent"
-	"github.com/shuki/cprest/internal/human"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/notify"
-	"github.com/shuki/cprest/internal/update"
+	"github.com/shukiv/gniza/internal/agent"
+	"github.com/shukiv/gniza/internal/human"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/notify"
+	"github.com/shukiv/gniza/internal/update"
 )
 
 // page is the data every template receives.
@@ -176,7 +176,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, status int, err er
 func (s *Server) failUser(w http.ResponseWriter, r *http.Request, status int, err error) {
 	s.log.Error("account request failed", "account", accountOf(r),
 		"path", r.URL.Path, "error", err)
-	http.Error(w, "cP:Restic could not complete that request.", status)
+	http.Error(w, "Gniza could not complete that request.", status)
 }
 
 func flashFrom(r *http.Request) *flash {
@@ -279,7 +279,7 @@ func templateFuncs() template.FuncMap {
 			return template.CSS(fmt.Sprintf("width:%.1f%%", percent))
 		},
 		// pkgacctMeaning explains a probed flag in terms of what it does
-		// to a backup. The names are cPanel's and read as though cprest
+		// to a backup. The names are cPanel's and read as though Gniza
 		// were leaving something out; it is the opposite.
 		"pkgacctMeaning": func(name string) string {
 			switch name {
@@ -287,10 +287,10 @@ func templateFuncs() template.FuncMap {
 				return "pkgacct can write its archive uncompressed, which is what lets " +
 					"restic store only what changed between one night and the next."
 			case "skipdb":
-				return "pkgacct can leave databases out of its archive, so cprest can dump " +
+				return "pkgacct can leave databases out of its archive, so Gniza can dump " +
 					"each one separately instead. They are backed up either way."
 			case "skiphomedir":
-				return "pkgacct can leave the home directory out of its archive, so cprest " +
+				return "pkgacct can leave the home directory out of its archive, so Gniza " +
 					"can back it up as files. It is backed up either way."
 			case "skipmail":
 				return "pkgacct can leave the account's mail messages out of its archive, " +

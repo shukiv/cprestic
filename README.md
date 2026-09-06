@@ -1,9 +1,13 @@
-# cP:Restic
+# Gniza
 
-<!-- cP is #CF470C: cPanel's two letters in cPanel's orange, then what does
-     the work. "cprest" stays the name of the binaries, the paths and the
-     Go module — renaming those would strand every server already running
-     it, for a mark. -->
+**Backup. Restore. Repeat.**
+
+<!-- A gniza is the room a text is kept in rather than destroyed. "gniza" is
+     also the name of the binaries, the service, the directories and the Go
+     module. Three things kept the old name on purpose — the release
+     tarball, the directory inside it and the first word of SHA256SUMS —
+     because servers running a release from before the rename ask for
+     exactly those; see internal/update/install.go. -->
 
 cPanel fleet backup orchestration on top of [restic](https://restic.net/).
 
@@ -35,19 +39,19 @@ Both run the same code for the parts that make a backup correct. See
 On the cPanel server, as root:
 
 ```bash
-curl -fsSL https://github.com/shukiv/cprestic/releases/latest/download/get.sh | sh
+curl -fsSL https://github.com/shukiv/gniza/releases/latest/download/get.sh | sh
 ```
 
 That fetches the newest release, checks it against the checksums published
-beside it, and runs the installer inside it. `CPREST_VERSION=v1.2.3` before
+beside it, and runs the installer inside it. `GNIZA_VERSION=v1.2.3` before
 `sh` pins a particular release instead of the newest.
 
 Piping a script into a root shell is a reasonable thing to refuse, given what
 this one installs. The same install, read first:
 
 ```bash
-curl -fsSLO https://github.com/shukiv/cprestic/releases/latest/download/get.sh
-curl -fsSLO https://github.com/shukiv/cprestic/releases/latest/download/SHA256SUMS
+curl -fsSLO https://github.com/shukiv/gniza/releases/latest/download/get.sh
+curl -fsSLO https://github.com/shukiv/gniza/releases/latest/download/SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS
 less get.sh
 sh get.sh
@@ -59,10 +63,10 @@ tarball only says a download arrived whole; the signature over it says the
 release came from whoever holds the release key. Both are checked before
 anything is unpacked, and either failing stops the install.
 
-`CPREST_TARBALL=/path` installs a tarball already on the machine. Nothing is
+`GNIZA_TARBALL=/path` installs a tarball already on the machine. Nothing is
 downloaded, so nothing is verified: that one is yours to trust.
 
-Then open WHM and look for **cP:Restic Backups** in the left sidebar's
+Then open WHM and look for **Gniza Backups** in the left sidebar's
 **Plugins** group.
 
 Not on the **Manage Plugins** page — that lists cPanel's own RPM addons.
@@ -70,7 +74,7 @@ A plugin registered through AppConfig appears in the sidebar, and its
 registration under **Development → Apps Managed by AppConfig**.
 
 The installer refuses anything that is not a cPanel server, installs restic
-if the server has none — the version cprest is built against, checked against
+if the server has none — the version Gniza is built against, checked against
 restic's own published checksum — installs the service and the plugin,
 registers it with WHM through AppConfig, confirms WHM kept the registration,
 and registers cPanel Standardized Hooks for account create, modify, suspend,
@@ -79,7 +83,7 @@ unsuspend and remove. Running it again upgrades in place.
 ### Keeping it current
 
 Every page says so when a newer release exists, with what changed and the
-version running here. **Settings → This copy of cP:Restic** installs it: one
+version running here. **Settings → This copy of Gniza** installs it: one
 button, a confirmation, and a card that says how it went. It downloads the
 release, checks the release key signed it, runs the same installer as a hand
 install and restarts the service — destinations, schedules, backups and
@@ -93,7 +97,7 @@ released. Publishing to it is one command on the machine that holds the
 release key:
 
 ```bash
-make release CPREST_SIGNING_KEY_FILE=~/.cprest/cprest-release.pem
+make release GNIZA_SIGNING_KEY_FILE=~/.gniza/gniza-release.pem
 ```
 
 That builds the plugin, signs the checksums, and pushes three files — the
@@ -118,6 +122,8 @@ No release needed, and the way to install a change you have made. On a machine
 with Go:
 
 ```bash
+# The tarball keeps the name this project had before Gniza: a server on an
+# older release asks for that exact file, and would never find a renamed one.
 make plugin           # builds bin/cprest-plugin-amd64.tar.gz
 ```
 
@@ -140,7 +146,7 @@ installer unpacked there will not run otherwise.
 A tag beginning `v` builds and publishes that tarball, its checksums and
 `get.sh` as a GitHub release
 ([the workflow](.github/workflows/release.yml)). It runs the same
-`make plugin`, so the `cprest-agent` in a release is what that tag builds
+`make plugin`, so the `gniza-agent` in a release is what that tag builds
 here: statically linked and `-trimpath`, with no path or host of the build
 machine in it.
 
@@ -149,7 +155,7 @@ up. Restores are on the Restore page — a whole account, or named files —
 and by default a restore rebuilds the archive and leaves it for you rather
 than overwriting anything.
 
-Its pages are addressed as `cprest.cgi?p=destinations` and so on: cpsrvd
+Its pages are addressed as `gniza.cgi?p=destinations` and so on: cpsrvd
 will not route a path after the script name, so routes travel in a query
 parameter ([ADR 8](docs/adr/0008-query-string-routing-under-whm.md)).
 
@@ -170,7 +176,7 @@ Some plugin behavior worth knowing:
 - Settings can opt in to blocking cPanel account termination when the account
   lacks recent complete copies at every destination promised by a full-account
   schedule. Enabling it requires a new successful backup: older job records do
-  not prove which payload exclusions were in force. cprest performs only a
+  not prove which payload exclusions were in force. Gniza performs only a
   local history check inside cPanel's synchronous hook; it never tries to run a
   long backup while WHM is waiting. The Accounts list and account detail page
   preview the same decision before an administrator opens cPanel's termination
@@ -204,7 +210,7 @@ Some plugin behavior worth knowing:
   databases and users, domains and DNS, SSL material, mail, or FTP settings.
   These self-service requests always produce a private download; they cannot
   set the operator-only `Apply` flag or overwrite the live account.
-- Destination credentials are encrypted with a key in `/etc/cprest/master.key`.
+- Destination credentials are encrypted with a key in `/etc/gniza/master.key`.
   Back that file up somewhere other than this server. Without it the stored
   credentials cannot be read.
 
@@ -218,12 +224,12 @@ append-only endpoint then means backup history cannot be destroyed at all.
 
 Two ways, and they do the same thing:
 
-- **Settings → Remove cP:Restic from this server**, the last card on the page.
+- **Settings → Remove Gniza from this server**, the last card on the page.
   It asks first and says what goes and what stays.
 - In a root shell:
 
   ```bash
-  sh /usr/local/share/cprest/uninstall.sh
+  sh /usr/local/share/gniza/uninstall.sh
   ```
 
 The installer leaves that copy of the uninstaller on the server, so removing
@@ -233,24 +239,24 @@ the plugin never means finding the package again.
 
 | | |
 |---|---|
-| The service | stopped, disabled, `/etc/systemd/system/cprest.service` gone |
-| The WHM plugin | `cprest.cgi`, its AppConfig registration, the sidebar icon |
+| The service | stopped, disabled, `/etc/systemd/system/gniza.service` gone |
+| The WHM plugin | `gniza.cgi`, its AppConfig registration, the sidebar icon |
 | The cPanel hooks | account create, remove, suspend and unsuspend, unregistered through `manage_hooks` |
 | The account tile | the customer-facing plugin, its UAPI module and AdminBin |
-| The programs | `/usr/local/bin/cprest-agent`, `/usr/local/cpanel/3rdparty/bin/cprest-hook` |
-| restic's cache | `/var/cache/cprest`, rebuilt from the repository if you reinstall |
-| Itself | `/usr/local/share/cprest`, last, since the script is running out of it |
+| The programs | `/usr/local/bin/gniza-agent`, `/usr/local/cpanel/3rdparty/bin/gniza-hook` |
+| restic's cache | `/var/cache/gniza`, rebuilt from the repository if you reinstall |
+| Itself | `/usr/local/share/gniza`, last, since the script is running out of it |
 
 **What it does not touch**
 
 - **Your backups.** Nothing on any destination is read, written or deleted.
   Removing the plugin is not removing the backups, and there is no path
   through the uninstaller that reaches them.
-- `/etc/cprest/master.key` — the key your stored destination credentials are
+- `/etc/gniza/master.key` — the key your stored destination credentials are
   encrypted with.
-- `/var/lib/cprest/state.db` — destinations, schedules, and the history of
+- `/var/lib/gniza/state.db` — destinations, schedules, and the history of
   every run.
-- Anything a restore left in `/var/lib/cprest/staging` for collection, and
+- Anything a restore left in `/var/lib/gniza/staging` for collection, and
   `restic` itself, which the installer put in `/usr/local/bin` and other
   things may be using.
 
@@ -270,11 +276,11 @@ Controller ──control only──> Agent (per cPanel server) ──data──>
 
 | Binary | Runs on | Does |
 |---|---|---|
-| `cprest-agent -standalone` | one cPanel server | the whole thing on its own: local state, its own schedule, the interface behind the WHM plugin |
-| `cprest.cgi` | one cPanel server | the WHM plugin: proxies WHM to that interface, root only |
-| `cprest-controller` | trusted infrastructure | agent API over mTLS, scheduler, credential vault, administration CLI |
-| `cprest-agent` | every cPanel server | polls for jobs, stages a payload once, uploads it to each target repository |
-| `cprest-maintenance` | trusted infrastructure | provisions repositories, applies retention, verifies integrity, rehearses restores |
+| `gniza-agent -standalone` | one cPanel server | the whole thing on its own: local state, its own schedule, the interface behind the WHM plugin |
+| `gniza.cgi` | one cPanel server | the WHM plugin: proxies WHM to that interface, root only |
+| `gniza-controller` | trusted infrastructure | agent API over mTLS, scheduler, credential vault, administration CLI |
+| `gniza-agent` | every cPanel server | polls for jobs, stages a payload once, uploads it to each target repository |
+| `gniza-maintenance` | trusted infrastructure | provisions repositories, applies retention, verifies integrity, rehearses restores |
 
 The **maintenance runner** is not optional. Destinations we control run
 `rest-server --append-only`, which rejects deletes — so nothing on a cPanel
@@ -300,7 +306,7 @@ PostgreSQL, real restic and a real append-only rest-server.
 | Agent: enrolment, polling, staging, multi-target upload, reporting | working |
 | Maintenance: provision, retention, integrity check, restore drills | working |
 | Restore: whole account, single file, opt-in apply to the live account | working |
-| Administration CLI (`cprest-controller <command>`) | working |
+| Administration CLI (`gniza-controller <command>`) | working |
 | Real cPanel provider (`pkgacct`, `mysqldump`) | working; verified on cPanel 136 |
 | `restorepkg` (applying a restore) | implemented; live certification command provided for an isolated cPanel host |
 | Downloading a rebuilt account archive | working |
@@ -377,87 +383,87 @@ What it proves, against the real binaries:
 
 ```bash
 # 1. Secrets and PKI
-cprest-controller keygen -out /etc/cprest/master.key
-cprest-controller init-ca -dir /etc/cprest/pki
-cprest-controller issue-cert -kind server -name controller.example.com \
-    -ca-dir /etc/cprest/pki -hosts controller.example.com
+gniza-controller keygen -out /etc/gniza/master.key
+gniza-controller init-ca -dir /etc/gniza/pki
+gniza-controller issue-cert -kind server -name controller.example.com \
+    -ca-dir /etc/gniza/pki -hosts controller.example.com
 
-export CPREST_DATABASE_URL=postgres://cprest@localhost/cprest
-export CPREST_MASTER_KEY=/etc/cprest/master.key
-cprest-controller migrate
+export GNIZA_DATABASE_URL=postgres://gniza@localhost/gniza
+export GNIZA_MASTER_KEY=/etc/gniza/master.key
+gniza-controller migrate
 
 # 2. Register a cPanel server. The agent certificate's fingerprint is the
 #    identity: a certificate signed by the CA is not enough on its own.
-cprest-controller issue-cert -kind agent -name cp01.example.com -ca-dir /etc/cprest/pki
-cprest-controller add-server -hostname cp01.example.com -cert /etc/cprest/pki/cp01.example.com.pem
+gniza-controller issue-cert -kind agent -name cp01.example.com -ca-dir /etc/gniza/pki
+gniza-controller add-server -hostname cp01.example.com -cert /etc/gniza/pki/cp01.example.com.pem
 
 # 3. Destinations. Keep credentials out of the command line with @file or $ENVVAR.
-cprest-controller add-destination -name "Bogota rest-server" -type rest -append-only \
+gniza-controller add-destination -name "Bogota rest-server" -type rest -append-only \
     -config '{"base_url":"https://backup.example.com",
               "maintenance_base_url":"https://backup.internal:8000"}' \
-    -secrets 'username=cp01,password=@/etc/cprest/rest.pass'
-cprest-controller add-destination -name "Wasabi Miami" -type s3 \
+    -secrets 'username=cp01,password=@/etc/gniza/rest.pass'
+gniza-controller add-destination -name "Wasabi Miami" -type s3 \
     -config '{"endpoint":"s3.us-east-1.wasabisys.com","bucket":"cp-backups","region":"us-east-1"}' \
     -secrets 'access_key_id=$WASABI_KEY,secret_access_key=$WASABI_SECRET'
 
 # 4. Repositories, policy, account
-cprest-controller add-repository -server <server-id> -destination <dest-id> -path cp01
-cprest-controller add-policy -name nightly -cron '0 2 * * *' -keep-daily 7 -keep-monthly 6
-cprest-controller attach -policy <policy-id> -repository <repo-id>
-cprest-controller add-account -server <server-id> -user customer1
-cprest-controller attach -policy <policy-id> -account <account-id>
+gniza-controller add-repository -server <server-id> -destination <dest-id> -path cp01
+gniza-controller add-policy -name nightly -cron '0 2 * * *' -keep-daily 7 -keep-monthly 6
+gniza-controller attach -policy <policy-id> -repository <repo-id>
+gniza-controller add-account -server <server-id> -user customer1
+gniza-controller attach -policy <policy-id> -account <account-id>
 
 # 5. Create the repositories on their destinations, then serve
-cprest-maintenance -kind provision
-cprest-controller serve -listen :8443 \
-    -tls-cert /etc/cprest/pki/controller.example.com.pem \
-    -tls-key  /etc/cprest/pki/controller.example.com-key.pem \
-    -client-ca /etc/cprest/pki/ca.pem \
-    -master-key /etc/cprest/master.key
+gniza-maintenance -kind provision
+gniza-controller serve -listen :8443 \
+    -tls-cert /etc/gniza/pki/controller.example.com.pem \
+    -tls-key  /etc/gniza/pki/controller.example.com-key.pem \
+    -client-ca /etc/gniza/pki/ca.pem \
+    -master-key /etc/gniza/master.key
 ```
 
 On the cPanel server:
 
 ```bash
-cprest-agent -preflight    # check restic, staging space and pkgacct flags
-cprest-agent -controller https://controller.example.com:8443 \
-    -client-cert /etc/cprest/cp01.example.com.pem \
-    -client-key  /etc/cprest/cp01.example.com-key.pem \
-    -ca-bundle   /etc/cprest/ca.pem
+gniza-agent -preflight    # check restic, staging space and pkgacct flags
+gniza-agent -controller https://controller.example.com:8443 \
+    -client-cert /etc/gniza/cp01.example.com.pem \
+    -client-key  /etc/gniza/cp01.example.com-key.pem \
+    -ca-bundle   /etc/gniza/ca.pem
 ```
 
 Then, from cron on the maintenance host:
 
 ```bash
-cprest-maintenance -kind forget            # retention and prune
-cprest-maintenance -kind check -read-data-subset 5
-cprest-maintenance -kind drill             # rehearse a restore and record it
+gniza-maintenance -kind forget            # retention and prune
+gniza-maintenance -kind check -read-data-subset 5
+gniza-maintenance -kind drill             # rehearse a restore and record it
 ```
 
 ## Restoring
 
 ```bash
 # What is there?
-cprest-controller snapshots -server cp01.example.com -user customer1
+gniza-controller snapshots -server cp01.example.com -user customer1
 
 # One file back, at the path it came from. Nothing else is touched.
-cprest-controller restore -server cp01.example.com -user customer1 \
+gniza-controller restore -server cp01.example.com -user customer1 \
     -snapshot 40dc1520 \
     -files /home/customer1/public_html/index.php -target /root/recovered
 
 # The whole account. By default the agent rebuilds the cpmove archive and
 # leaves it on the server; add -apply to hand it to restorepkg, which
 # overwrites the live account.
-cprest-controller restore -server cp01.example.com -user customer1 -snapshot 40dc1520
+gniza-controller restore -server cp01.example.com -user customer1 -snapshot 40dc1520
 
-cprest-controller restore-status -job <restore-id>
+gniza-controller restore-status -job <restore-id>
 ```
 
 To prove that cPanel itself accepts a rebuilt archive, copy it to a dedicated
 certification cPanel host and run:
 
 ```bash
-cprest-agent -certify-live-archive /root/cpmove-customer1.tar \
+gniza-agent -certify-live-archive /root/cpmove-customer1.tar \
     -certify-user cprv1234 -certify-isolated-host
 ```
 
@@ -474,7 +480,7 @@ the next restore of that account, or until the agent restarts — its startup
 sweep cannot tell a finished restore's output from a crashed one's debris.
 Collect it promptly; `restore-status` prints where it is.
 
-`cprest-agent -fake-cpanel-root <dir>` swaps in a synthetic cPanel provider,
+`gniza-agent -fake-cpanel-root <dir>` swaps in a synthetic cPanel provider,
 which is how the agent is exercised on a machine with no cPanel.
 
 ## Layout
@@ -513,6 +519,6 @@ docs/            DESIGN.md and architecture decision records
 
 Notes:
 
-- The module path `github.com/shuki/cprest` is a placeholder; no remote
+- The module path `github.com/shukiv/gniza` is a placeholder; no remote
   exists yet.
 - `make clean` uses `trash` rather than `rm`.

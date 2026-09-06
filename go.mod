@@ -1,4 +1,4 @@
-module github.com/shuki/cprest
+module github.com/shukiv/gniza
 
 go 1.26.0
 

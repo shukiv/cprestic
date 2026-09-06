@@ -8,7 +8,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // contents is what one snapshot's containers hold, read once.

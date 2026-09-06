@@ -1,4 +1,4 @@
-package Cpanel::API::Cprest;
+package Cpanel::API::Gniza;
 
 use strict;
 use warnings;
@@ -19,7 +19,7 @@ sub issue_capability {
     local $@;
     my $ok = eval {
         $answer = Cpanel::AdminBin::Call::call(
-            'Cprest', 'Session', 'ISSUE_CAPABILITY', $method, $target,
+            'Gniza', 'Session', 'ISSUE_CAPABILITY', $method, $target,
         );
         1;
     };

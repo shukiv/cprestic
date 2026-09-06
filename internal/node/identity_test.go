@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shukiv/gniza/internal/nodestore"
 )
 
 // TestARecycledNameDoesNotInheritTheOldOwnersBackups covers the way one

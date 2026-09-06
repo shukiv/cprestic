@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shukiv/gniza/internal/nodestore"
 
-	"github.com/shuki/cprest/internal/node"
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/node"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // Attaching to backups that already exist is what a replacement server

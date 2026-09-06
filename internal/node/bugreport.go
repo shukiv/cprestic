@@ -4,7 +4,7 @@ import (
 	"context"
 	"path/filepath"
 
-	"github.com/shuki/cprest/internal/bugreport"
+	"github.com/shukiv/gniza/internal/bugreport"
 )
 
 // BugIntakeKeyPath is server-side only; neither the key nor a freely chosen

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/store"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/store"
 )
 
 // A job whose lease ran out goes back on the queue and is claimed again.

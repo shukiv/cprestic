@@ -7,7 +7,7 @@ package protocol
 import (
 	"time"
 
-	"github.com/shuki/cprest/internal/destination"
+	"github.com/shukiv/gniza/internal/destination"
 )
 
 // Paths on the controller's agent API.

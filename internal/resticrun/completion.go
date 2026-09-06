@@ -34,7 +34,7 @@ func (r *Runner) recordCompletion(ctx context.Context, repo Repository, host, id
 	if id == "latest" {
 		return fmt.Errorf("resticrun: completion needs an exact snapshot")
 	}
-	dir, err := os.MkdirTemp(r.cfg.RuntimeDir, "cprest-completion-")
+	dir, err := os.MkdirTemp(r.cfg.RuntimeDir, "gniza-completion-")
 	if err != nil {
 		return err
 	}

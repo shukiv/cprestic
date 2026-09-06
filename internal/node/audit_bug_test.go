@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/node"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/node"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // A schedule may back up less than the whole account: the databases, the

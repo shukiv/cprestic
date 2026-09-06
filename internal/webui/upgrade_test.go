@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/agent"
-	"github.com/shuki/cprest/internal/nodestore"
+	"github.com/shukiv/gniza/internal/agent"
+	"github.com/shukiv/gniza/internal/nodestore"
 )
 
 // TestSettingsOffersTheRelease covers what the operator sees: the version
@@ -23,7 +23,7 @@ func TestSettingsOffersTheRelease(t *testing.T) {
 
 	if err := engine.Store().SaveUpdateState(nodestore.UpdateState{
 		CheckedAt: time.Now().UTC(), Version: "v1.3.0",
-		URL: "https://github.com/shukiv/cprestic/releases/tag/v1.3.0",
+		URL: "https://github.com/shukiv/gniza/releases/tag/v1.3.0",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestSettingsOffersTheRelease(t *testing.T) {
 		t.Fatalf("settings answered %d", status)
 	}
 	for _, want := range []string{
-		"v1.2.3", "cP:Restic v1.3.0 has been released",
+		"v1.2.3", "Gniza v1.3.0 has been released",
 		"Install v1.3.0", "?p=settings/update/install", "?p=settings/update/check",
 	} {
 		if !strings.Contains(page, want) {
@@ -52,7 +52,7 @@ func TestSettingsOffersTheRelease(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("the confirmation answered %d: %s", resp.StatusCode, asked)
 	}
-	for _, want := range []string{"Install cP:Restic v1.3.0?", "Yes, install v1.3.0", "restarts the service"} {
+	for _, want := range []string{"Install Gniza v1.3.0?", "Yes, install v1.3.0", "restarts the service"} {
 		if !strings.Contains(asked, want) {
 			t.Errorf("the confirmation does not say %q", want)
 		}
@@ -128,8 +128,8 @@ func TestUninstallAsksFirst(t *testing.T) {
 		t.Fatalf("settings answered %d", status)
 	}
 	for _, want := range []string{
-		"Remove cP:Restic from this server", "?p=settings/uninstall",
-		"sh /usr/local/share/cprest/uninstall.sh",
+		"Remove Gniza from this server", "?p=settings/uninstall",
+		"sh /usr/local/share/gniza/uninstall.sh",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the settings page does not offer %q", want)
@@ -146,7 +146,7 @@ func TestUninstallAsksFirst(t *testing.T) {
 		t.Fatalf("the confirmation answered %d: %s", resp.StatusCode, asked)
 	}
 	for _, want := range []string{
-		"Remove cP:Restic from this server?", "Yes, remove cP:Restic from this server",
+		"Remove Gniza from this server?", "Yes, remove Gniza from this server",
 		"This page goes with it", "are not touched",
 	} {
 		if !strings.Contains(asked, want) {
@@ -208,18 +208,18 @@ func TestSettingsTabsShowOnePartEach(t *testing.T) {
 	tabs := map[string]struct{ here, notHere []string }{
 		"": { // no tab named: the first one
 			here:    []string{"How backups run", "What a backup contains", ">Backups<"},
-			notHere: []string{"Remove cP:Restic from this server", "Where problems are reported"},
+			notHere: []string{"Remove Gniza from this server", "Where problems are reported"},
 		},
 		"&tab=alerts": {
 			here:    []string{"Where problems are reported"},
-			notHere: []string{"How backups run", "Remove cP:Restic from this server"},
+			notHere: []string{"How backups run", "Remove Gniza from this server"},
 		},
 		"&tab=storage": {
 			here:    []string{"Staging", "Restored files waiting to be collected"},
 			notHere: []string{"How backups run", "Where problems are reported"},
 		},
 		"&tab=version": {
-			here:    []string{"This copy of cP:Restic", "Remove cP:Restic from this server"},
+			here:    []string{"This copy of Gniza", "Remove Gniza from this server"},
 			notHere: []string{"How backups run", "Where problems are reported"},
 		},
 	}
@@ -280,7 +280,7 @@ func TestAHandInstalledBuildIsToldWhyItIsNotOffered(t *testing.T) {
 
 	if err := engine.Store().SaveUpdateState(nodestore.UpdateState{
 		CheckedAt: time.Now().UTC(), Version: "v0.1.2",
-		URL: "https://github.com/shukiv/cprestic/releases/tag/v0.1.2",
+		URL: "https://github.com/shukiv/gniza/releases/tag/v0.1.2",
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/destination"
+	"github.com/shukiv/gniza/internal/destination"
 )
 
 func TestRestoreArgs(t *testing.T) {

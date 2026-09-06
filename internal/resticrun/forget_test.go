@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // TestForgetAlwaysGroupsByHostAndTags is the guard against deleting one

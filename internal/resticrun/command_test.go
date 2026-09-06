@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shukiv/gniza/internal/resticrun"
 )
 
 // TestTruncatedOutputSaysSo covers a listing that was cut off to stay

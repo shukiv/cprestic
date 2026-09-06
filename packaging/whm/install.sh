@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install cprest as a WHM plugin on this cPanel server.
+# Install Gniza as a WHM plugin on this cPanel server.
 #
 # Everything here is idempotent: running it again upgrades in place.
 set -eu
@@ -10,17 +10,17 @@ PATH=/usr/local/cpanel/3rdparty/bin:/usr/local/cpanel/bin:/usr/local/sbin:/usr/l
 export PATH
 
 PREFIX=/usr/local/bin
-CONFIG_DIR=/etc/cprest
-STATE_DIR=/var/lib/cprest
-STAGING_DIR=/var/lib/cprest/staging
+CONFIG_DIR=/etc/gniza
+STATE_DIR=/var/lib/gniza
+STAGING_DIR=/var/lib/gniza/staging
 # Where a cPanel lifecycle hook leaves an account event the service was
 # not running to hear, for it to replay when it comes back.
-HOOK_SPOOL_DIR=/var/lib/cprest/hooks
-CACHE_DIR=/var/cache/cprest/restic
-RUN_DIR=/var/run/cprest
+HOOK_SPOOL_DIR=/var/lib/gniza/hooks
+CACHE_DIR=/var/cache/gniza/restic
+RUN_DIR=/var/run/gniza
 APPCONFIG_DIR=/var/cpanel/apps
-SHARE_DIR=/usr/local/share/cprest
-SERVICE=/etc/systemd/system/cprest.service
+SHARE_DIR=/usr/local/share/gniza
+SERVICE=/etc/systemd/system/gniza.service
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -30,15 +30,119 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 umask 077
 
 SOURCE_DIR=$(cd "$(dirname "$0")" && pwd)
-[ -f "$SOURCE_DIR/cprest-agent" ] || die "cprest-agent is not next to this script"
-[ -f "$SOURCE_DIR/cprest.cgi" ] || die "cprest.cgi is not next to this script"
+[ -f "$SOURCE_DIR/gniza-agent" ] || die "gniza-agent is not next to this script"
+[ -f "$SOURCE_DIR/gniza.cgi" ] || die "gniza.cgi is not next to this script"
 [ -f "$SOURCE_DIR/uninstall.sh" ] || die "uninstall.sh is not next to this script"
 [ -f "$SOURCE_DIR/cpanel/install.json" ] || die "cpanel/install.json is missing from the package"
-[ -f "$SOURCE_DIR/cpanel/uapi/Cprest.pm" ] || die "the cPanel UAPI bridge is missing from the package"
-[ -f "$SOURCE_DIR/cpanel/admin/Cprest/Session.pm" ] || die "the cPanel AdminBin bridge is missing from the package"
-[ -f "$SOURCE_DIR/branding/cpr-badge.svg" ] || die "the cPanel plugin icon is missing from the package"
+[ -f "$SOURCE_DIR/cpanel/uapi/Gniza.pm" ] || die "the cPanel UAPI bridge is missing from the package"
+[ -f "$SOURCE_DIR/cpanel/admin/Gniza/Session.pm" ] || die "the cPanel AdminBin bridge is missing from the package"
+[ -f "$SOURCE_DIR/branding/badge.svg" ] || die "the cPanel plugin icon is missing from the package"
 [ -d /var/cpanel/sessions/raw ] || die "cPanel's session store is missing (/var/cpanel/sessions/raw)"
 [ -x /usr/local/cpanel/bin/uapi ] || die "cPanel's uapi command is missing"
+
+# --- the installation this one replaces ------------------------------------
+# Until v0.1.7 this program was called cprest, and everything it owned was
+# named after it: a service, two binaries, a WHM plugin, an account-facing
+# plugin, a cPanel feature, and two directories holding the master key and
+# the state file. The names all change here at once, so an upgrade has to
+# take the old installation apart before putting this one together.
+#
+# The order matters. Everything that could refuse is checked first, while
+# the old installation is still whole and still running: a server that
+# fails half way through this has no service at all.
+LEGACY_CONFIG_DIR=/etc/cprest
+LEGACY_STATE_DIR=/var/lib/cprest
+LEGACY_SHARE_DIR=/usr/local/share/cprest
+LEGACY_AGENT=/usr/local/bin/cprest-agent
+LEGACY_HOOK_BIN=/usr/local/cpanel/3rdparty/bin/cprest-hook
+
+legacy_present() {
+    [ -d "$LEGACY_CONFIG_DIR" ] || [ -d "$LEGACY_STATE_DIR" ] ||
+        [ -x "$LEGACY_AGENT" ] || [ -f /etc/systemd/system/cprest.service ]
+}
+
+if legacy_present; then
+    say "found the earlier cprest installation; taking it apart first"
+
+    # Refuse before anything is touched rather than half way through. Two
+    # state files, one under each name, is not a thing this script can
+    # resolve: whichever it kept could be the one with this server's
+    # destinations and history in it.
+    for pair in "$LEGACY_CONFIG_DIR:$CONFIG_DIR" "$LEGACY_STATE_DIR:$STATE_DIR"; do
+        old=${pair%:*}
+        new=${pair#*:}
+        if [ -d "$old" ] && [ -e "$new" ]; then
+            die "both $old and $new exist. Only one of them holds this server's key and state, and this script cannot tell which. Move or remove the one you do not want to keep, then run this again."
+        fi
+    done
+
+    # Unregister the account lifecycle hooks while the executable that
+    # describes them is still there: manage_hooks asks the script itself
+    # what it registered.
+    if [ -x /usr/local/cpanel/bin/manage_hooks ] && [ -x "$LEGACY_HOOK_BIN" ]; then
+        /usr/local/cpanel/bin/manage_hooks delete script "$LEGACY_HOOK_BIN" >/dev/null 2>&1 || true
+        for hook in "Accounts::Create:create" "Accounts::Modify:modify" "Accounts::Remove:remove"; do
+            event=${hook%:*}
+            action=${hook#*:}
+            /usr/local/cpanel/bin/manage_hooks delete script "$LEGACY_HOOK_BIN" --manual \
+                --category Whostmgr --event "$event" --stage post \
+                --action="--cpanel-hook=$action" >/dev/null 2>&1 || true
+        done
+        say "unregistered the old account lifecycle hooks"
+    fi
+
+    # The uninstaller the old release left on the server. It knows the
+    # names that release used -- including the cPanel plugin descriptor it
+    # keeps beside itself, which this package no longer carries -- and it
+    # deliberately leaves the master key and the state file behind.
+    if [ -f "$LEGACY_SHARE_DIR/uninstall.sh" ]; then
+        sh "$LEGACY_SHARE_DIR/uninstall.sh" >/dev/null 2>&1 ||
+            say "warning: the old uninstaller reported a problem; carrying on"
+    fi
+
+    # What the old uninstaller does not cover, either because it was not
+    # there to run or because it came from a release that did less.
+    systemctl stop cprest >/dev/null 2>&1 || true
+    systemctl disable cprest >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/cprest.service
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    if [ -x /usr/local/cpanel/bin/unregister_appconfig ]; then
+        /usr/local/cpanel/bin/unregister_appconfig cprest >/dev/null 2>&1 || true
+    fi
+    rm -f /var/cpanel/apps/cprest.conf
+    rm -f /usr/local/cpanel/whostmgr/docroot/cgi/cprest.cgi /usr/local/cpanel/cgi/cprest.cgi
+    rm -f /usr/local/cpanel/whostmgr/docroot/addon_plugins/cprest.svg
+    rm -f "$LEGACY_HOOK_BIN" "$LEGACY_AGENT"
+    rm -f /usr/local/cpanel/Cpanel/API/Cprest.pm
+    rm -f /var/cpanel/perl/Cpanel/Admin/Modules/Cprest/Session.pm
+    rmdir /var/cpanel/perl/Cpanel/Admin/Modules/Cprest 2>/dev/null || true
+    rm -rf -- /usr/local/cpanel/base/frontend/jupiter/cprest
+    rm -f /usr/local/cpanel/base/frontend/jupiter/dynamicui/dynamicui_cprest.conf
+    rm -f /usr/local/cpanel/base/frontend/jupiter/assets/application_icons/cprest.png \
+        /usr/local/cpanel/base/frontend/jupiter/assets/application_icons/cprest.svg
+    rm -rf -- /var/cache/cprest
+    rm -rf -- "$LEGACY_SHARE_DIR"
+
+    # The two directories worth keeping. The master key decrypts the stored
+    # destination credentials and the state file holds every destination,
+    # schedule and backup this server has: losing either is losing the
+    # backups, whatever is still sitting on the backup server.
+    #
+    # What the state file says about these directories is stale after this
+    # -- it records absolute paths, including the private key each SFTP
+    # destination connects with -- and the service rewrites those on its
+    # next start.
+    for pair in "$LEGACY_CONFIG_DIR:$CONFIG_DIR" "$LEGACY_STATE_DIR:$STATE_DIR"; do
+        old=${pair%:*}
+        new=${pair#*:}
+        if [ -d "$old" ]; then
+            mv -- "$old" "$new" || die "could not move $old to $new; nothing else has been installed"
+            say "moved $old to $new"
+        fi
+    done
+    MIGRATED_FROM_CPREST=1
+    say "the earlier installation is gone; installing Gniza"
+fi
 
 # --- where WHM keeps plugin CGIs -------------------------------------------
 # Sources disagree about this path and it has moved between versions, so it
@@ -54,9 +158,9 @@ done
 say "WHM plugin directory: $CGI_DIR"
 
 # --- restic ----------------------------------------------------------------
-# cprest drives restic; it does not carry a copy of it. Telling an
+# Gniza drives restic; it does not carry a copy of it. Telling an
 # administrator to go and fetch one is a step they have to get right on a
-# machine that is not yet doing backups, so this installs the version cprest
+# machine that is not yet doing backups, so this installs the version Gniza
 # is built against -- checked against restic's own published checksum before
 # anything becomes executable, because a backup program that installs an
 # unverified binary as root is not a backup program worth having.
@@ -75,7 +179,7 @@ install_restic() {
 
     restic_base=https://github.com/restic/restic/releases/download/v$RESTIC_VERSION
     restic_file=restic_${RESTIC_VERSION}_linux_${RESTIC_ARCH}.bz2
-    RESTIC_TMP=$(mktemp -d /var/tmp/cprest-restic.XXXXXX)
+    RESTIC_TMP=$(mktemp -d /var/tmp/gniza-restic.XXXXXX)
     trap 'if [ -n "${RESTIC_TMP:-}" ]; then rm -rf -- "$RESTIC_TMP"; fi' 0 1 2 15
 
     say "downloading restic $RESTIC_VERSION ($RESTIC_ARCH)"
@@ -108,11 +212,11 @@ say "restic: $(restic version 2>/dev/null | head -1)"
 install -d -m 0700 "$CONFIG_DIR" "$STATE_DIR" "$STAGING_DIR" "$CACHE_DIR" "$RUN_DIR" \
 	"$HOOK_SPOOL_DIR"
 install -d -m 0755 "$APPCONFIG_DIR"
-install -m 0755 "$SOURCE_DIR/cprest-agent" "$PREFIX/cprest-agent"
-HOOK_BIN=/usr/local/cpanel/3rdparty/bin/cprest-hook
-install -m 0755 "$SOURCE_DIR/cprest-agent" "$HOOK_BIN"
-install -m 0755 "$SOURCE_DIR/cprest.cgi" "$CGI_DIR/cprest.cgi"
-say "installed $PREFIX/cprest-agent and $CGI_DIR/cprest.cgi"
+install -m 0755 "$SOURCE_DIR/gniza-agent" "$PREFIX/gniza-agent"
+HOOK_BIN=/usr/local/cpanel/3rdparty/bin/gniza-hook
+install -m 0755 "$SOURCE_DIR/gniza-agent" "$HOOK_BIN"
+install -m 0755 "$SOURCE_DIR/gniza.cgi" "$CGI_DIR/gniza.cgi"
+say "installed $PREFIX/gniza-agent and $CGI_DIR/gniza.cgi"
 
 # Keep the way out on the server. Installing from a release unpacks the
 # package into a temporary directory and removes it again, so the uninstaller
@@ -124,20 +228,20 @@ say "installed $PREFIX/cprest-agent and $CGI_DIR/cprest.cgi"
 install -d -m 0755 "$SHARE_DIR" "$SHARE_DIR/cpanel" "$SHARE_DIR/branding"
 install -m 0755 "$SOURCE_DIR/uninstall.sh" "$SHARE_DIR/uninstall.sh"
 install -m 0644 "$SOURCE_DIR/cpanel/install.json" "$SHARE_DIR/cpanel/install.json"
-install -m 0644 "$SOURCE_DIR/branding/cpr-badge.svg" "$SHARE_DIR/branding/cpr-badge.svg"
+install -m 0644 "$SOURCE_DIR/branding/badge.svg" "$SHARE_DIR/branding/badge.svg"
 say "installed $SHARE_DIR/uninstall.sh"
 
 # LivePHP intentionally does not expose the browser's cpsession cookie. The
 # UAPI module enters cPanel's authenticated engine; its root-owned AdminBin
 # counterpart restores the matching server-side session and exchanges that
-# opaque proof with cprest over the root-only admin socket. An account process
+# opaque proof with Gniza over the root-only admin socket. An account process
 # calling the module outside a live cPanel session has no session to restore.
 CPANEL_UAPI_DIR=/usr/local/cpanel/Cpanel/API
-CPANEL_ADMIN_DIR=/var/cpanel/perl/Cpanel/Admin/Modules/Cprest
+CPANEL_ADMIN_DIR=/var/cpanel/perl/Cpanel/Admin/Modules/Gniza
 install -d -o root -g root -m 0755 "$CPANEL_ADMIN_DIR"
-install -o root -g root -m 0644 "$SOURCE_DIR/cpanel/uapi/Cprest.pm" \
-    "$CPANEL_UAPI_DIR/Cprest.pm"
-install -o root -g root -m 0700 "$SOURCE_DIR/cpanel/admin/Cprest/Session.pm" \
+install -o root -g root -m 0644 "$SOURCE_DIR/cpanel/uapi/Gniza.pm" \
+    "$CPANEL_UAPI_DIR/Gniza.pm"
+install -o root -g root -m 0700 "$SOURCE_DIR/cpanel/admin/Gniza/Session.pm" \
     "$CPANEL_ADMIN_DIR/Session.pm"
 say "installed cPanel UAPI/AdminBin session bridge"
 
@@ -159,14 +263,14 @@ done
 "$MANAGE_HOOKS" add script "$HOOK_BIN"
 say "registered cPanel account lifecycle hooks"
 
-if [ -f "$SOURCE_DIR/cprest.png" ]; then
-    install -m 0644 "$SOURCE_DIR/cprest.png" "$CGI_DIR/cprest.png" || true
+if [ -f "$SOURCE_DIR/gniza.png" ]; then
+    install -m 0644 "$SOURCE_DIR/gniza.png" "$CGI_DIR/gniza.png" || true
 fi
 
 # --- service ---------------------------------------------------------------
 cat > "$SERVICE" <<'UNIT'
 [Unit]
-Description=cprest backups
+Description=Gniza backups
 After=network-online.target
 Wants=network-online.target
 
@@ -180,10 +284,10 @@ Type=simple
 # would be missing from its backup.
 Environment=HOME=/root
 UMask=0077
-ExecStart=/usr/local/bin/cprest-agent -standalone
+ExecStart=/usr/local/bin/gniza-agent -standalone
 Restart=always
 RestartSec=15
-RuntimeDirectory=cprest
+RuntimeDirectory=Gniza
 RuntimeDirectoryMode=0700
 NoNewPrivileges=true
 ProtectKernelTunables=true
@@ -196,9 +300,9 @@ chown root:root "$SERVICE"
 chmod 0644 "$SERVICE"
 
 systemctl daemon-reload
-systemctl enable cprest >/dev/null 2>&1 || true
-systemctl restart cprest
-say "service cprest started"
+systemctl enable gniza >/dev/null 2>&1 || true
+systemctl restart gniza
+say "service Gniza started"
 
 # --- WHM registration ------------------------------------------------------
 # Both "acls" and "entryurl" matter here, and getting either wrong fails
@@ -209,28 +313,28 @@ say "service cprest started"
 #            every request, so menu registration is not the trust boundary.
 #   entryurl is what WHM actually links to from the Plugins section, and is
 #            relative to /usr/local/cpanel/whostmgr/docroot/cgi/.
-cat > "$APPCONFIG_DIR/cprest.conf" <<'APPCONFIG'
-name=cprest
+cat > "$APPCONFIG_DIR/gniza.conf" <<'APPCONFIG'
+name=Gniza
 service=whostmgr
-url=/cgi/cprest.cgi
-entryurl=cprest.cgi
+url=/cgi/gniza.cgi
+entryurl=gniza.cgi
 user=root
 acls=all
-displayname=cP:Restic Backups
-icon=cprest.svg
+displayname=Gniza Backups
+icon=gniza.svg
 searchtext=backup restore restic
 target=_self
 APPCONFIG
-chown root:root "$APPCONFIG_DIR/cprest.conf"
-chmod 0644 "$APPCONFIG_DIR/cprest.conf"
+chown root:root "$APPCONFIG_DIR/gniza.conf"
+chmod 0644 "$APPCONFIG_DIR/gniza.conf"
 
 # The icon has to be in place before the registration that names it.
 ICON_DIR=/usr/local/cpanel/whostmgr/docroot/addon_plugins
-if [ -d "$ICON_DIR" ] && [ -f "$SOURCE_DIR/branding/cpr-badge.svg" ]; then
-    install -m 644 "$SOURCE_DIR/branding/cpr-badge.svg" "$ICON_DIR/cprest.svg"
+if [ -d "$ICON_DIR" ] && [ -f "$SOURCE_DIR/branding/badge.svg" ]; then
+    install -m 644 "$SOURCE_DIR/branding/badge.svg" "$ICON_DIR/gniza.svg"
 fi
 
-/usr/local/cpanel/bin/register_appconfig "$APPCONFIG_DIR/cprest.conf"
+/usr/local/cpanel/bin/register_appconfig "$APPCONFIG_DIR/gniza.conf"
 
 # Confirm WHM kept what we sent. It accepts a registration with an invalid
 # ACL by discarding the ACL, which leaves a plugin that exists and is
@@ -242,16 +346,16 @@ if ! /usr/local/cpanel/bin/whmapi1 --output=json get_appconfig_application_list 
         local $/;
         my $response = decode_json(<STDIN>);
         for my $app (@{$response->{data}{whostmgr} || []}) {
-            next unless (($app->{name} || "") eq "cprest");
+            next unless (($app->{name} || "") eq "gniza");
             my %acls = map { $_ => 1 } @{$app->{acls} || []};
-            exit((($app->{entryurl} || "") eq "cprest.cgi" && $acls{all}) ? 0 : 2);
+            exit((($app->{entryurl} || "") eq "gniza.cgi" && $acls{all}) ? 0 : 2);
         }
         exit 3;
     '
 then
     cat >&2 <<PROBLEM
 
-warning: WHM did not retain cprest's entry URL and root-level ACL.
+warning: WHM did not retain Gniza's entry URL and root-level ACL.
 
 The plugin will not appear in the WHM menu. Check the output of:
 
@@ -270,21 +374,21 @@ fi
 # that unpacks it.
 FRONTEND=/usr/local/cpanel/base/frontend/jupiter
 if [ -d "$FRONTEND" ]; then
-    install -d -m 755 "$FRONTEND/cprest"
+    install -d -m 755 "$FRONTEND/gniza"
     for page in index.live.php browse.live.php restore.live.php download.live.php proxy.php; do
         if [ -f "$SOURCE_DIR/cpanel/$page" ]; then
-            install -m 644 "$SOURCE_DIR/cpanel/$page" "$FRONTEND/cprest/$page"
+            install -m 644 "$SOURCE_DIR/cpanel/$page" "$FRONTEND/gniza/$page"
         fi
     done
 
     # cPanel draws a plugin's tile from assets/application_icons/<file>.png,
     # where <file> is what the menu entry below calls itself.
     if [ -d "$FRONTEND/assets/application_icons" ] &&
-       [ -f "$SOURCE_DIR/branding/cpr-badge-48.png" ]; then
-        install -m 644 "$SOURCE_DIR/branding/cpr-badge-48.png" \
-            "$FRONTEND/assets/application_icons/cprest.png"
+       [ -f "$SOURCE_DIR/branding/badge-48.png" ]; then
+        install -m 644 "$SOURCE_DIR/branding/badge-48.png" \
+            "$FRONTEND/assets/application_icons/gniza.png"
         # Jupiter draws the tile from a sprite sheet, not from that file:
-        # the page asks for .icon-cprest, a background-position into
+        # the page asks for .icon-gniza, a background-position into
         # icon_spritemap.png. Replacing the icon without rebuilding the
         # sheet changes nothing an account can see, and the sheet's URL
         # carries a content hash, so a stale one is cached hard.
@@ -295,23 +399,23 @@ if [ -d "$FRONTEND" ]; then
     fi
 
     # Register through cPanel's supported plugin installer. Besides keeping
-    # the DynamicUI cache consistent, install.json registers "cprest" with
+    # the DynamicUI cache consistent, install.json registers "gniza" with
     # Feature Manager, so a host can withhold backup access from a package
     # instead of every account receiving it unconditionally.
     [ -x /usr/local/cpanel/scripts/install_plugin ] || \
         die "/usr/local/cpanel/scripts/install_plugin is missing"
-    PLUGIN_META=$(mktemp -d /var/tmp/cprest-cpanel.XXXXXX)
+    PLUGIN_META=$(mktemp -d /var/tmp/gniza-cpanel.XXXXXX)
     trap 'if [ -n "${PLUGIN_META:-}" ]; then rm -rf -- "$PLUGIN_META"; fi' 0 1 2 15
     install -m 0644 "$SOURCE_DIR/cpanel/install.json" "$PLUGIN_META/install.json"
-    install -m 0644 "$SOURCE_DIR/branding/cpr-badge-48.png" "$PLUGIN_META/cprest.png"
+    install -m 0644 "$SOURCE_DIR/branding/badge-48.png" "$PLUGIN_META/gniza.png"
     # Remove the entry written by older releases; if left behind it can
     # override the Feature Manager-aware entry generated below.
-    DYNAMICUI="$FRONTEND/dynamicui/dynamicui_cprest.conf"
+    DYNAMICUI="$FRONTEND/dynamicui/dynamicui_gniza.conf"
     rm -f "$DYNAMICUI"
     # Jupiter prefers an SVG over a PNG with the same application id. cPanel's
     # SVG installer rewrites geometry attributes in custom artwork, so remove
     # the generated SVG left by older releases and register the exact 48px PNG.
-    rm -f "$FRONTEND/assets/application_icons/cprest.svg"
+    rm -f "$FRONTEND/assets/application_icons/gniza.svg"
     # This command creates only public plugin metadata. Keep the restrictive
     # process-wide umask for service state and credentials, but do not pass it
     # into cPanel's registration writer.
@@ -320,7 +424,7 @@ if [ -d "$FRONTEND" ]; then
     # install_plugin inherits this script's security-first umask (077), but
     # Jupiter reads DynamicUI records while building an account's application
     # list. A root-only record is silently omitted even when Feature Manager
-    # enables cprest for the account. Plugin metadata is public, like every
+    # enables Gniza for the account. Plugin metadata is public, like every
     # other record in this directory, so make the generated file readable.
     chown root:root "$DYNAMICUI"
     chmod 0644 "$DYNAMICUI"
@@ -330,19 +434,19 @@ if [ -d "$FRONTEND" ]; then
     rm -rf -- "$PLUGIN_META"
     PLUGIN_META=
     trap - 0 1 2 15
-    echo "Installed the account-facing plugin in $FRONTEND/cprest."
+    echo "Installed the account-facing plugin in $FRONTEND/gniza."
 else
     echo "warning: no jupiter theme at $FRONTEND; the account-facing plugin was not installed." >&2
 fi
 
 cat <<DONE
 
-cP:Restic is installed.
+Gniza is installed.
 
-  Open WHM and look for "cP:Restic Backups" in the plugins section.
+  Open WHM and look for "Gniza Backups" in the plugins section.
 
 Registered as:
-$(sed 's/^/  /' "$APPCONFIG_DIR/cprest.conf")
+$(sed 's/^/  /' "$APPCONFIG_DIR/gniza.conf")
 
 It is registered against cPanel's root-level "all" ACL. The plugin also
 checks that ACL itself on every request. Please still confirm in WHM that
@@ -355,5 +459,25 @@ show it.
 
 Next: add a backup destination in the plugin, then a schedule.
 
-To remove it again: sh /usr/local/share/cprest/uninstall.sh
+To remove it again: sh /usr/local/share/gniza/uninstall.sh
 DONE
+
+if [ "${MIGRATED_FROM_CPREST:-0}" = 1 ]; then
+    cat <<'RENAMED'
+
+This server was running cprest, and the rename changed names cPanel keeps
+its own records of. Two of them need looking at:
+
+  Feature Manager  the account-facing plugin is now the "gniza" feature,
+                   not "cprest". A package or feature list that named the
+                   old one has to be edited to name the new one, or those
+                   accounts will not see the Backups tile.
+
+  Destinations     the private key each SFTP destination connects with
+                   moved from /etc/cprest to /etc/gniza. The service
+                   rewrote that in its own records on this start; press
+                   Test on each destination to confirm it.
+
+Your destinations, schedules, history and master key were kept.
+RENAMED
+fi

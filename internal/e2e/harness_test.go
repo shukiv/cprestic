@@ -17,20 +17,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/agent"
-	"github.com/shuki/cprest/internal/certs"
-	"github.com/shuki/cprest/internal/controller"
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/maintenance"
-	"github.com/shuki/cprest/internal/repobuild"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/staging"
-	"github.com/shuki/cprest/internal/store"
-	"github.com/shuki/cprest/internal/testsupport"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/agent"
+	"github.com/shukiv/gniza/internal/certs"
+	"github.com/shukiv/gniza/internal/controller"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/maintenance"
+	"github.com/shukiv/gniza/internal/repobuild"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/staging"
+	"github.com/shukiv/gniza/internal/store"
+	"github.com/shukiv/gniza/internal/testsupport"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
-// harness is a complete cprest deployment inside one test: a real
+// harness is a complete Gniza deployment inside one test: a real
 // PostgreSQL, a real controller over mutual TLS, a real restic, a real
 // rest-server in append-only mode, and an agent driving a synthetic cPanel
 // account.
@@ -90,7 +90,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatalf("open vault: %v", err)
 	}
 
-	authority, err := certs.NewAuthority("cprest test CA", time.Hour)
+	authority, err := certs.NewAuthority("gniza test CA", time.Hour)
 	if err != nil {
 		t.Fatalf("create CA: %v", err)
 	}

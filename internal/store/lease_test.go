@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/store"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/store"
 )
 
 // A restore that writes into a live account and outlives its lease must

@@ -15,11 +15,11 @@ week does not become a report nobody reads.
 Then, either:
 
 - **Send to intake** — HTTPS to `https://bugs.jabali-panel.com/api/v1/intake`,
-  explicitly routed to program `cprestic` (Plane project `CPRESTIC`). Success
+  explicitly routed to program `gniza` (Plane project `GNIZA`). Success
   shows the issue number, a tracker link, and any nonfatal intake warnings.
   The link may need access to the internal Plane network. Email and notification
   channels are not involved; a failed delivery never falls back to email.
-- **Download it** — `cprest-report-<when>.md`, the same text as a file, to send
+- **Download it** — `gniza-report-<when>.md`, the same text as a file, to send
   however you like. Available even without intake credentials.
 
 Sending is a second, separate press on a page that showed you what is in it.
@@ -30,18 +30,19 @@ same reviewed diagnostics.
 
 ### Enable intake delivery
 
-The intake must register `cprestic` and issue a dedicated intake token through
-its `INTAKE_TOKENS` configuration. Program readiness at `/healthz` or
+The intake must register the `cprestic` programme -- the tracker's own key for
+this project, which did not follow the rename to Gniza -- and issue a dedicated
+intake token through its `INTAKE_TOKENS` configuration. Program readiness at `/healthz` or
 `/api/v1/programs` is not authentication: submitting still needs that token.
 
-Install **only the token value**, not `cprestic:` or `Bearer `, in
-`/etc/cprest/bugs-intake.key` on the cPanel server. The file must be a regular
+Install **only the token value**, not a `program:` prefix or `Bearer `, in
+`/etc/gniza/bugs-intake.key` on the cPanel server. The file must be a regular
 file owned by root with mode `0600`, inside the root-controlled config
 directory. Do not put it in source code, the browser, a command argument, or
 chat. For example, once the token is in a secure local file:
 
 ```bash
-install -o root -g root -m 0600 /secure/path/cprestic-intake-token /etc/cprest/bugs-intake.key
+install -o root -g root -m 0600 /secure/path/gniza-intake-token /etc/gniza/bugs-intake.key
 ```
 
 With a custom `config_dir`, the file is `bugs-intake.key` in that directory;
@@ -67,15 +68,15 @@ redirects nor a success response for a different program are accepted.
 ## First three commands
 
 ```bash
-systemctl status cprest
-journalctl -u cprest -n 100 --no-pager
-ls -l /var/run/cprest/admin/ui.sock
+systemctl status gniza
+journalctl -u gniza -n 100 --no-pager
+ls -l /var/run/gniza/admin/ui.sock
 ```
 
 ## The plugin page is blank, or WHM 500s
 
 The CGI proxies to the unix socket. If the service is down, there is nothing to
-proxy to. Check `systemctl status cprest` first, then that the socket exists.
+proxy to. Check `systemctl status gniza` first, then that the socket exists.
 
 If the plugin is missing from the WHM sidebar entirely, look under
 **Development → Apps Managed by AppConfig** — not **Manage Plugins**, which
@@ -129,7 +130,7 @@ Settings.
 
 ## Rebuilding this server from nothing
 
-You need three things: `/etc/cprest/master.key` (or the destination credentials
+You need three things: `/etc/gniza/master.key` (or the destination credentials
 typed again by hand), the **recovery key** for the destination, and the folder
 name the old server used inside it. Then
 [disaster recovery](restoring.md#disaster-recovery): system settings first,

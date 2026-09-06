@@ -16,6 +16,13 @@ import (
 )
 
 const IntakeURL = "https://bugs.jabali-panel.com/api/v1/intake"
+
+// IntakeProgram is the programme reports are filed in. It is the tracker's
+// own key for this project and not a name this program is free to choose,
+// so it did not follow the rename to Gniza: the tracker has no Gniza
+// programme, and filing into one that does not exist is rejected. Every
+// message below names it rather than spelling it out again, so an operator
+// is told the name they will actually see in the tracker.
 const IntakeProgram = "cprestic"
 
 // IntakeReceipt is confirmation from the tracker, not merely an HTTP success.
@@ -65,7 +72,7 @@ func (r Report) Validate() error {
 	return nil
 }
 
-// Submit files a report only in the cprestic program. The caller may supply
+// Submit files a report only in the IntakeProgram programme. The caller may supply
 // a transport for testing; neither a form nor stored settings can redirect
 // the destination. Do not retry automatically: a lost response may follow a
 // successfully created work item, and this API is not an idempotent write.
@@ -83,7 +90,7 @@ func Submit(ctx context.Context, client *http.Client, token string, report Repor
 		return receipt, err
 	}
 	payload := intakeRequest{Program: IntakeProgram, Title: report.Subject,
-		Description: report.Body, Severity: "medium", Source: "cprestic-whm", Logs: map[string]string{}}
+		Description: report.Body, Severity: "medium", Source: IntakeProgram + "-whm", Logs: map[string]string{}}
 	for i, section := range report.Sections {
 		// Numbering keeps duplicate section headings from silently losing data.
 		name := fmt.Sprintf("%02d %s", i+1, clean(section.Title))
@@ -105,7 +112,7 @@ func Submit(ctx context.Context, client *http.Client, token string, report Repor
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "cprestic-bugreport")
+	req.Header.Set("User-Agent", IntakeProgram+"-bugreport")
 	var sender http.Client
 	if client != nil {
 		sender = *client
@@ -115,12 +122,12 @@ func Submit(ctx context.Context, client *http.Client, token string, report Repor
 	sender.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := sender.Do(req)
 	if err != nil {
-		return receipt, fmt.Errorf("intake delivery could not be confirmed; check cprestic Intake before retrying, or download the report")
+		return receipt, fmt.Errorf("intake delivery could not be confirmed; check %s Intake before retrying, or download the report", IntakeProgram)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, (64<<10)+1))
 	if err != nil || len(raw) > 64<<10 {
-		return receipt, fmt.Errorf("intake confirmation could not be read; check cprestic Intake before retrying")
+		return receipt, fmt.Errorf("intake confirmation could not be read; check %s Intake before retrying", IntakeProgram)
 	}
 	var envelope struct {
 		OK    bool          `json:"ok"`
@@ -129,7 +136,7 @@ func Submit(ctx context.Context, client *http.Client, token string, report Repor
 	}
 	parsed := json.Unmarshal(raw, &envelope) == nil
 	if (resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated) || !parsed || !envelope.OK {
-		reason := "delivery was not confirmed; check cprestic Intake before retrying or download the report"
+		reason := "delivery was not confirmed; check " + IntakeProgram + " Intake before retrying or download the report"
 		switch resp.StatusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
 			reason = "the intake key was rejected; ask the server administrator to replace it"
@@ -139,7 +146,7 @@ func Submit(ctx context.Context, client *http.Client, token string, report Repor
 				reason = fmt.Sprintf("the intake is rate-limited; wait %d seconds before retrying", seconds)
 			}
 		case http.StatusBadRequest:
-			reason = "the intake rejected the report; verify the cprestic program and report fields"
+			reason = "the intake rejected the report; verify the " + IntakeProgram + " programme and report fields"
 		case http.StatusRequestEntityTooLarge:
 			reason = "the intake refused this report's size; download it instead"
 		}
@@ -149,7 +156,7 @@ func Submit(ctx context.Context, client *http.Client, token string, report Repor
 	}
 	receipt = envelope.Data
 	if receipt.Program != IntakeProgram || receipt.IssueID == "" || (receipt.Action != "created" && receipt.Action != "commented") {
-		return IntakeReceipt{}, fmt.Errorf("intake returned an unexpected confirmation; check cprestic Intake before retrying")
+		return IntakeReceipt{}, fmt.Errorf("intake returned an unexpected confirmation; check %s Intake before retrying", IntakeProgram)
 	}
 	receipt.Identifier = clean(Redact(receipt.Identifier))
 	for i := range receipt.Warnings {

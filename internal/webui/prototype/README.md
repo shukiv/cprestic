@@ -1,4 +1,4 @@
-# cP:Restic interface prototype
+# Gniza interface prototype
 
 > Question: Which information architecture should replace the current WHM
 > pages? Three variants are switchable with `?variant=` and use the same

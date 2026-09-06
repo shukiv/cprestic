@@ -6,11 +6,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/node"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/protocol"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/node"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/protocol"
 )
 
 // runningWork is one backup or restore that is happening now, as the strip

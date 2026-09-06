@@ -33,7 +33,7 @@ func ParseAuth(raw []byte) (map[string]map[string]Auth, error) {
 	return auth, nil
 }
 
-// stagedGrant matches the grant lines cprest itself writes into the
+// stagedGrant matches the grant lines Gniza itself writes into the
 // runnable file: one database, no global privileges and nothing after the
 // grantee. Anything else is refused rather than guessed at, because the
 // two things that could be guessed -- dropping a privilege an application

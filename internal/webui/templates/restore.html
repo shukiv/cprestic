@@ -129,7 +129,7 @@ destination knows.{{end}}</div>
                title="The newest backup taken on or before this date. Leave it empty for the most recent backup there is.">
       </label>
       <span style="flex:1"></span>
-      <label class="cpr-check" style="margin:0" title="cprest asks cPanel for a restricted restore, because the archive holds each account's own home directory and cPanel's restore runs as root.">
+      <label class="cpr-check" style="margin:0" title="gniza asks cPanel for a restricted restore, because the archive holds each account's own home directory and cPanel's restore runs as root.">
         <input type="checkbox" name="unrestricted" value="1"><span>unrestricted</span></label>
       <button class="cpr-btn" type="submit" data-bulk-submit disabled>Rebuild chosen</button>
       <button class="cpr-btn cpr-danger" type="submit" name="apply" value="1"
@@ -256,7 +256,7 @@ destination knows.{{end}}</div>
     {{end}}
     <label class="cpr-check"><input type="checkbox" name="unrestricted" value="1">
       <span><strong>Restore without cPanel's restricted-restore checks</strong>
-      <small class="cpr-help">cprest asks cPanel for a restricted restore, because the archive
+      <small class="cpr-help">Gniza asks cPanel for a restricted restore, because the archive
       holds the account's own home directory and cPanel's restore runs as root. Turn this on only
       if a restricted restore refused something this account legitimately had.</small></span></label>
 

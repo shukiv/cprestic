@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
 // Secret kinds, matching fleet mode's enum values.

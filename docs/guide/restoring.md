@@ -83,7 +83,7 @@ Choose an account and a destination. The page then shows:
 - **Cron jobs** can go back into the account. The whole crontab is replaced,
   because that is what the backup holds and what cron reads, so a job added
   since the backup was taken goes with it — the crontab being replaced is
-  written to `/var/lib/cprest/replaced/crontab-<account>-<when>` first, because
+  written to `/var/lib/gniza/replaced/crontab-<account>-<when>` first, because
   the staging directory an applied restore used is removed when it finishes.
   It goes in through `crontab`, which checks the syntax: a file copied into
   place with a line cron cannot read is a crontab cron ignores in full.
@@ -119,7 +119,7 @@ something the account legitimately had.
 
 ## Deleted accounts
 
-Accounts removed from this server that still have backups here. cP:Restic knows
+Accounts removed from this server that still have backups here. Gniza knows
 they existed because it recorded the cPanel removal event, and it only offers
 names that actually have a successful backup.
 

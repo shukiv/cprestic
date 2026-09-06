@@ -33,13 +33,13 @@ func Mail(ctx context.Context, program, from, to, subject, body string) error {
 		program = Sendmail
 	}
 	if from == "" {
-		from = "cprest@localhost"
+		from = "gniza@localhost"
 	} else if err := UsableAddress(from); err != nil {
 		return err
 	}
 
 	var message bytes.Buffer
-	fmt.Fprintf(&message, "From: cP:Restic <%s>\r\n", from)
+	fmt.Fprintf(&message, "From: Gniza <%s>\r\n", from)
 	fmt.Fprintf(&message, "To: %s\r\n", to)
 	// Encoded, because a subject is whatever an operator typed and a
 	// header is ASCII. The line breaks go first: encoding already turns
@@ -51,7 +51,7 @@ func Mail(ctx context.Context, program, from, to, subject, body string) error {
 	message.WriteString("MIME-Version: 1.0\r\n")
 	message.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
 	message.WriteString("Content-Transfer-Encoding: 8bit\r\n")
-	message.WriteString("X-Mailer: cP:Restic\r\n\r\n")
+	message.WriteString("X-Mailer: Gniza\r\n\r\n")
 	// A line of a single dot ends a message. A log line that happens to be
 	// one must not truncate the report.
 	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {

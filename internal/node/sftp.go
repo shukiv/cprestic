@@ -9,15 +9,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/destination"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/sshkeys"
+	"github.com/shukiv/gniza/internal/destination"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/sshkeys"
 )
 
 // SFTPRequest is what an operator fills in to back up to another Linux
 // server.
 //
-// There is no field for a key: cprest generates its own, one per
+// There is no field for a key: Gniza generates its own, one per
 // destination, so revoking access to one destination does not lock it out
 // of the others.
 type SFTPRequest struct {
@@ -35,7 +35,7 @@ type SFTPRequest struct {
 	ExistingKeyPath string
 	// AdminUser and AdminPassword, when given, are an account on the
 	// remote server that can create the backup account: usually root.
-	// cprest makes the user, its home, the backup directory and the
+	// Gniza makes the user, its home, the backup directory and the
 	// authorized_keys entry, then locks the account's password so the key
 	// is the only way in. The password is used for that one connection
 	// and is never stored.
@@ -70,7 +70,7 @@ func (e *UnconfirmedHostError) Error() string {
 }
 
 // SFTPResult reports what was set up, including the public key an operator
-// must install if cprest could not do it for them.
+// must install if Gniza could not do it for them.
 type SFTPResult struct {
 	Destination     nodestore.Destination
 	Repository      nodestore.Repository
@@ -80,7 +80,7 @@ type SFTPResult struct {
 	HostKeyType     string
 	// Installed is true when the public key was placed on the remote
 	// server, Verified when logging in with it then worked, and Created
-	// when cprest made the account it logs in to.
+	// when Gniza made the account it logs in to.
 	Installed bool
 	Verified  bool
 	Created   bool
@@ -99,7 +99,7 @@ func detailOf(output string) string {
 	return ": " + strings.ReplaceAll(output, "\n", " | ")
 }
 
-// PreparedKey is a key cprest made before any destination exists, so its
+// PreparedKey is a key Gniza made before any destination exists, so its
 // public half can be installed on the far side first.
 //
 // A backup server is often not one this cPanel server has a password for:
@@ -123,7 +123,7 @@ type PreparedKey struct {
 // so the destination that is saved next uses it rather than a second key
 // nobody has installed.
 func (e *Engine) PrepareSFTPKey() (PreparedKey, error) {
-	pair, err := sshkeys.Generate("cprest@" + e.settings.Hostname)
+	pair, err := sshkeys.Generate("gniza@" + e.settings.Hostname)
 	if err != nil {
 		return PreparedKey{}, err
 	}
@@ -146,7 +146,7 @@ func (e *Engine) PrepareSFTPKey() (PreparedKey, error) {
 // far side. Without it the page would offer to make a second key and
 // quietly stop pointing at the first.
 //
-// The path arrives from a form, so only a prepared key in cprest's own key
+// The path arrives from a form, so only a prepared key in Gniza's own key
 // directory is described: nothing else on this server is a file this reads.
 // The private half is not returned either way.
 func (e *Engine) PreparedKeyAt(path string) (PreparedKey, bool) {
@@ -279,7 +279,7 @@ func (e *Engine) AddSFTPDestination(req SFTPRequest) (SFTPResult, error) {
 	identityPath := req.ExistingKeyPath
 	var privatePEM []byte
 	if identityPath == "" {
-		pair, err := sshkeys.Generate("cprest@" + settings.Hostname)
+		pair, err := sshkeys.Generate("gniza@" + settings.Hostname)
 		if err != nil {
 			return SFTPResult{}, err
 		}
@@ -396,7 +396,7 @@ func (e *Engine) AddSFTPDestination(req SFTPRequest) (SFTPResult, error) {
 	return result, nil
 }
 
-// PublicKeyFor returns the public key cprest generated for a destination, so
+// PublicKeyFor returns the public key Gniza generated for a destination, so
 // the interface can show it again later.
 func (e *Engine) PublicKeyFor(dest nodestore.Destination) string {
 	identity := dest.Config["identity_file"]

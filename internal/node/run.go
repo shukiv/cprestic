@@ -12,17 +12,17 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/shuki/cprest/internal/cpanel"
-	"github.com/shuki/cprest/internal/destination"
-	"github.com/shuki/cprest/internal/granular"
-	"github.com/shuki/cprest/internal/human"
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/nodestore"
-	"github.com/shuki/cprest/internal/notify"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/reassemble"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/vault"
+	"github.com/shukiv/gniza/internal/cpanel"
+	"github.com/shukiv/gniza/internal/destination"
+	"github.com/shukiv/gniza/internal/granular"
+	"github.com/shukiv/gniza/internal/human"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/nodestore"
+	"github.com/shukiv/gniza/internal/notify"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/reassemble"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/vault"
 )
 
 // EnsureProvisioned creates any repository that does not exist yet on its
@@ -66,7 +66,7 @@ func (e *Engine) EnsureProvisioned(ctx context.Context) (int, error) {
 				// different operation with a different question: what is
 				// its password.
 				return created, fmt.Errorf(
-					"there is already a repository at %s. cprest did not make it and "+
+					"there is already a repository at %s. Gniza did not make it and "+
 						"cannot read it with the password it made for this destination. "+
 						"If those are this server's earlier backups, attach them under "+
 						"Restore -> Disaster recovery, which asks for the password they "+

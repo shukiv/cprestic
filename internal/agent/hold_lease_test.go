@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/protocol"
+	"github.com/shukiv/gniza/internal/protocol"
 )
 
 // A lease is a fixed span; the work is not. A restore of a large account

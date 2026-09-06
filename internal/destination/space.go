@@ -64,7 +64,7 @@ const spaceTimeout = 15 * time.Second
 
 // Space asks the far end how much room it has, with the same key and the
 // same host-key pinning restic itself uses. It runs df and nothing else:
-// this is the one place cprest executes a command on a machine it does not
+// this is the one place Gniza executes a command on a machine it does not
 // otherwise touch, and it stays a question rather than a change.
 func (s *SFTP) Space(ctx context.Context) (Space, error) {
 	if err := s.validate(); err != nil {

@@ -94,7 +94,7 @@
           <input type="checkbox" name="update_check" value="1"
                  {{if not $data.Settings.NoUpdateCheck}}checked{{end}}>
           <span>Check for new versions
-          <small class="cpr-help">Ask GitHub once a day whether a newer cP:Restic has been
+          <small class="cpr-help">Ask GitHub once a day whether a newer Gniza has been
           released, and say so at the top of every page. It reads a version number and installs
           nothing. This server runs {{$data.Version}}{{with $data.LastChecked}}; last asked {{.}}{{end}}{{with $data.CheckError}} — the last ask failed: {{.}}{{end}}.</small></span>
         </label>
@@ -117,8 +117,8 @@
 <div class="cpr-card">
   <div class="cpr-pad cpr-spread" style="border-bottom:1px solid var(--line)">
     <div>
-      <h2 style="margin:0">This copy of cP:Restic</h2>
-      <p class="cpr-hint" style="margin:var(--s1) 0 0" data-live="cprest-version">Version
+      <h2 style="margin:0">This copy of Gniza</h2>
+      <p class="cpr-hint" style="margin:var(--s1) 0 0" data-live="gniza-version">Version
       {{$update.Running}}{{with $update.Checked}} — asked about newer ones {{.}}{{end}}.</p>
     </div>
     <form method="post" action="?p=settings/update/check">
@@ -164,7 +164,7 @@
         history stay as they are.{{with $update.ReleaseURL}}
         <a href="{{.}}" target="_blank" rel="noopener noreferrer">The branch</a>.{{end}}</p>
         {{else}}
-        <b>cP:Restic {{$update.Latest}} has been released.</b>
+        <b>Gniza {{$update.Latest}} has been released.</b>
         <p class="cpr-hint" style="margin:var(--s1) 0 0">Installing downloads it, checks that the
         release key signed it, and restarts the service. Destinations, schedules, backups and
         history stay as they are.{{with $update.ReleaseURL}}
@@ -186,7 +186,7 @@
     the only one who knows what is in it. To go back to published releases, install one over
     it:
     <span class="cpr-mono">curl -fsSL
-    https://github.com/shukiv/cprestic/releases/latest/download/get.sh | sh</span>
+    https://github.com/shukiv/gniza/releases/latest/download/get.sh | sh</span>
     {{with $data.CheckError}} The last ask failed: {{.}}{{end}}</p>
     {{else}}
     <p class="cpr-hint" style="margin:0">Nothing newer has been published{{if $update.Dist}} on the
@@ -379,7 +379,7 @@
       <tr>
         <td class="cpr-acct">Databases</td>
         <td>One plain <span class="cpr-mono">.sql</span> dump per database.
-          <div class="cpr-sublabel">Dumped by cprest, not packed inside cPanel's archive: plain
+          <div class="cpr-sublabel">Dumped by Gniza, not packed inside cPanel's archive: plain
           SQL deduplicates between nights, a compressed archive does not.</div></td>
       </tr>
       <tr>
@@ -409,10 +409,10 @@
   {{if $data.Settings.PkgacctFlags}}
   <div class="cpr-pad" style="border-top:1px solid var(--line)">
     <details>
-      <summary>How cprest gets pkgacct to do that</summary>
+      <summary>How Gniza gets pkgacct to do that</summary>
       <p class="cpr-hint" style="margin-top:var(--s2)">Flag names have moved between cPanel
       releases, so they are probed when the service starts rather than assumed. Each one asks
-      pkgacct to leave a part out of <em>its</em> archive, because cprest is storing that part
+      pkgacct to leave a part out of <em>its</em> archive, because Gniza is storing that part
       itself, in a form restic can deduplicate.</p>
       <div class="cpr-tablewrap" style="margin-top:var(--s3)"><table>
         <thead><tr><th>Capability</th><th>Flag</th><th>What it means</th></tr></thead>
@@ -450,19 +450,19 @@
      the interface it removes. */}}
 {{if eq $tab "version"}}
 <div class="cpr-danger-zone">
-  <h3>Remove cP:Restic from this server</h3>
+  <h3>Remove Gniza from this server</h3>
   <p>Stops the service and unregisters the WHM plugin, the cPanel hooks and the account tile.
   This page goes with it. Backups already on their destinations are not touched, and neither is
-  anything on this server outside cP:Restic — but nothing here will take backups afterwards.</p>
-  <p><code class="cpr-mono">/etc/cprest/master.key</code> and
-  <code class="cpr-mono">/var/lib/cprest/state.db</code> stay, so reinstalling comes back with the
+  anything on this server outside Gniza — but nothing here will take backups afterwards.</p>
+  <p><code class="cpr-mono">/etc/gniza/master.key</code> and
+  <code class="cpr-mono">/var/lib/gniza/state.db</code> stay, so reinstalling comes back with the
   same destinations, schedules and history.</p>
   <form method="post" action="?p=settings/uninstall">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <button class="cpr-btn cpr-danger" type="submit">Remove cP:Restic…</button>
+    <button class="cpr-btn cpr-danger" type="submit">Remove Gniza…</button>
   </form>
   <p class="cpr-hint" style="margin-top:var(--s3)">Or in a root shell:
-  <span class="cpr-mono">sh /usr/local/share/cprest/uninstall.sh</span></p>
+  <span class="cpr-mono">sh /usr/local/share/gniza/uninstall.sh</span></p>
 </div>
 {{end}}
 {{end}}
@@ -512,7 +512,7 @@
       </div>
       <div>
         <label for="from">From</label>
-        <input type="text" id="from" name="from" placeholder="cprest@example.com" value="{{$data.Field "from"}}">
+        <input type="text" id="from" name="from" placeholder="gniza@example.com" value="{{$data.Field "from"}}">
       </div>
       <div>
         <label for="to">To</label>
@@ -529,7 +529,7 @@
         <label for="password">Password</label>
         <input type="password" id="password" name="password" autocomplete="new-password">
         {{if $editing}}<small class="cpr-help">Blank leaves the stored one alone.</small>
-        {{else}}<small class="cpr-help">Sent only over an encrypted connection; cprest will not
+        {{else}}<small class="cpr-help">Sent only over an encrypted connection; Gniza will not
         hand it to a server that refuses one.</small>{{end}}
       </div>
     </div>

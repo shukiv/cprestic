@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shuki/cprest/internal/hookspool"
+	"github.com/shukiv/gniza/internal/hookspool"
 )
 
 type cpanelHookDescriptor struct {
@@ -55,7 +55,7 @@ type hookServiceError struct {
 }
 
 func (e *hookServiceError) Error() string {
-	return fmt.Sprintf("cprest service returned HTTP %d: %s", e.StatusCode, e.Detail)
+	return fmt.Sprintf("gniza service returned HTTP %d: %s", e.StatusCode, e.Detail)
 }
 
 // blockingHookFailure distinguishes a policy refusal from service
@@ -153,7 +153,7 @@ func runCPanelHook(socketPath, event string) ([]byte, error) {
 	request.Header.Set("Content-Type", "application/json")
 	response, err := client.Do(request)
 	if err != nil {
-		return body, fmt.Errorf("notify cprest service: %w", err)
+		return body, fmt.Errorf("notify Gniza service: %w", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusNoContent {

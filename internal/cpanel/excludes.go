@@ -12,7 +12,7 @@ import (
 // This file reads the exclusions cPanel's own backups obey.
 //
 // An operator who has written a path into cpbackup-exclude.conf has said
-// they do not want it leaving the server. cprest ignoring that file meant
+// they do not want it leaving the server. Gniza ignoring that file meant
 // the very files they excluded were the ones being uploaded to a remote
 // destination -- and the operator had no way to know, because the file
 // they wrote it in is the one cPanel documents for exactly this.

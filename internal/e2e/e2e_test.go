@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shuki/cprest/internal/agent"
-	"github.com/shuki/cprest/internal/job"
-	"github.com/shuki/cprest/internal/protocol"
-	"github.com/shuki/cprest/internal/resticrun"
-	"github.com/shuki/cprest/internal/store"
+	"github.com/shukiv/gniza/internal/agent"
+	"github.com/shukiv/gniza/internal/job"
+	"github.com/shukiv/gniza/internal/protocol"
+	"github.com/shukiv/gniza/internal/resticrun"
+	"github.com/shukiv/gniza/internal/store"
 )
 
 // TestBackupEndToEnd drives the whole system: the maintenance runner
