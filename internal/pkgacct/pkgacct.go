@@ -114,12 +114,16 @@ type Capabilities struct {
 	NoCompressFlag  string
 	SkipHomedirFlag string
 	SkipDBFlag      string
-	// SkipMailFlag leaves the account's mail out of pkgacct's archive.
-	// It matters because a restic exclude cannot reach inside that
-	// archive: a schedule told to leave email out was still shipping the
-	// mail configuration, and the mail account names and password hashes
-	// in it, inside the metadata part.
+	// SkipMailFlag leaves the account's mail messages out of pkgacct's
+	// archive. It matters because a restic exclude cannot reach inside
+	// that archive.
 	SkipMailFlag string
+	// SkipMailConfigFlag leaves the mail configuration out, which is a
+	// different thing and the more sensitive one: cPanel keeps the mail
+	// account names and their password hashes in the configuration, not
+	// in the mail directory. Leaving email out with --skipmail alone
+	// still shipped every mailbox password on the account.
+	SkipMailConfigFlag string
 }
 
 // knownFlags maps the capability we need to the flag spellings observed
@@ -129,6 +133,9 @@ var knownFlags = map[string][]string{
 	"skiphomedir": {"--skiphomedir", "--skiphome"},
 	"skipdb":      {"--skipdb", "--skipmysql"},
 	"skipmail":    {"--skipmail"},
+	// cPanel's own help: "exclude mail configuration". Separate from
+	// --skipmail, which is only the mail directory.
+	"skipmailconfig": {"--skipmailconfig"},
 }
 
 // ProbeCapabilities parses the output of "pkgacct --help".
@@ -149,10 +156,11 @@ func ProbeCapabilities(helpOutput string) Capabilities {
 		return ""
 	}
 	return Capabilities{
-		NoCompressFlag:  find("nocompress"),
-		SkipHomedirFlag: find("skiphomedir"),
-		SkipDBFlag:      find("skipdb"),
-		SkipMailFlag:    find("skipmail"),
+		NoCompressFlag:     find("nocompress"),
+		SkipHomedirFlag:    find("skiphomedir"),
+		SkipDBFlag:         find("skipdb"),
+		SkipMailFlag:       find("skipmail"),
+		SkipMailConfigFlag: find("skipmailconfig"),
 	}
 }
 
@@ -168,9 +176,10 @@ type PlanRequest struct {
 	// that asked for a backup of less than the whole account.
 	SkipHomedir   bool
 	SkipDatabases bool
-	// SkipEmail leaves the account's mail out, both the messages under
-	// the home directory and the mail configuration pkgacct would
-	// otherwise pack into its archive.
+	// SkipEmail leaves the account's mail out: the messages under the
+	// home directory, and the mail configuration -- the mailbox names
+	// and password hashes with it -- that pkgacct would otherwise pack
+	// into its archive.
 	SkipEmail bool
 }
 
@@ -258,10 +267,18 @@ func isFlagSeparator(r rune) bool {
 // default location so the agent controls where the disk fills up.
 func CommandArgs(account, stagingDir string, mode Mode, caps Capabilities, skipEmail bool) []string {
 	var args []string
-	if skipEmail && caps.SkipMailFlag != "" {
+	if skipEmail {
 		// An exclude given to restic cannot reach inside pkgacct's own
-		// archive, so leaving mail out has to be said here as well.
-		args = append(args, caps.SkipMailFlag)
+		// archive, so leaving mail out has to be said here as well --
+		// twice, because cPanel counts the messages and the mail
+		// configuration as separate things and the passwords are in the
+		// second one.
+		if caps.SkipMailFlag != "" {
+			args = append(args, caps.SkipMailFlag)
+		}
+		if caps.SkipMailConfigFlag != "" {
+			args = append(args, caps.SkipMailConfigFlag)
+		}
 	}
 	if caps.NoCompressFlag != "" {
 		// Compression here would defeat restic's deduplication entirely.

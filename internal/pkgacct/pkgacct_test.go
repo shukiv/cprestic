@@ -301,3 +301,66 @@ func TestSkipEmailReachesPkgacct(t *testing.T) {
 		t.Errorf("args = %v, a flag this pkgacct does not have was passed", old)
 	}
 }
+
+// helpLive136 is what cPanel 136.0.38 prints, copied from a running
+// server. Both spellings appear: the summary column and the long form.
+const helpLive136 = `Usage: pkgacct [options] user [dir]
+         --nocompress                  do not compress
+         --skiphomedir                 exclude the home directory
+         --skipdb                      exclude databases
+         --skipmail                    exclude mail
+         --skipmailconfig              exclude mail configuration
+         --skipmailman                 exclude mailing lists
+
+    --skipmail
+        Exclude the account's mail directory from the archive.
+    --skipmailconfig
+        Exclude the account's mail configuration information from the
+        archive.
+`
+
+// TestSkipEmailAlsoLeavesOutTheMailConfiguration covers what cPanel means
+// by the two flags.
+//
+// --skipmail leaves out the mail directory: the messages. The mail
+// accounts and their password hashes are not in there -- they are in the
+// mail configuration, which is --skipmailconfig. A schedule set to leave
+// email out was passing only the first, so every mailbox password on the
+// account went into an archive taken deliberately without email.
+func TestSkipEmailAlsoLeavesOutTheMailConfiguration(t *testing.T) {
+	caps := ProbeCapabilities(helpLive136)
+	if caps.SkipMailFlag != "--skipmail" {
+		t.Errorf("SkipMailFlag = %q", caps.SkipMailFlag)
+	}
+	if caps.SkipMailConfigFlag != "--skipmailconfig" {
+		t.Errorf("SkipMailConfigFlag = %q -- the mailbox password hashes are in "+
+			"the configuration, and this is the flag that leaves it out",
+			caps.SkipMailConfigFlag)
+	}
+
+	args := strings.Join(CommandArgs("customer1", "/var/cprest/staging/job-42",
+		ModeSplit, caps, true), " ")
+	for _, want := range []string{"--skipmail", "--skipmailconfig"} {
+		if !strings.Contains(args, want) {
+			t.Errorf("pkgacct %s does not pass %s", args, want)
+		}
+	}
+
+	// A schedule that keeps email passes neither.
+	kept := strings.Join(CommandArgs("customer1", "/var/cprest/staging/job-42",
+		ModeSplit, caps, false), " ")
+	if strings.Contains(kept, "skipmail") {
+		t.Errorf("a backup that keeps email asked pkgacct to leave it out: %s", kept)
+	}
+
+	// A cPanel too old to know the flag is not asked for it, rather than
+	// being handed an argument it will reject.
+	older := ProbeCapabilities(helpModern)
+	if older.SkipMailConfigFlag != "" {
+		t.Errorf("SkipMailConfigFlag = %q for a version without it", older.SkipMailConfigFlag)
+	}
+	if strings.Contains(strings.Join(CommandArgs("customer1", "/tmp/x",
+		ModeSplit, older, true), " "), "--skipmailconfig") {
+		t.Error("a flag the host does not support was passed anyway")
+	}
+}

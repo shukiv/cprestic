@@ -8,9 +8,16 @@ import (
 	"github.com/shuki/cprest/internal/nodestore"
 )
 
-// Positive audit reproduction: SkipEmail removes mailbox messages but still
-// sends cPanel's email account names and password hashes from ~/etc.
-func TestAuditSkipEmailStillIncludesMailCredentials(t *testing.T) {
+// TestSkipEmailLeavesOutTheMailboxPasswordsToo covers what "leave email
+// out" has to mean.
+//
+// Excluding ~/mail leaves the messages behind and nothing else. cPanel
+// keeps the mail accounts themselves under ~/etc, one directory per
+// domain: passwd names every mailbox, and shadow holds its password as a
+// crypt hash. A schedule set to skip email was shipping all of them, so a
+// backup an operator believed held no email held the credentials to read
+// all of it -- on a destination chosen because it does not hold email.
+func TestSkipEmailLeavesOutTheMailboxPasswordsToo(t *testing.T) {
 	home := filepath.Join(string(filepath.Separator), "home", "customer1")
 	excludes := excludesFor(nodestore.Policy{SkipEmail: true}, cpanel.AccountInfo{
 		HomeDir: home,
@@ -18,16 +25,25 @@ func TestAuditSkipEmailStillIncludesMailCredentials(t *testing.T) {
 
 	wantMail := filepath.Join(home, "mail")
 	wantEtc := filepath.Join(home, "etc")
-	mailExcluded := false
-	etcExcluded := false
+	var mailExcluded, etcExcluded bool
 	for _, exclude := range excludes {
 		mailExcluded = mailExcluded || exclude == wantMail
 		etcExcluded = etcExcluded || exclude == wantEtc
 	}
 	if !mailExcluded {
-		t.Fatalf("mailbox directory was not excluded: %v", excludes)
+		t.Errorf("mailbox directory was not excluded: %v", excludes)
 	}
-	if etcExcluded {
-		t.Fatalf("mail credentials were unexpectedly excluded: %v", excludes)
+	if !etcExcluded {
+		t.Errorf("the mail account names and password hashes under %s are still "+
+			"in the backup: %v", wantEtc, excludes)
+	}
+
+	// And a schedule that keeps email keeps all of it: ~/etc is only
+	// dropped because the operator asked for a backup without email.
+	full := excludesFor(nodestore.Policy{}, cpanel.AccountInfo{HomeDir: home}, nil)
+	for _, exclude := range full {
+		if exclude == wantMail || exclude == wantEtc {
+			t.Errorf("a schedule that keeps email excluded %s", exclude)
+		}
 	}
 }

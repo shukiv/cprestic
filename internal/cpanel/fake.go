@@ -101,9 +101,11 @@ var _ Provider = (*Fake)(nil)
 
 // DefaultFakeCaps is a modern cPanel: every flag we care about is present.
 var DefaultFakeCaps = pkgacct.Capabilities{
-	NoCompressFlag:  "--nocompress",
-	SkipHomedirFlag: "--skiphomedir",
-	SkipDBFlag:      "--skipdb",
+	NoCompressFlag:     "--nocompress",
+	SkipHomedirFlag:    "--skiphomedir",
+	SkipDBFlag:         "--skipdb",
+	SkipMailFlag:       "--skipmail",
+	SkipMailConfigFlag: "--skipmailconfig",
 }
 
 func (f *Fake) Capabilities(context.Context) (pkgacct.Capabilities, error) {

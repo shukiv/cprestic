@@ -289,6 +289,13 @@ func templateFuncs() template.FuncMap {
 			case "skiphomedir":
 				return "pkgacct can leave the home directory out of its archive, so cprest " +
 					"can back it up as files. It is backed up either way."
+			case "skipmail":
+				return "pkgacct can leave the account's mail messages out of its archive, " +
+					"which a schedule that skips email needs."
+			case "skipmailconfig":
+				return "pkgacct can leave the mail configuration out of its archive. This is " +
+					"the one that matters: the mailbox names and their password hashes are " +
+					"in the configuration, not in the mail itself."
 			}
 			return ""
 		},

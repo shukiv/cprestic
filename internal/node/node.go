@@ -322,9 +322,11 @@ func (e *Engine) ProbeCapabilities(ctx context.Context) error {
 	}
 	flags := map[string]string{}
 	for name, flag := range map[string]string{
-		"nocompress":  caps.NoCompressFlag,
-		"skiphomedir": caps.SkipHomedirFlag,
-		"skipdb":      caps.SkipDBFlag,
+		"nocompress":     caps.NoCompressFlag,
+		"skiphomedir":    caps.SkipHomedirFlag,
+		"skipdb":         caps.SkipDBFlag,
+		"skipmail":       caps.SkipMailFlag,
+		"skipmailconfig": caps.SkipMailConfigFlag,
 	} {
 		if flag != "" {
 			flags[name] = flag
@@ -574,14 +576,28 @@ func (e *Engine) assignmentFor(j nodestore.Job, policy nodestore.Policy,
 // operator gave, plus the account's mail when the schedule leaves email
 // out.
 //
-// This is only half of leaving mail out. It keeps the messages out of the
-// file backup; the mail configuration, and the mail account hashes with
-// it, are inside pkgacct's own archive where no exclude here can reach —
-// so the schedule's choice is passed to pkgacct as well.
+// Leaving email out means two directories, not one. The messages are
+// under ~/mail; the mail accounts themselves are under ~/etc, one
+// directory per domain, holding passwd, shadow and quota — shadow being
+// every mailbox password on the account, as a crypt hash. A schedule told
+// to leave email out was shipping all of them, so a backup an operator
+// believed held no email held the credentials to all of it.
+//
+// The whole of ~/etc goes, rather than the credential files by name: a
+// pattern that misses one ships the hashes, and what else lives there is
+// cPanel's own bookkeeping — cacheid, ftpquota, the webmail databases —
+// which is either regenerated or mail data in its own right.
+//
+// And this is still only half of it. These keep the files out of the file
+// backup; the same configuration is inside pkgacct's own archive, where
+// no exclude here can reach, so the schedule's choice is passed to
+// pkgacct as well.
 func excludesFor(policy nodestore.Policy, account cpanel.AccountInfo, native []string) []string {
 	excludes := append([]string(nil), policy.Excludes...)
 	if policy.SkipEmail && account.HomeDir != "" {
-		excludes = append(excludes, filepath.Join(account.HomeDir, "mail"))
+		excludes = append(excludes,
+			filepath.Join(account.HomeDir, "mail"),
+			filepath.Join(account.HomeDir, "etc"))
 	}
 	// What cPanel's own backups would leave out. An operator who wrote a
 	// path into cpbackup-exclude.conf has said it must not leave the
