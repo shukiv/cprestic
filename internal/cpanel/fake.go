@@ -56,6 +56,11 @@ type Fake struct {
 	// RefuseCreate makes CreateDatabase fail with this reason, the way
 	// cPanel refuses one when the account's database quota is reached.
 	RefuseCreate string
+	// RefuseLoadInto names a database whose load fails, for the case a
+	// restore has already overwritten the ones before it. cPanel gives no
+	// way to undo those, so what the caller does about the failure is
+	// what matters.
+	RefuseLoadInto string
 	// Gone marks accounts this server does not have, for the case where
 	// cPanel says it restored one and it is not there afterwards.
 	Gone map[string]bool
@@ -270,6 +275,9 @@ func (f *Fake) CreateDatabase(_ context.Context, user, database string) error {
 // caller that fails to confine a request to the account's own databases
 // fails here too.
 func (f *Fake) LoadDatabase(_ context.Context, user, database, dumpPath string) error {
+	if f.RefuseLoadInto != "" && f.RefuseLoadInto == database {
+		return fmt.Errorf("cpanel: load %s: the dump failed halfway through", database)
+	}
 	if !f.owns(user, database) {
 		return fmt.Errorf("cpanel: %s does not own the database %s", user, database)
 	}

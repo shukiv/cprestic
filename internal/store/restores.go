@@ -180,6 +180,14 @@ type RestoreOutcome struct {
 	BytesRestored uint64
 	ArchivePath   string
 	Error         string
+	// Detail is what the restore actually wrote. It matters most on a
+	// failure: a granular restore has no transaction, so it may have
+	// overwritten one database before failing on the next, and reporting
+	// only "failed" leaves the account changed with nobody told.
+	Detail string
+	// Applied says the live account was written into. True on a failure
+	// that got part of the way is the whole point of recording it.
+	Applied bool
 }
 
 // ApplyRestoreReport records a restore's result.
@@ -199,6 +207,8 @@ func (s *Store) ApplyRestoreReport(ctx context.Context, serverID, jobID, claimTo
 		    bytes_restored = $3,
 		    archive_path = nullif($4, ''),
 		    error = nullif($5, ''),
+		    detail = nullif($8, ''),
+		    applied = $9,
 		    lease_expires_at = NULL,
 		    claim_token = NULL,
 		    finished_at = now()
@@ -206,7 +216,8 @@ func (s *Store) ApplyRestoreReport(ctx context.Context, serverID, jobID, claimTo
 		   AND account_id IN (SELECT id FROM accounts WHERE server_id = $6)
 		   AND claim_token = $7::uuid`,
 		jobID, string(outcome.Status), int64(outcome.BytesRestored),
-		outcome.ArchivePath, outcome.Error, serverID, claimToken)
+		outcome.ArchivePath, outcome.Error, serverID, claimToken,
+		outcome.Detail, outcome.Applied)
 	if err != nil {
 		return fmt.Errorf("store: record restore result: %w", err)
 	}
@@ -241,9 +252,15 @@ type Restore struct {
 	BytesRestored uint64
 	ArchivePath   string
 	Error         string
-	Attempt       int
-	CreatedAt     time.Time
-	FinishedAt    *time.Time
+	// Detail is what the restore wrote, and Applied says the live account
+	// was changed. Both are read on a failure as well as a success: a
+	// granular restore that failed part of the way through has changed
+	// the account, and that is what these say.
+	Detail     string
+	Applied    bool
+	Attempt    int
+	CreatedAt  time.Time
+	FinishedAt *time.Time
 }
 
 // RestoreByID reads a restore job.
@@ -255,12 +272,14 @@ func (s *Store) RestoreByID(ctx context.Context, jobID string) (Restore, error) 
 	err := s.pool.QueryRow(ctx, `
 		SELECT id::text, account_id::text, repository_id::text, snapshot_id,
 		       kind::text, status::text, coalesce(bytes_restored, 0),
-		       coalesce(archive_path, ''), coalesce(error, ''), attempt,
+		       coalesce(archive_path, ''), coalesce(error, ''),
+		       coalesce(detail, ''), applied, attempt,
 		       created_at, finished_at
 		  FROM restore_jobs WHERE id = $1`, jobID).Scan(
 		&restore.ID, &restore.AccountID, &restore.RepositoryID, &restore.SnapshotID,
 		&restore.Kind, &status, &restore.BytesRestored, &restore.ArchivePath,
-		&restore.Error, &restore.Attempt, &restore.CreatedAt, &restore.FinishedAt)
+		&restore.Error, &restore.Detail, &restore.Applied, &restore.Attempt,
+		&restore.CreatedAt, &restore.FinishedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Restore{}, ErrNotFound
 	}

@@ -145,6 +145,17 @@ func (a *Agent) restoreItems(ctx context.Context, log *slog.Logger,
 		if err != nil {
 			report.Error = err.Error()
 			report.Hint = hint
+			// A restore has no transaction: some of it may already be in
+			// the live account. Saying only that it failed leaves the
+			// operator to find out from the customer, so what was written
+			// is reported alongside the failure and the job is marked as
+			// having changed the account.
+			report.Detail = written
+			report.Applied = written != ""
+			if written != "" {
+				log.Warn("a granular restore failed after changing the account",
+					"account", assignment.CPanelUser, "wrote", written, "error", err)
+			}
 			return report, false
 		}
 		report.Status = string(job.StatusSuccess)
@@ -421,30 +432,46 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 	// Written in the order the account needs: a database exists before a
 	// dump goes into it, and a grant is given on a database that is
 	// already there.
+	//
+	// There is no transaction across these. cPanel has no way to undo a
+	// loaded database, and a home directory written over cannot be put
+	// back. So what has already happened is carried out of every failure
+	// path from here on: a restore that overwrote one database and failed
+	// on the next must not report only "failed" -- the account has been
+	// changed, and whoever reads that report is the person who has to
+	// decide what to do about it.
 	var wrote []string
+	partly := func(err error) (string, string, error) {
+		if len(wrote) == 0 {
+			return "", "", err
+		}
+		return strings.Join(wrote, "; "), "", fmt.Errorf(
+			"%w -- the account has already been changed: %s", err, strings.Join(wrote, "; "))
+	}
 	for _, name := range create {
 		if err := a.provider.CreateDatabase(ctx, assignment.CPanelUser, name); err != nil {
-			return "", createFailureHint(name, err), err
+			if len(wrote) == 0 {
+				return "", createFailureHint(name, err), err
+			}
+			return strings.Join(wrote, "; "), createFailureHint(name, err), fmt.Errorf(
+				"%w -- the account has already been changed: %s",
+				err, strings.Join(wrote, "; "))
 		}
 		log.Warn("database created for a restore",
 			"account", assignment.CPanelUser, "database", name)
-	}
-	if len(create) > 0 {
-		wrote = append(wrote, "created "+strings.Join(create, ", "))
+		wrote = append(wrote, "created "+name)
 	}
 	for i, name := range databaseNames {
 		if err := a.provider.LoadDatabase(ctx, assignment.CPanelUser, name, dumps[i]); err != nil {
-			return "", "", err
+			return partly(fmt.Errorf("agent: load %s: %w", name, err))
 		}
 		log.Warn("database loaded from a backup",
 			"account", assignment.CPanelUser, "database", name)
-	}
-	if wantDumps {
-		wrote = append(wrote, "loaded into "+strings.Join(databaseNames, ", "))
+		wrote = append(wrote, "loaded into "+name)
 	}
 	if wantUsers {
 		if err := a.provider.PutDatabaseUsers(ctx, assignment.CPanelUser, users); err != nil {
-			return "", "", err
+			return partly(err)
 		}
 		names := distinctUserNames(users)
 		log.Warn("database users recreated from a backup",
@@ -453,13 +480,13 @@ func (a *Agent) applyItems(ctx context.Context, log *slog.Logger,
 	}
 	if wantHomedir {
 		if err := a.provider.PutHomeDir(ctx, assignment.CPanelUser, homedir); err != nil {
-			return "", "", err
+			return partly(err)
 		}
 		wrote = append(wrote, "written into the home directory of "+assignment.CPanelUser)
 	}
 	if wantCron {
 		if err := a.provider.PutCrontab(ctx, assignment.CPanelUser, crontab); err != nil {
-			return "", "", err
+			return partly(err)
 		}
 		log.Warn("cron jobs put back from a backup", "account", assignment.CPanelUser)
 		wrote = append(wrote, "cron jobs of "+assignment.CPanelUser)

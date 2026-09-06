@@ -155,6 +155,8 @@ func (s *Service) ReportRestore(ctx context.Context, serverID string, report pro
 		BytesRestored: report.BytesRestored,
 		ArchivePath:   report.ArchivePath,
 		Error:         report.Error,
+		Detail:        report.Detail,
+		Applied:       report.Applied,
 	}); err != nil {
 		return err
 	}
