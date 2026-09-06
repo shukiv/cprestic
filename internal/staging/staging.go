@@ -272,6 +272,42 @@ func (m *Manager) Reclaim(key string) (bool, error) {
 	return reclaimed, nil
 }
 
+// SupersedeOutputs removes finished output whose key begins with prefix,
+// and reports the keys it removed.
+//
+// Output is named after the restore that produced it, so that a stored
+// restore's archive path stays that restore's own: a second rebuild of
+// the same account writes somewhere else, and the first record's path
+// stops resolving instead of quietly resolving to the newer archive. The
+// download page can then say the archive is gone, which is true, rather
+// than handing over a different backup under the old one's date.
+//
+// Keeping all of them would fill the disk the next night's backup needs,
+// so the newer restore clears what it supersedes. Only finished output is
+// touched: a directory still being worked in belongs to a restore that
+// has not finished.
+func (m *Manager) SupersedeOutputs(prefix string) ([]string, error) {
+	if err := validateKey(prefix); err != nil {
+		return nil, err
+	}
+	outputs, err := m.Retained()
+	if err != nil {
+		return nil, err
+	}
+	var removed []string
+	for _, output := range outputs {
+		if !strings.HasPrefix(output.Key, prefix) {
+			continue
+		}
+		dir := output.Dir
+		if err := m.Release(&dir); err != nil {
+			return removed, err
+		}
+		removed = append(removed, output.Key)
+	}
+	return removed, nil
+}
+
 // Release removes a staging directory. It is called only once every target
 // of the job has reached a terminal state, so that a retry against a slow
 // destination does not have to re-run pkgacct.

@@ -54,19 +54,29 @@ func (a *Agent) RunRestore(ctx context.Context, assignment protocol.RestoreAssig
 	// The key carries the kind as well as the account: a granular restore
 	// and a whole-account rebuild are different output, and one must not
 	// silently replace the other while somebody is downloading it.
-	stagingKey := "restore-" + assignment.CPanelUser
+	//
+	// And it carries this restore's own id. Keying by account alone put
+	// every rebuild of an account at the same path, so a second restore
+	// overwrote the first one's archive while the first one's record went
+	// on pointing there -- and a download asked for by the older restore's
+	// id handed over the newer snapshot, under the older one's date.
+	group := "restore-" + assignment.CPanelUser + "-"
 	if assignment.Kind == protocol.RestoreItems {
-		stagingKey = "items-" + assignment.CPanelUser
+		group = "items-" + assignment.CPanelUser + "-"
 	}
-	// A previous restore of this account may have left its rebuilt archive
-	// here. This restore supersedes it, so the space is reclaimed rather
-	// than allowed to wedge every future restore of the account.
-	if reclaimed, err := a.staging.Reclaim(stagingKey); err != nil {
-		log.Error("reclaim previous restore staging", "error", err)
+	stagingKey := group + assignment.JobID
+	// A previous restore of this account has been superseded by this one.
+	// Its output is removed rather than allowed to accumulate on a disk
+	// that also has to hold tonight's backup; what it does not do any more
+	// is take this restore's place on the way.
+	superseded, err := a.staging.SupersedeOutputs(group)
+	if err != nil {
+		log.Error("remove a superseded restore's output", "error", err)
 		report.Error = err.Error()
 		return report
-	} else if reclaimed {
-		log.Warn("removed a previous restore's staging directory", "key", stagingKey)
+	}
+	for _, key := range superseded {
+		log.Warn("removed a superseded restore's output", "key", key)
 	}
 
 	dir, err := a.staging.Allocate(stagingKey, estimate)
