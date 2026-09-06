@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shuki/cprest/internal/cpanel"
@@ -111,6 +112,105 @@ func archiveRestorer(t *testing.T, account string) resticrun.Execer {
 				return resticrun.CommandResult{Stdout: []byte(
 					`{"message_type":"summary","files_restored":1,"bytes_restored":7}`)}, nil
 			}
+		}
+		t.Fatalf("unexpected restic command %v", cmd.Args)
+		return resticrun.CommandResult{}, nil
+	})
+}
+
+// TestSupersedingOneAccountsRestoreLeavesAnotherAccountsAlone covers what
+// the key of a superseded restore has to mean.
+//
+// The output of every restore of an account shares a prefix, and a new
+// restore removes what that prefix matches. With the account and the
+// restore's id joined by a hyphen, the prefix for "c1" also matched every
+// output belonging to an account named "c1-x": restoring one customer
+// deleted the archive another customer's operator was about to download,
+// and that record went on pointing at a file that was no longer there.
+func TestSupersedingOneAccountsRestoreLeavesAnotherAccountsAlone(t *testing.T) {
+	root := t.TempDir()
+	stagingRoot := filepath.Join(root, "staging")
+	if err := os.MkdirAll(stagingRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	worker := New(Config{
+		Provider: &cpanel.Fake{Root: filepath.Join(root, "cpanel")},
+		Staging:  &staging.Manager{Root: stagingRoot},
+		Runner: resticrun.New(resticrun.Config{RuntimeDir: root},
+			archiveRestorerFor(t, map[string]string{
+				"aaaaaaaaaaaaaaaa": "c1-x",
+				"bbbbbbbbbbbbbbbb": "c1",
+			})),
+		Log: slog.New(slog.DiscardHandler),
+	})
+
+	rebuild := func(jobID, account, snapshotID string) protocol.RestoreReport {
+		t.Helper()
+		report := worker.RunRestore(context.Background(), protocol.RestoreAssignment{
+			JobID: jobID, CPanelUser: account, SnapshotID: snapshotID,
+			Kind: protocol.RestoreAccount, SizeEstimate: 1024,
+			Source: protocol.Target{Spec: destination.Spec{Type: destination.TypeLocal,
+				Config: map[string]string{"root": root}}, RepoPath: "repo",
+				RepoPassword: "password"},
+		})
+		if report.Status != "success" {
+			t.Fatalf("restore of %s: %+v", account, report)
+		}
+		return report
+	}
+
+	neighbour := rebuild("restore-neighbour", "c1-x", "aaaaaaaaaaaaaaaa")
+	rebuild("restore-mine", "c1", "bbbbbbbbbbbbbbbb")
+
+	if _, err := os.Stat(neighbour.ArchivePath); err != nil {
+		t.Errorf("restoring c1 threw away the archive belonging to c1-x at %s: %v",
+			neighbour.ArchivePath, err)
+	}
+}
+
+// archiveRestorerFor answers for several accounts at once, so a restore
+// of one can be checked against another's output.
+func archiveRestorerFor(t *testing.T, accounts map[string]string) resticrun.Execer {
+	t.Helper()
+	return resticrun.ExecFunc(func(_ context.Context, cmd resticrun.Command) (resticrun.CommandResult, error) {
+		for i, arg := range cmd.Args {
+			if arg == "snapshots" {
+				var listed string
+				for id, account := range accounts {
+					if listed != "" {
+						listed += ","
+					}
+					listed += `{"id":"` + id + `",` +
+						`"tags":["account:` + account + `","mode:monolithic"],` +
+						`"paths":["/staging/` + account + `/cpmove-` + account + `.tar"]}`
+				}
+				return resticrun.CommandResult{Stdout: []byte("[" + listed + "]")}, nil
+			}
+			if arg != "--target" {
+				continue
+			}
+			account := ""
+			for _, other := range cmd.Args {
+				// restic is asked for a subpath of a snapshot, so the
+				// argument is "<id>:<path>".
+				id, _, _ := strings.Cut(other, ":")
+				if name, found := accounts[id]; found {
+					account = name
+				}
+			}
+			if account == "" {
+				t.Fatalf("restore command names no known snapshot: %v", cmd.Args)
+			}
+			target := cmd.Args[i+1]
+			if err := os.MkdirAll(target, 0o700); err != nil {
+				return resticrun.CommandResult{}, err
+			}
+			archive := filepath.Join(target, "cpmove-"+account+".tar")
+			if err := os.WriteFile(archive, []byte("archive"), 0o600); err != nil {
+				return resticrun.CommandResult{}, err
+			}
+			return resticrun.CommandResult{Stdout: []byte(
+				`{"message_type":"summary","files_restored":1,"bytes_restored":7}`)}, nil
 		}
 		t.Fatalf("unexpected restic command %v", cmd.Args)
 		return resticrun.CommandResult{}, nil

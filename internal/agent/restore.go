@@ -62,9 +62,15 @@ func (a *Agent) RunRestore(ctx context.Context, assignment protocol.RestoreAssig
 	// overwrote the first one's archive while the first one's record went
 	// on pointing there -- and a download asked for by the older restore's
 	// id handed over the newer snapshot, under the older one's date.
-	group := "restore-" + assignment.CPanelUser + "-"
+	//
+	// The account and this restore's id are separated by "@" and not by a
+	// hyphen: a hyphen is a character an account name may itself contain,
+	// so "restore-c1-" is a prefix of every output belonging to an account
+	// called "c1-x" as well, and superseding one restore would have thrown
+	// away another account's. No cPanel account name contains "@".
+	group := "restore-" + assignment.CPanelUser + "@"
 	if assignment.Kind == protocol.RestoreItems {
-		group = "items-" + assignment.CPanelUser + "-"
+		group = "items-" + assignment.CPanelUser + "@"
 	}
 	stagingKey := group + assignment.JobID
 	// A previous restore of this account has been superseded by this one.
