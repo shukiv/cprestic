@@ -179,8 +179,19 @@
       </form>
     </div>
     {{else if not $update.Installing}}
+    {{if and $update.Unreleased (not $update.Dist)}}
+    <p class="cpr-hint" style="margin:0">This copy was not installed from a published
+    release{{with $update.Latest}}; the newest one is {{.}}{{end}}. A build that is not a
+    published version is never replaced from here, because whoever put it on this server is
+    the only one who knows what is in it. To go back to published releases, install one over
+    it:
+    <span class="cpr-mono">curl -fsSL
+    https://github.com/shukiv/cprestic/releases/latest/download/get.sh | sh</span>
+    {{with $data.CheckError}} The last ask failed: {{.}}{{end}}</p>
+    {{else}}
     <p class="cpr-hint" style="margin:0">Nothing newer has been published{{if $update.Dist}} on the
     dist branch{{end}}.{{with $data.CheckError}} The last ask failed: {{.}}{{end}}</p>
+    {{end}}
     {{end}}
 
     <form method="post" action="?p=settings/update/channel" style="margin-top:var(--s4)">

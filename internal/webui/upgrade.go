@@ -26,6 +26,11 @@ type updatePanel struct {
 	// Newer says a build later than this one has been published, and so
 	// whether there is anything to install.
 	Newer bool
+	// Unreleased says this build is not a published version -- a build
+	// made from a working tree, or one copied onto the server by hand.
+	// Nothing is ever offered to replace one, so the card has to say that
+	// rather than let "nothing newer" stand for it.
+	Unreleased bool
 	// Channel is where updates are read from, and Dist says that is the
 	// branch rather than the published releases.
 	Channel string

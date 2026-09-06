@@ -3357,7 +3357,13 @@ func (s *Server) settingsPage() (settingsView, error) {
 
 	// A failed check is not a reason to fail the page.
 	lastChecked, checkError := "", ""
-	panel := updatePanel{Running: agent.Version}
+	panel := updatePanel{
+		Running: agent.Version,
+		// A build that is not exactly a tag is never replaced by an
+		// update: it came from somebody who knows where it came from,
+		// and installing over it would discard their work.
+		Unreleased: !update.IsRelease(agent.Version),
+	}
 	if state, err := s.engine.Store().UpdateState(); err == nil {
 		if !state.CheckedAt.IsZero() {
 			lastChecked = humanAgo(&state.CheckedAt)

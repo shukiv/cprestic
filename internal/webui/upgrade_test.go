@@ -261,3 +261,49 @@ func TestSettingsTabsShowOnePartEach(t *testing.T) {
 		t.Error("adding a channel does not land on the alerts tab")
 	}
 }
+
+// TestAHandInstalledBuildIsToldWhyItIsNotOffered covers the page an
+// operator lands on when nothing will update.
+//
+// A build that is not exactly a tag is never replaced from here: it came
+// from somebody who knows what is in it, and installing a release over it
+// would discard their work. The card said only "Nothing newer has been
+// published" -- while the banner across the top of every page named the
+// release that had been. So the page contradicted itself, and the way out
+// was written down nowhere.
+func TestAHandInstalledBuildIsToldWhyItIsNotOffered(t *testing.T) {
+	client, _, engine := newUI(t)
+
+	was := agent.Version
+	agent.Version = "v0.1.0-48-g97f43df"
+	t.Cleanup(func() { agent.Version = was })
+
+	if err := engine.Store().SaveUpdateState(nodestore.UpdateState{
+		CheckedAt: time.Now().UTC(), Version: "v0.1.2",
+		URL: "https://github.com/shukiv/cprestic/releases/tag/v0.1.2",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	status, page := get(t, client, "/?p=settings&tab=version")
+	if status != http.StatusOK {
+		t.Fatalf("settings answered %d", status)
+	}
+	if strings.Contains(page, "Nothing newer has been published") {
+		t.Error("a hand-installed build is told nothing newer exists, while the " +
+			"banner on the same page names the release that does")
+	}
+	for _, want := range []string{
+		"was not installed from a published",
+		"v0.1.2",
+		"releases/latest/download/get.sh",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the settings page does not say %q", want)
+		}
+	}
+	// And it still does not offer to install anything.
+	if strings.Contains(page, "Install v0.1.2") {
+		t.Error("a release is offered over a build that was not published")
+	}
+}
