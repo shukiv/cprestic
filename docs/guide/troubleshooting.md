@@ -69,6 +69,17 @@ schedule resolved to, each destination probe, and the staging and upload of
 each account. That is enough to reproduce a failure by hand — copy the
 command out of the log and run it.
 
+The account filter reaches `pkgacct` and `mysqldump`, which carry the
+account on the line. The `restic` lines do not: that runner works on
+repositories and does not know whose account it is copying. Filter by
+account for the story, then clear the filter to see the `restic` command
+beside it — the "uploading to a destination" line just before it names both.
+
+Not written down at any level, because nothing is instrumented there yet:
+the `mysql` calls that read an account's database users and grants, and
+whatever `StageSystem` runs for a system backup. The three that fail in
+practice — `pkgacct`, `mysqldump`, `restic` — are.
+
 What is never written down, at any level: restic's environment, which is
 where the backend credentials and the repository password file's path are;
 the value of any `-o` backend option, whose key is kept and whose value is

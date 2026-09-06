@@ -724,9 +724,12 @@ func (e *Engine) Schedule(ctx context.Context, now time.Time) (int, error) {
 			e.log.Error("resolve policy accounts", "policy", policy.Name, "error", err)
 			continue
 		}
+		// The names, not a count: "why did this account not run last
+		// night" is answered by whether the schedule resolved to it.
 		e.log.Debug("schedule is due",
 			"policy", policy.Name, "cron", policy.ScheduleCron,
-			"accounts", len(accounts), "include_system", policy.IncludeSystem,
+			"accounts", strings.Join(accounts, ","),
+			"include_system", policy.IncludeSystem,
 			"destinations", len(policy.RepositoryIDs))
 		if err := e.store.SetPolicyLastRun(policy.ID, now); err != nil {
 			return queued, err

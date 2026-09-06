@@ -86,7 +86,8 @@ func TestWhatWasRunIsInTheLogAtDebug(t *testing.T) {
 		t.Fatalf("dump: %v", err)
 	}
 	log := written.String()
-	for _, want := range []string{"level=DEBUG", "customer1_wp", "--single-transaction"} {
+	// account= is on the line because the service log is filtered by it.
+	for _, want := range []string{"level=DEBUG", "customer1_wp", "--single-transaction", "account=customer1"} {
 		if !strings.Contains(log, want) {
 			t.Errorf("the debug log does not carry %q:\n%s", want, log)
 		}

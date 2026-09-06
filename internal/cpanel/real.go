@@ -106,11 +106,15 @@ func (r *Real) debug(msg string, args ...any) {
 // failure reproducible -- an operator can copy the command out of the log
 // and run it themselves, which is how the first real MySQL corruption on
 // one of these servers was found.
-func (r *Real) ranCommand(what string, cmd *exec.Cmd, started time.Time, err error) {
+// The account is on the line because that is what the service log is
+// filtered by: a line about one account's dump that does not name the
+// account is not in that account's story when somebody goes looking.
+func (r *Real) ranCommand(what, account string, cmd *exec.Cmd, started time.Time, err error) {
 	if r.Log == nil {
 		return
 	}
-	args := []any{"command", cmd.Path, "args", strings.Join(cmd.Args[1:], " "),
+	args := []any{"account", account,
+		"command", cmd.Path, "args", strings.Join(cmd.Args[1:], " "),
 		"took", time.Since(started).Round(time.Millisecond).String()}
 	if err != nil {
 		args = append(args, "error", err.Error())
@@ -408,7 +412,7 @@ func (r *Real) Stage(ctx context.Context, req StageRequest) (pkgacct.Payload, er
 	cmd := exec.CommandContext(ctx, r.pkgacct(), args...)
 	started := time.Now()
 	output, err := cmd.CombinedOutput()
-	r.ranCommand("packaged an account", cmd, started, err)
+	r.ranCommand("packaged an account", req.Account.User, cmd, started, err)
 	if err != nil {
 		return pkgacct.Payload{}, fmt.Errorf("cpanel: pkgacct failed: %w: %s",
 			err, pkgacctFailure(output))
@@ -690,7 +694,7 @@ func plainAccountName(name string) bool {
 // does not already have the database puts every table somewhere else, or
 // nowhere. cPanel's own archives carry this as <name>.create, and this
 // writes the same thing under the same name.
-func (r *Real) dumpDatabaseCreate(ctx context.Context, name, dumpPath string) error {
+func (r *Real) dumpDatabaseCreate(ctx context.Context, account, name, dumpPath string) error {
 	path := strings.TrimSuffix(dumpPath, ".sql") + ".create"
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -703,7 +707,7 @@ func (r *Real) dumpDatabaseCreate(ctx context.Context, name, dumpPath string) er
 	cmd.Stderr = &complaint
 	started := time.Now()
 	err = cmd.Run()
-	r.ranCommand("dumped a database definition", cmd, started, err)
+	r.ranCommand("dumped a database definition", account, cmd, started, err)
 	closeErr := file.Close()
 	if err != nil {
 		return fmt.Errorf("cpanel: dump the definition of %s: %w%s",
@@ -753,7 +757,7 @@ func (r *Real) dumpDatabases(ctx context.Context, req StageRequest, payload pkga
 		cmd.Stderr = &complaint
 		started := time.Now()
 		err = cmd.Run()
-		r.ranCommand("dumped a database", cmd, started, err)
+		r.ranCommand("dumped a database", req.Account.User, cmd, started, err)
 		closeErr := file.Close()
 		if err != nil {
 			return fmt.Errorf("cpanel: mysqldump %s: %w%s",
@@ -762,7 +766,7 @@ func (r *Real) dumpDatabases(ctx context.Context, req StageRequest, payload pkga
 		if closeErr != nil {
 			return fmt.Errorf("cpanel: close dump %s: %w", path, closeErr)
 		}
-		if err := r.dumpDatabaseCreate(ctx, name, path); err != nil {
+		if err := r.dumpDatabaseCreate(ctx, req.Account.User, name, path); err != nil {
 			return err
 		}
 	}
