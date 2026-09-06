@@ -635,7 +635,9 @@ hook. Test: `TestAReplayedCreateQueuesTheInitialBackup`.
 - SEC-16 changes what a skip-email backup contains. Snapshots taken before it
   still hold the hashes; forget them if that matters. A skip-email schedule on
   a host that only supports the monolithic archive still carries them, and the
-  run says so in a warning — read the amendment below before relying on one.
+  service log warns for every such run — read the amendment below before
+  relying on one. The warning is in the journal only; it does not reach the
+  history page.
 - SEC-15 fails a restore that does not put a database back. Restricted restore
   mode declines a database whose name does not carry the account's prefix, so
   on a server with legacy unprefixed databases a restore that used to report
@@ -669,16 +671,20 @@ excludes applied to its copy of the home directory are `~/mail` and
 So:
 
 - **Split mode** — the home directory is backed up as files and the exclude on
-  `~/etc` keeps the hashes out. Skip-email means what it says. This is what
-  `.144` runs.
+  `~/etc` keeps the hashes out. The metadata archive does not re-add it:
+  `--skiphomedir` sets `$homedir` to undef (line 1128), guards the homedir
+  block (line 902) and passes `--exclude=homedir/*` to the archive command
+  (line 1374). Skip-email means what it says. This is what `.144` runs.
 - **Monolithic mode** — cPanel packs the whole home directory into its own
   archive and there is no flag for `~/etc`. The hashes are in the backup, and
   no change here can take them out.
 
 A backup that says it left email out and carries every mailbox password is
 worse than one that admits it, so the monolithic plan now reports itself
-degraded with that reason, and the schedule page says which of the two the
-operator gets. `--skipmailconfig` is still passed: the addresses, forwarders
+degraded with that reason — a warning in the service log, which is as far as
+a degraded payload has ever been carried; it does not reach the job report or
+the history page — and the schedule page says which of the two the operator
+gets. `--skipmailconfig` is still passed: the addresses, forwarders
 and filters are mail data and a schedule that skips email should not carry
 them. The comments that credited it with the passwords are corrected.
 
@@ -700,6 +706,8 @@ that was no longer there.
 The account and the restore's id are now joined with `@`, which no cPanel
 account name contains and which `validateKey` already allows for exactly this
 reason. Outputs staged by the previous binary keep their old keys and are not
-superseded by prefix any more; they fall to retention instead.
+superseded by prefix any more; `SweepWorkdir` removes them on age instead,
+after the seven days the work directory keeps finished output for. Five such
+directories are on `.144` today, the oldest from 30 August.
 
 Test: `TestSupersedingOneAccountsRestoreLeavesAnotherAccountsAlone`.
