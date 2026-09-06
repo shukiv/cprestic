@@ -138,9 +138,23 @@ if legacy_present; then
         if [ -d "$old" ]; then
             mv -- "$old" "$new" || die "could not move $old to $new; nothing else has been installed"
             say "moved $old to $new"
+            # This script is inside one of the directories being moved: an
+            # upgrade unpacks the release under the state directory and runs
+            # it from there. SOURCE_DIR was worked out before the move, so
+            # without this every path built from it afterwards names
+            # somewhere that no longer exists, and the old installation has
+            # already been taken apart by then.
+            case $SOURCE_DIR in
+                "$old"|"$old"/*) SOURCE_DIR=$new${SOURCE_DIR#"$old"} ;;
+            esac
         fi
     done
     MIGRATED_FROM_CPREST=1
+    # Say it here rather than let the first missing file say it: from this
+    # point the old installation is gone, so a package that cannot be found
+    # is a server with no backups on it and nothing left to explain why.
+    [ -f "$SOURCE_DIR/gniza-agent" ] \
+        || die "the package is no longer at $SOURCE_DIR after moving the directories; the earlier installation has been removed and nothing has replaced it"
     say "the earlier installation is gone; installing Gniza"
 fi
 

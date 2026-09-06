@@ -9,9 +9,13 @@
      because servers running a release from before the rename ask for
      exactly those; see internal/update/install.go. -->
 
-cPanel fleet backup orchestration on top of [restic](https://restic.net/).
+Hosting-panel fleet backup orchestration on top of
+[restic](https://restic.net/). cPanel/WHM is the panel it runs on today;
+DirectAdmin and Plesk are next. The name, the paths and the interface are
+the product's own rather than any one panel's, so a server is a server
+whatever is managing it.
 
-Backup data flows straight from each cPanel server to its destinations. The
+Backup data flows straight from each server to its destinations. The
 controller schedules work and records state; it never carries backup bytes,
 so adding servers does not turn it into a bandwidth bottleneck.
 

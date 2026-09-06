@@ -2,8 +2,11 @@ package whm_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"image/png"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -170,4 +173,78 @@ func TestTheUpgradeFromCprestRefusesBeforeItRemovesAnything(t *testing.T) {
 			t.Errorf("the installer deletes rather than moves the old installation: %s", destroyed)
 		}
 	}
+}
+
+// The installer runs from inside the package, and on an upgrade from cprest
+// the package is inside the directory it is about to move: releases are
+// unpacked under /var/lib/cprest/upgrade. SOURCE_DIR is an absolute path
+// worked out before the move, so every use of it afterwards names somewhere
+// that no longer exists -- which is how v0.2.0 took the old installation
+// apart on a live server and then could not install the new one.
+func TestTheMoveCarriesThePackageWithIt(t *testing.T) {
+	script, err := os.ReadFile("install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loop := loopAround(t, string(script), `mv -- "$old" "$new"`)
+
+	root := t.TempDir()
+	legacyState := filepath.Join(root, "var/lib/cprest")
+	stateDir := filepath.Join(root, "var/lib/gniza")
+	source := filepath.Join(legacyState, "upgrade/v9.9.9/cprest-plugin")
+	if err := os.MkdirAll(source, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "gniza-agent"), []byte("binary"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	harness := fmt.Sprintf(`set -eu
+say() { :; }
+die() { printf 'die: %%s\n' "$*" >&2; exit 1; }
+LEGACY_CONFIG_DIR=%q
+CONFIG_DIR=%q
+LEGACY_STATE_DIR=%q
+STATE_DIR=%q
+SOURCE_DIR=%q
+%s
+printf '%%s\n' "$SOURCE_DIR"
+`,
+		filepath.Join(root, "etc/cprest"), filepath.Join(root, "etc/gniza"),
+		legacyState, stateDir, source, loop)
+
+	out, err := exec.Command("sh", "-c", harness).CombinedOutput()
+	if err != nil {
+		t.Fatalf("the move failed: %v\n%s", err, out)
+	}
+	moved := strings.TrimSpace(string(out))
+	want := filepath.Join(stateDir, "upgrade/v9.9.9/cprest-plugin")
+	if moved != want {
+		t.Errorf("the installer looks for the rest of the package at %s, want %s", moved, want)
+	}
+	if _, err := os.Stat(filepath.Join(moved, "gniza-agent")); err != nil {
+		t.Errorf("the package is not where the installer will look for it: %v", err)
+	}
+}
+
+// loopAround returns the whole `for` loop that contains marker, so a test
+// exercises the script's own text rather than a copy of it that can drift.
+// Anchoring on something inside the loop rather than on its first line
+// matters here: the migration has two loops over the same list, and the one
+// that only refuses is not the one that moves anything.
+func loopAround(t *testing.T, script, marker string) string {
+	t.Helper()
+	at := strings.Index(script, marker)
+	if at < 0 {
+		t.Fatalf("install.sh no longer contains %q", marker)
+	}
+	start := strings.LastIndex(script[:at], "for ")
+	if start < 0 {
+		t.Fatalf("%q is not inside a loop", marker)
+	}
+	end := strings.Index(script[at:], "\n    done\n")
+	if end < 0 {
+		t.Fatalf("the loop holding %q does not end", marker)
+	}
+	return script[start : at+end+len("\n    done\n")]
 }

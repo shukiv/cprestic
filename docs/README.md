@@ -1,6 +1,11 @@
 # Gniza documentation
 
-cPanel/WHM backup orchestration on top of [restic](https://restic.net/).
+Hosting-panel backup orchestration on top of [restic](https://restic.net/).
+
+cPanel/WHM is the panel Gniza runs on today, and everything below describes
+it. Support for DirectAdmin and Plesk is planned; where a page says cPanel
+it means the panel this server runs, and the parts that are genuinely
+cPanel's own — `pkgacct`, `restorepkg`, Feature Manager — say so by name.
 
 ## For operators
 

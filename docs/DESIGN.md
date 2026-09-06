@@ -1,6 +1,8 @@
 # Gniza — Design
 
-cPanel fleet backup orchestration built on [restic](https://restic.net/).
+Hosting-panel fleet backup orchestration built on
+[restic](https://restic.net/). cPanel/WHM is the only panel implemented
+today; DirectAdmin and Plesk are planned, and §1 says what that costs.
 
 Status: design accepted; everything described here is implemented and
 covered end to end, except the real cPanel provider, which is written but
@@ -14,7 +16,13 @@ Last updated: 2026-08-30.
 
 ### Goals
 
-- Back up cPanel accounts from many cPanel servers to one or more remote destinations.
+- Back up hosting accounts from many servers to one or more remote destinations.
+- Keep the panel behind one interface. Everything that knows what an account
+  is, how to package one and how to put one back sits behind the provider in
+  `internal/cpanel`; the scheduler, the repositories, the restore machinery
+  and the interface do not. cPanel/WHM is the implementation that exists;
+  DirectAdmin and Plesk are meant to be further implementations of the same
+  interface rather than forks of the program.
 - Keep backup *data* off the control plane. The controller orchestrates and records state; it never proxies backup bytes.
 - Support several destination types (local, SFTP, restic REST server, S3-compatible) behind one abstraction.
 - Survive a single destination being unavailable without invalidating the copies that succeeded.
@@ -23,8 +31,9 @@ Last updated: 2026-08-30.
 
 ### Non-goals (for v1)
 
-- Bare-metal / whole-server imaging. We back up cPanel accounts and server-level configuration, not block devices.
-- Replacing cPanel's own transport for restore. We reconstruct an archive and hand it to `restorepkg`.
+- Bare-metal / whole-server imaging. We back up hosting accounts and server-level configuration, not block devices.
+- Replacing the panel's own transport for restore. We reconstruct an archive and hand it to the panel — `restorepkg` on cPanel.
+- Running two panels on one server, or moving an account between panels. A server has one panel and Gniza asks it what is there.
 - Cross-account deduplication. See §6 for why repositories are deliberately split.
 
 ---
