@@ -94,7 +94,12 @@ func (e *Engine) PlanRetention(ctx context.Context, repositoryID string) (nodest
 		return nodestore.RetentionState{}, err
 	}
 
-	plan, err := e.runner.ForgetPlanned(ctx, repo, forgetSpec(keeps, true, false))
+	spec := forgetSpec(keeps, true, false)
+	spec.ProtectedSnapshotIDs, err = e.incompleteSnapshots(repositoryID)
+	if err != nil {
+		return nodestore.RetentionState{}, err
+	}
+	plan, err := e.runner.ForgetPlanned(ctx, repo, spec)
 	if err != nil {
 		return nodestore.RetentionState{}, e.retentionFailed(repositoryID, err)
 	}
@@ -152,7 +157,12 @@ func (e *Engine) ApplyRetention(ctx context.Context, repositoryID string) (int, 
 	// Forget first, without pruning: forget is quick and prune walks the
 	// whole repository, so there is no point paying for the walk when
 	// nothing was removed.
-	plan, err := e.runner.ForgetPlanned(ctx, repo, forgetSpec(keeps, false, false))
+	spec := forgetSpec(keeps, false, false)
+	spec.ProtectedSnapshotIDs, err = e.incompleteSnapshots(repositoryID)
+	if err != nil {
+		return 0, err
+	}
+	plan, err := e.runner.ForgetPlanned(ctx, repo, spec)
 	if err != nil {
 		return 0, e.retentionFailed(repositoryID, err)
 	}
@@ -308,7 +318,8 @@ func planGroups(plan resticrun.ForgetPlan) []nodestore.RetentionGroup {
 	groups := make([]nodestore.RetentionGroup, 0, len(plan.Groups))
 	for _, group := range plan.Groups {
 		row := nodestore.RetentionGroup{
-			Account: group.Account, Host: group.Host,
+			Protected: group.Protected,
+			Account:   group.Account, Host: group.Host,
 			Keep: group.Kept, Drop: group.Removed,
 		}
 		if !group.Oldest.IsZero() {

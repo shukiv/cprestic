@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,7 +90,8 @@ type Engine struct {
 	// hookSpool is where a cPanel lifecycle hook left an event this
 	// service was not running to hear. It is drained before anything
 	// infers who owns a name from the account list.
-	hookSpool string
+	hookSpool           string
+	bugReportHTTPClient *http.Client
 }
 
 // Config assembles an Engine.
@@ -108,6 +110,9 @@ type Config struct {
 	// HookSpool is the directory cPanel lifecycle hooks write to when
 	// this service is not there to answer. Empty means hookspool.DefaultDir.
 	HookSpool string
+	// BugReportHTTPClient supplies the intake transport in tests. Nil uses
+	// the standard HTTPS client; endpoint and program remain fixed.
+	BugReportHTTPClient *http.Client
 }
 
 // New builds an Engine from stored settings.
@@ -174,8 +179,9 @@ func New(cfg Config) (*Engine, error) {
 		store: cfg.Store, vault: cfg.Vault, provider: cfg.Provider,
 		runner: runner, worker: worker, staging: stagingManager,
 		log: log, settings: settings, lastProgress: map[string]progressMark{},
-		accountUID: uidLookup,
-		hookSpool:  spoolDir,
+		accountUID:          uidLookup,
+		hookSpool:           spoolDir,
+		bugReportHTTPClient: cfg.BugReportHTTPClient,
 	}
 	// A backup of a large account takes minutes, and an operator watching
 	// it deserves to see it move. restic reports about once a second per
@@ -504,7 +510,34 @@ func (e *Engine) Snapshots(ctx context.Context, repositoryID, account string) ([
 	if account != "" {
 		filter.Tags = []string{"account:" + account}
 	}
-	return e.runner.Snapshots(ctx, repo, filter)
+	snapshots, err := e.runner.Snapshots(ctx, repo, filter)
+	if err != nil {
+		return nil, err
+	}
+	incomplete, err := e.incompleteSnapshots(repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range snapshots {
+		snapshots[i].ReadFailed = incomplete[snapshots[i].ID]
+	}
+	return snapshots, nil
+}
+
+func (e *Engine) incompleteSnapshots(repositoryID string) (map[string]bool, error) {
+	jobs, err := e.store.Jobs(0)
+	if err != nil {
+		return nil, err
+	}
+	incomplete := map[string]bool{}
+	for _, stored := range jobs {
+		for _, target := range stored.Targets {
+			if target.RepositoryID == repositoryID && target.Incomplete && target.SnapshotID != "" {
+				incomplete[target.SnapshotID] = true
+			}
+		}
+	}
+	return incomplete, nil
 }
 
 // Browse lists the contents of a snapshot, so an operator can pick out the

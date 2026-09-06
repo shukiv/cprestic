@@ -37,6 +37,11 @@ func newUI(t *testing.T) (*http.Client, string, *node.Engine) {
 // that has to see which commands the interface causes to be run.
 func newUIWithExec(t *testing.T, exec resticrun.Execer) (*http.Client, string, *node.Engine) {
 	t.Helper()
+	return newUIWithIntake(t, exec, nil)
+}
+
+func newUIWithIntake(t *testing.T, exec resticrun.Execer, intakeClient *http.Client) (*http.Client, string, *node.Engine) {
+	t.Helper()
 	root := t.TempDir()
 
 	store, err := nodestore.Open(filepath.Join(root, "state.db"))
@@ -78,8 +83,9 @@ func newUIWithExec(t *testing.T, exec resticrun.Execer) (*http.Client, string, *
 			Databases: map[string][]string{"customer1": {"customer1_wp"}},
 			FileCount: 2, FileSize: 512,
 		},
-		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
-		HookSpool: filepath.Join(root, "hooks"),
+		Log:                 slog.New(slog.NewTextHandler(io.Discard, nil)),
+		HookSpool:           filepath.Join(root, "hooks"),
+		BugReportHTTPClient: intakeClient,
 	})
 	if err != nil {
 		t.Fatalf("build engine: %v", err)
@@ -2728,13 +2734,13 @@ func TestAProblemIsReportedOnlyAfterItIsShown(t *testing.T) {
 			t.Errorf("the preview does not carry %q", want)
 		}
 	}
-	// No address and no mail channel on this server, so there is nothing
+	// No intake key on this server, so there is nothing
 	// to press that would send it -- only the file.
 	if strings.Contains(body, `name="send" value="1"`) {
 		t.Error("a server that cannot send offers to send anyway")
 	}
 
-	// The same report as a file, for a server with no mail at all.
+	// The same report as a file, for a server with no intake credentials.
 	file, err := client.PostForm("http://ui/report/send", map[string][]string{
 		"csrf": {csrfToken(t, form)}, "subject": {"A restore failed"},
 		"body": {"It said success and the account was not there."}, "download": {"1"},

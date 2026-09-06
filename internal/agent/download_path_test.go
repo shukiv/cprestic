@@ -25,7 +25,7 @@ func TestAMonolithicDownloadIsWhereItSaysItIs(t *testing.T) {
 		for i, arg := range cmd.Args {
 			if arg == "snapshots" {
 				return resticrun.CommandResult{Stdout: []byte(`[{"id":"abcdef0123456789",` +
-					`"short_id":"abcdef01","tags":["account:c1","mode:monolithic"],` +
+					`"short_id":"abcdef01","summary":{"total_bytes_processed":1024},"tags":["account:c1","mode:monolithic"],` +
 					`"paths":["/staging/c1/cpmove-c1.tar"]}]`)}, nil
 			}
 			if arg == "--target" {
@@ -33,10 +33,7 @@ func TestAMonolithicDownloadIsWhereItSaysItIs(t *testing.T) {
 				if err := os.MkdirAll(target, 0o700); err != nil {
 					return resticrun.CommandResult{}, err
 				}
-				if err := os.WriteFile(filepath.Join(target, "cpmove-c1.tar"),
-					[]byte("an archive"), 0o600); err != nil {
-					return resticrun.CommandResult{}, err
-				}
+				writeAccountArchive(t, filepath.Join(target, "cpmove-c1.tar"), "c1")
 				return resticrun.CommandResult{Stdout: []byte(
 					`{"message_type":"summary","files_restored":1,"bytes_restored":10}`)}, nil
 			}

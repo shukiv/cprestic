@@ -194,7 +194,7 @@ func TestApprovalDoesNotSurviveAPolicyChange(t *testing.T) {
 			forgets = append(forgets, strings.Join(cmd.Args, " "))
 		}
 		return resticrun.CommandResult{Stdout: []byte(
-			`[{"host":"cp01","keep":[{"id":"aaa"}],"remove":[{"id":"bbb"}]}]`)}, nil
+			`[{"host":"cp01","keep":[{"id":"aaaaaaaa"}],"remove":[{"id":"bbbbbbbb"}]}]`)}, nil
 	})
 	engine := newEngineWithExec(t, store, root, recording)
 

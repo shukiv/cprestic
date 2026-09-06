@@ -72,6 +72,9 @@ type BackupResult struct {
 
 // Backup runs "restic backup" and returns the parsed summary.
 func (r *Runner) Backup(ctx context.Context, repo Repository, spec BackupSpec) (BackupResult, error) {
+	if spec.RecordCompletion {
+		spec.Tags = append(append([]string(nil), spec.Tags...), NeedsCompletionTag)
+	}
 	args, err := BackupArgs(spec)
 	if err != nil {
 		return BackupResult{}, err
@@ -91,11 +94,18 @@ func (r *Runner) Backup(ctx context.Context, repo Repository, spec BackupSpec) (
 	if summary.SnapshotID == "" {
 		return BackupResult{}, fmt.Errorf("resticrun: restic reported no snapshot id")
 	}
-	return BackupResult{
+	backup := BackupResult{
 		Summary:    summary,
 		Incomplete: result.ExitCode == exitIncompleteRead,
 		Stderr:     string(result.Stderr),
-	}, nil
+	}
+	if spec.RecordCompletion && !backup.Incomplete {
+		if err := r.recordCompletion(ctx, repo, spec.Host, summary.SnapshotID); err != nil {
+			backup.Incomplete = true
+			return backup, fmt.Errorf("resticrun: snapshot was written but completion could not be recorded: %w", err)
+		}
+	}
+	return backup, nil
 }
 
 // Init creates a repository.
@@ -179,15 +189,8 @@ func (r *Runner) Check(ctx context.Context, repo Repository, spec CheckSpec) err
 // agent credentials; only the maintenance runner holds credentials that may
 // delete.
 func (r *Runner) Forget(ctx context.Context, repo Repository, spec ForgetSpec) error {
-	args, err := ForgetArgs(spec)
-	if err != nil {
-		return err
-	}
-	result, err := r.run(ctx, repo, args, secondary{}, nil)
-	if err != nil {
-		return err
-	}
-	return classifyExit(result.ExitCode, result.Stderr, false)
+	_, err := r.ForgetPlanned(ctx, repo, spec)
+	return err
 }
 
 // run assembles the environment, writes the transient password file and

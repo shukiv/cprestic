@@ -2,6 +2,10 @@ package webui
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -41,7 +45,7 @@ func (s *Server) gatherReport(ctx context.Context, subject, body string) bugrepo
 	add("Recent failures", s.reportFailures())
 	add("Settings", s.reportSettings())
 	add("Service log", s.reportLog(ctx))
-	return report
+	return report.Safe()
 }
 
 func (s *Server) reportEnvironment(ctx context.Context) string {
@@ -169,15 +173,17 @@ func (s *Server) reportLog(ctx context.Context) string {
 
 // reportView is the bug-report form and, after sending, what became of it.
 type reportView struct {
-	Subject string
-	Body    string
-	// Email is where it goes, and CanSend says this server has both that
-	// address and a mail server to send it through.
-	Email   string
-	CanSend bool
+	Subject    string
+	Body       string
+	Program    string
+	SetupError string
+	CanSend    bool
 	// Preview is the whole report as it would be sent, shown before it is
 	// sent because it leaves the server.
-	Preview string
+	Preview   string
+	Prepared  string
+	Signature string
+	Receipt   bugreport.IntakeReceipt
 	// Sent says it went.
 	Sent  bool
 	Error string
@@ -190,12 +196,25 @@ type reportView struct {
 // form on a page of its own. Nothing about reporting a bug should need
 // JavaScript -- the thing being reported may be the reason it is off.
 func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
-	view := reportView{
-		Email:   s.engine.BugEmail(),
-		CanSend: s.engine.CanSendBugReport(),
-		Subject: r.URL.Query().Get("subject"),
-	}
+	view := s.newReportView(r.URL.Query().Get("subject"), "")
 	s.render(w, r, "report.html", "Report a problem", "", view)
+}
+
+func (s *Server) newReportView(subject, body string) reportView {
+	setup := s.engine.BugIntakeSetupError()
+	return reportView{Subject: subject, Body: body,
+		Program: bugreport.IntakeProgram, SetupError: setup, CanSend: setup == ""}
+}
+
+type preparedReport struct {
+	Report  bugreport.Report
+	Expires int64
+}
+
+func (s *Server) reportSignature(prepared string) string {
+	mac := hmac.New(sha256.New, s.reportPreviewKey)
+	_, _ = mac.Write([]byte(prepared))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // handleSendReport gathers the debug information and either shows it,
@@ -203,46 +222,74 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSendReport(w http.ResponseWriter, r *http.Request) {
 	subject := strings.TrimSpace(r.PostFormValue("subject"))
 	body := strings.TrimSpace(r.PostFormValue("body"))
-	view := reportView{
-		Subject: subject,
-		Body:    body,
-		Email:   s.engine.BugEmail(),
-		CanSend: s.engine.CanSendBugReport(),
-	}
+	view := s.newReportView(subject, body)
 	if subject == "" || body == "" {
 		view.Error = "A report needs a subject and a description of what happened."
 		s.render(w, r, "report.html", "Report a problem", "", view)
 		return
 	}
+	if err := (bugreport.Report{Subject: subject, Body: body}).Validate(); err != nil {
+		view.Error = err.Error()
+		s.render(w, r, "report.html", "Report a problem", "", view)
+		return
+	}
 
-	report := s.gatherReport(r.Context(), subject, body)
+	var report bugreport.Report
+	if r.PostFormValue("send") == "1" || (r.PostFormValue("download") == "1" && r.PostFormValue("prepared") != "") {
+		// Send precisely the diagnostic snapshot the operator reviewed, not
+		// newly gathered logs that might now contain something different.
+		view.Prepared, view.Signature = r.PostFormValue("prepared"), r.PostFormValue("signature")
+		var prepared preparedReport
+		valid := hmac.Equal([]byte(view.Signature), []byte(s.reportSignature(view.Prepared))) &&
+			json.Unmarshal([]byte(view.Prepared), &prepared) == nil && prepared.Expires >= time.Now().Unix()
+		typed := (bugreport.Report{Subject: subject, Body: body}).Safe()
+		if !valid || prepared.Report.Subject != typed.Subject || prepared.Report.Body != typed.Body {
+			view.Error = "Preview this report again before sending; the preview expired or its contents changed."
+			view.Prepared, view.Signature = "", ""
+			s.render(w, r, "report.html", "Report a problem", "", view)
+			return
+		}
+		report = prepared.Report
+	} else {
+		report = s.gatherReport(r.Context(), subject, body)
+		prepared, err := json.Marshal(preparedReport{Report: report, Expires: time.Now().Add(20 * time.Minute).Unix()})
+		if err != nil {
+			view.Error = "The report could not be prepared. Try previewing it again."
+			s.render(w, r, "report.html", "Report a problem", "", view)
+			return
+		}
+		view.Prepared = string(prepared)
+		view.Signature = s.reportSignature(view.Prepared)
+	}
 	view.Preview = report.Markdown()
 
-	// A file, for a server with no mail or an operator who would rather
+	// A file, for a server with no intake key or an operator who would rather
 	// send it themselves. It is the whole report, the same text.
 	if r.PostFormValue("download") == "1" {
 		name := fmt.Sprintf("cprest-report-%s.md", time.Now().UTC().Format("20060102-1504"))
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		fmt.Fprintf(w, "# %s\n\n%s", subject, view.Preview)
+		fmt.Fprintf(w, "# %s\n\n%s", report.Subject, view.Preview)
 		return
 	}
 
-	// Sending puts this in somebody's inbox, so it happens because
+	// Sending creates an intake item, so it happens because
 	// somebody pressed send on a page that showed them what was in it --
 	// never as a side effect of opening the form.
 	if r.PostFormValue("send") != "1" {
 		s.render(w, r, "report.html", "Report a problem", "", view)
 		return
 	}
-	if err := s.engine.SendBugReport(r.Context(), subject, view.Preview); err != nil {
+	receipt, err := s.engine.SendBugReport(r.Context(), report)
+	if err != nil {
 		s.log.Error("send a bug report", "error", err)
 		view.Error = err.Error()
 		s.render(w, r, "report.html", "Report a problem", "", view)
 		return
 	}
-	s.log.Info("bug report sent", "to", view.Email)
+	s.log.Info("bug report sent", "program", bugreport.IntakeProgram, "identifier", receipt.Identifier)
+	view.Receipt = receipt
 	view.Sent = true
 	s.render(w, r, "report.html", "Report a problem", "", view)
 }

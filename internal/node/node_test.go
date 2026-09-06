@@ -91,14 +91,14 @@ func TestSourceOperationsStayOnTheAppendOnlyEndpoint(t *testing.T) {
 
 func TestRestoreStagingUsesTheHistoricalSnapshotSize(t *testing.T) {
 	const gib = uint64(1 << 30)
-	if got := node.RestoreStagingEstimateForTest("account", gib, 10*gib); got != 21*gib {
-		t.Fatalf("whole-account estimate = %d GiB, want 21", got/gib)
+	if got := node.RestoreStagingEstimateForTest("account", gib, 10*gib); got != 31*gib {
+		t.Fatalf("whole-account estimate = %d GiB, want 31", got/gib)
 	}
-	if got := node.RestoreStagingEstimateForTest("account", 12*gib, 10*gib); got != 25*gib {
-		t.Fatalf("live-account estimate = %d GiB, want 25", got/gib)
+	if got := node.RestoreStagingEstimateForTest("account", 12*gib, 10*gib); got != 37*gib {
+		t.Fatalf("live-account estimate = %d GiB, want 37", got/gib)
 	}
-	if got := node.RestoreStagingEstimateForTest("items", 0, 0); got != 512<<20 {
-		t.Fatalf("unknown granular estimate = %d, want 512 MiB", got)
+	if got := node.RestoreStagingEstimateForTest("items", 0, 0); got != 0 {
+		t.Fatalf("unknown granular estimate = %d, want a refusal", got)
 	}
 }
 

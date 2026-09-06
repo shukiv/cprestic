@@ -130,12 +130,13 @@ type RetentionState struct {
 
 // RetentionGroup is one account's share of a plan.
 type RetentionGroup struct {
-	Account string     `json:"account"`
-	Host    string     `json:"host,omitempty"`
-	Keep    int        `json:"keep"`
-	Drop    int        `json:"drop"`
-	Oldest  *time.Time `json:"oldest,omitempty"`
-	Newest  *time.Time `json:"newest,omitempty"`
+	Protected bool       `json:"protected,omitempty"`
+	Account   string     `json:"account"`
+	Host      string     `json:"host,omitempty"`
+	Keep      int        `json:"keep"`
+	Drop      int        `json:"drop"`
+	Oldest    *time.Time `json:"oldest,omitempty"`
+	Newest    *time.Time `json:"newest,omitempty"`
 }
 
 // AccountIdentity is which unix account a cPanel name currently means.
@@ -509,12 +510,11 @@ type Settings struct {
 	// of every customer who has ever left, forever. Zero means the
 	// default; a negative number keeps them until somebody says otherwise.
 	DeletedAccountDays int `json:"deleted_account_days,omitempty"`
-	// BugEmail is where a bug report is sent. It goes through the mail
-	// server an email notification channel is already configured with,
-	// so reporting needs an address here and nothing else.
+	// BugEmail is retained for settings-file compatibility only. Reports now
+	// go to the fixed cprestic intake, never to the old email destination.
 	BugEmail string `json:"bug_email,omitempty"`
-	// SendmailPath is the local mail submission program a bug report is
-	// handed to. Empty means the standard one.
+	// SendmailPath is retained for compatibility; bug reporting no longer
+	// invokes sendmail. Notification channel settings are unaffected.
 	SendmailPath string `json:"sendmail_path,omitempty"`
 	// NoUpdateCheck stops this server asking GitHub once a day whether a
 	// newer release has been published. It is opt-out rather than opt-in

@@ -67,7 +67,11 @@ func Rollup(targets []TargetResult) Status {
 	for _, target := range targets {
 		switch target.Status {
 		case TargetSuccess:
-			succeeded++
+			if target.Incomplete {
+				failed++
+			} else {
+				succeeded++
+			}
 		case TargetFailed:
 			failed++
 		case TargetPending, TargetRunning:

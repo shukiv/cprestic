@@ -18,6 +18,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/shuki/cprest/internal/agent"
+	"github.com/shuki/cprest/internal/bugreport"
 	"github.com/shuki/cprest/internal/cpanel"
 	"github.com/shuki/cprest/internal/destination"
 	"github.com/shuki/cprest/internal/granular"
@@ -3534,7 +3535,8 @@ func (s *Server) settingsPage() (settingsView, error) {
 		OutputBytes: held,
 		KeepDays:    keepDays(settings),
 		DeletedDays: deletedDays(settings), DeletedPreset: deletedPreset(settings),
-		BugEmail: s.engine.BugEmail(), CanReport: s.engine.CanSendBugReport(),
+		BugIntakeURL: bugreport.IntakeURL, BugIntakeProgram: bugreport.IntakeProgram,
+		BugIntakeKeyPath: s.engine.BugIntakeKeyPath(), BugIntakeSetupError: s.engine.BugIntakeSetupError(),
 		Version:     agent.Version,
 		LastChecked: lastChecked, CheckError: checkError,
 		Update:     panel,
@@ -3558,12 +3560,12 @@ type settingsView struct {
 	// DeletedDays is how long a deleted account's backups are kept, and
 	// DeletedPreset is which of the offered periods that is -- "custom"
 	// when it is a number somebody typed rather than one on the list.
-	DeletedDays   int
-	DeletedPreset string
-	// BugEmail is where a bug report is sent, and CanReport says this
-	// server has both that address and a mail server to send through.
-	BugEmail  string
-	CanReport bool
+	DeletedDays         int
+	DeletedPreset       string
+	BugIntakeURL        string
+	BugIntakeProgram    string
+	BugIntakeKeyPath    string
+	BugIntakeSetupError string
 	// Version is what this build calls itself, and LastChecked and
 	// CheckError are the last ask about a newer release. A check that has
 	// been failing for a month is worth seeing beside the tick that turns
@@ -3877,14 +3879,8 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 			settings.DeletedAccountDays = days
 		}
 	}
-	// Where a bug report is sent. Emptying the box turns reporting off,
-	// which is a thing somebody may mean.
-	settings.BugEmail = strings.TrimSpace(r.PostFormValue("bug_email"))
-	if settings.BugEmail != "" && !strings.Contains(settings.BugEmail, "@") {
-		s.redirect(w, r, "/settings", "error",
-			"That is not an email address to send bug reports to.")
-		return
-	}
+	// Bug-report delivery is fixed to the cprestic intake. Retain legacy
+	// email settings on disk for compatibility, but never send through them.
 	settings.ProtectAccountRemoval = r.PostFormValue("protect_account_removal") == "1"
 	// Stored the other way round: checking for a newer version is what a
 	// server does unless somebody says not to.

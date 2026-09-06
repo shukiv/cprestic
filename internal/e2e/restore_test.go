@@ -139,8 +139,11 @@ func TestRepeatedRestoreSupersedesTheLastArchive(t *testing.T) {
 	if second.Status != string(job.StatusSuccess) {
 		t.Fatalf("second restore failed: %s", second.Error)
 	}
-	if second.ArchivePath != first.ArchivePath {
-		t.Errorf("second archive at %q, want the same path as the first", second.ArchivePath)
+	if second.ArchivePath == first.ArchivePath {
+		t.Error("a new restore reused the older restore's download path")
+	}
+	if _, err := os.Stat(first.ArchivePath); !os.IsNotExist(err) {
+		t.Errorf("the superseded restore's archive still exists: %v", err)
 	}
 	if _, err := os.Stat(second.ArchivePath); err != nil {
 		t.Errorf("the second restore's archive is missing: %v", err)

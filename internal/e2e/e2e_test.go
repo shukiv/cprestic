@@ -329,7 +329,7 @@ func TestStagingPreflightRefusesOversizedAccount(t *testing.T) {
 	if report.StagingError == "" {
 		t.Fatal("an account larger than the volume was staged anyway")
 	}
-	if !strings.Contains(report.StagingError, "bytes free") {
+	if !strings.Contains(report.StagingError, "not enough room") {
 		t.Errorf("staging error = %q, want a space complaint", report.StagingError)
 	}
 
@@ -410,7 +410,13 @@ func listSnapshots(t *testing.T, h *harness, repositoryID string) []snapshot {
 	if err := json.Unmarshal(output, &snapshots); err != nil {
 		t.Fatalf("decode snapshots: %v\n%s", err, output)
 	}
-	return snapshots
+	var payloads []snapshot
+	for _, snapshot := range snapshots {
+		if !hasTag(snapshot.Tags, resticrun.CompletionReceiptTag) {
+			payloads = append(payloads, snapshot)
+		}
+	}
+	return payloads
 }
 
 func chunkerPolynomial(t *testing.T, h *harness, repositoryID string) string {

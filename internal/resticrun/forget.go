@@ -30,10 +30,21 @@ type ForgetGroup struct {
 	Tags    []string
 	Kept    int
 	Removed int
+	// Protected means unverified source reads kept this entire group. A
+	// partial snapshot must never satisfy a keep count for a complete one.
+	Protected bool
 	// Oldest and Newest of what would go, so the operator can see the
 	// span rather than only the count.
 	Oldest time.Time
 	Newest time.Time
+}
+
+type retentionGroupJSON struct {
+	Host      string     `json:"host"`
+	Tags      []string   `json:"tags"`
+	Keep      []Snapshot `json:"keep"`
+	Remove    []Snapshot `json:"remove"`
+	Protected bool       `json:"cprest_protected,omitempty"`
 }
 
 // ParseForgetPlan reads what "restic forget --json" said.
@@ -60,12 +71,7 @@ func ParseForgetPlan(stdout []byte) (ForgetPlan, error) {
 		return ForgetPlan{}, fmt.Errorf("resticrun: forget said something unreadable")
 	}
 
-	var groups []struct {
-		Host   string     `json:"host"`
-		Tags   []string   `json:"tags"`
-		Keep   []Snapshot `json:"keep"`
-		Remove []Snapshot `json:"remove"`
-	}
+	var groups []retentionGroupJSON
 	if err := json.Unmarshal(trimmed, &groups); err != nil {
 		return ForgetPlan{}, fmt.Errorf("resticrun: read the retention plan: %w", err)
 	}
@@ -78,6 +84,7 @@ func ParseForgetPlan(stdout []byte) (ForgetPlan, error) {
 		summary := ForgetGroup{
 			Host: group.Host, Tags: group.Tags,
 			Kept: len(group.Keep), Removed: len(group.Remove),
+			Protected: group.Protected,
 		}
 		for _, tag := range group.Tags {
 			if account, found := strings.CutPrefix(tag, "account:"); found {
@@ -145,7 +152,15 @@ func (r *Runner) ForgetSnapshots(ctx context.Context, repo Repository, ids []str
 }
 
 func (r *Runner) ForgetPlanned(ctx context.Context, repo Repository, spec ForgetSpec) (ForgetPlan, error) {
-	args, err := ForgetArgs(spec)
+	if _, err := ForgetArgs(spec); err != nil {
+		return ForgetPlan{}, err
+	}
+	// Always preview first and delete only the exact safe IDs from that
+	// preview. Re-running a policy could let an incomplete backup arriving
+	// between these steps evict a known-good one.
+	preview := spec
+	preview.DryRun, preview.Prune = true, false
+	args, err := ForgetArgs(preview)
 	if err != nil {
 		return ForgetPlan{}, err
 	}
@@ -162,7 +177,73 @@ func (r *Runner) ForgetPlanned(ctx context.Context, repo Repository, spec Forget
 		return ForgetPlan{}, fmt.Errorf(
 			"resticrun: the retention plan was too large to read in full")
 	}
-	return ParseForgetPlan(result.Stdout)
+	if _, err := ParseForgetPlan(result.Stdout); err != nil {
+		return ForgetPlan{}, err
+	}
+	if len(bytes.TrimSpace(result.Stdout)) == 0 {
+		return ForgetPlan{}, nil
+	}
+	var groups []retentionGroupJSON
+	if err := json.Unmarshal(result.Stdout, &groups); err != nil {
+		return ForgetPlan{}, err
+	}
+	needsReceipts := false
+	for _, group := range groups {
+		for _, snapshot := range append(append([]Snapshot(nil), group.Keep...), group.Remove...) {
+			needsReceipts = needsReceipts || hasTag(snapshot.Tags, NeedsCompletionTag)
+		}
+	}
+	var completed map[string]bool
+	if needsReceipts {
+		completed, err = r.completionReceipts(ctx, repo)
+		if err != nil {
+			return ForgetPlan{}, err
+		}
+	}
+	var safe []retentionGroupJSON
+	var remove []string
+	for _, group := range groups {
+		if hasTag(group.Tags, CompletionReceiptTag) {
+			// Receipts are tiny, immutable evidence. They are not account
+			// backups and must outlive every payload that relies on them.
+			continue
+		}
+		for _, snapshot := range append(append([]Snapshot(nil), group.Keep...), group.Remove...) {
+			if spec.ProtectedSnapshotIDs[snapshot.ID] || (hasTag(snapshot.Tags, NeedsCompletionTag) && !completed[snapshot.ID]) {
+				group.Protected = true
+			}
+		}
+		if group.Protected {
+			// Conservatively pause expiry for this account/mode group until
+			// its incomplete snapshots have been reviewed and removed. Other
+			// accounts' retention can still run.
+			group.Keep = append(group.Keep, group.Remove...)
+			group.Remove = nil
+		}
+		for _, snapshot := range group.Remove {
+			remove = append(remove, snapshot.ID)
+		}
+		safe = append(safe, group)
+	}
+	encoded, err := json.Marshal(safe)
+	if err != nil {
+		return ForgetPlan{}, err
+	}
+	plan, err := ParseForgetPlan(encoded)
+	if err != nil {
+		return ForgetPlan{}, err
+	}
+	if !spec.DryRun && len(remove) > 0 {
+		if err := r.ForgetSnapshots(ctx, repo, remove); err != nil {
+			return ForgetPlan{}, err
+		}
+		if spec.Prune {
+			if err := r.Prune(ctx, repo); err != nil {
+				return plan, err
+			}
+		}
+	}
+	return plan, nil
 }
 
 // Prune reclaims the space snapshots were holding.

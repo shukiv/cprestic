@@ -38,6 +38,8 @@ func (a *Agent) RunRestore(ctx context.Context, assignment protocol.RestoreAssig
 
 	started := time.Now()
 	defer func() { report.DurationSecs = time.Since(started).Seconds() }()
+	restoreCtx, cancel := context.WithTimeout(ctx, a.TargetTimeout)
+	defer cancel()
 
 	repo, err := a.restoreSource(assignment)
 	if err != nil {
@@ -46,13 +48,22 @@ func (a *Agent) RunRestore(ctx context.Context, assignment protocol.RestoreAssig
 		return report
 	}
 
-	// A restore writes roughly what the account occupies, so it goes
-	// through the same space preflight as a backup. The staging key is
-	// distinct so a restore cannot collide with a backup's directory.
-	estimate := assignment.SizeEstimate
-	if estimate == 0 {
-		estimate = 1 << 20
+	// Resolve the selected backup here too: fleet assignments may carry
+	// only the current account's size, which can be far smaller (or zero).
+	// Do this before superseding any previously collected output.
+	snapshot, err := reassemble.FindSnapshot(restoreCtx, a.runner, reassemble.Request{
+		Account: assignment.CPanelUser, SnapshotID: assignment.SnapshotID, Repo: repo,
+	})
+	if err != nil {
+		report.Error = err.Error()
+		return report
 	}
+	sourceBytes, err := a.runner.RestoreSize(restoreCtx, repo, snapshot)
+	if err != nil {
+		report.Error = err.Error()
+		return report
+	}
+	estimate := max(assignment.SizeEstimate, reassemble.StagingBytes(sourceBytes))
 	// The key carries the kind as well as the account: a granular restore
 	// and a whole-account rebuild are different output, and one must not
 	// silently replace the other while somebody is downloading it.
@@ -104,9 +115,6 @@ func (a *Agent) RunRestore(ctx context.Context, assignment protocol.RestoreAssig
 			log.Error("release restore staging", "error", err)
 		}
 	}()
-
-	restoreCtx, cancel := context.WithTimeout(ctx, a.TargetTimeout)
-	defer cancel()
 
 	// What the interface shows while this runs. One watch for the whole
 	// restore, so every stage of it is reported against the same record.
@@ -201,6 +209,9 @@ func (a *Agent) restoreAccount(ctx context.Context, log *slog.Logger,
 		// themselves, or asks for a job with apply set.
 		log.Info("archive left in place; restorepkg not run", "archive", result.ArchivePath)
 		return result, nil
+	}
+	if !result.Complete() {
+		return reassemble.Result{}, fmt.Errorf("agent: refusing to apply an incomplete account backup: %s", strings.Join(result.Skipped, ", "))
 	}
 
 	// Overwrite means "the account is already on this server, restore

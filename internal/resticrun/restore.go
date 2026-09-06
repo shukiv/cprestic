@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"time"
 )
@@ -19,7 +20,12 @@ type Snapshot struct {
 	Paths    []string  `json:"paths"`
 	Hostname string    `json:"hostname"`
 	Tags     []string  `json:"tags"`
-	Summary  struct {
+	// ReadComplete is derived from a separate repository receipt, not from
+	// local job history that disappears in disaster recovery.
+	ReadComplete bool `json:"-"`
+	// ReadFailed also carries known pre-receipt failures from local history.
+	ReadFailed bool `json:"-"`
+	Summary    struct {
 		TotalBytesProcessed uint64 `json:"total_bytes_processed"`
 		TotalFilesProcessed uint64 `json:"total_files_processed"`
 		// DataAdded is what this snapshot actually cost in the
@@ -61,6 +67,9 @@ const SkipTagPrefix = "skip:"
 // uses ("databases", "homedir", "email"). A full backup returns nothing.
 func (s Snapshot) Skipped() []string {
 	var skipped []string
+	if s.ReadFailed || (hasTag(s.Tags, NeedsCompletionTag) && !s.ReadComplete) {
+		skipped = append(skipped, "unverified source reads")
+	}
 	for _, tag := range s.Tags {
 		if part, found := strings.CutPrefix(tag, SkipTagPrefix); found && part != "" {
 			skipped = append(skipped, part)
@@ -85,6 +94,41 @@ type SnapshotFilter struct {
 
 // Snapshots lists the snapshots in a repository.
 func (r *Runner) Snapshots(ctx context.Context, repo Repository, filter SnapshotFilter) ([]Snapshot, error) {
+	// Receipts are internal snapshots, not candidate account backups. Do
+	// not let --latest pick a receipt and hide the backup immediately before it.
+	latest := filter.Latest
+	filter.Latest = 0
+	snapshots, err := r.rawSnapshots(ctx, repo, filter)
+	if err != nil {
+		return nil, err
+	}
+	needsReceipts := false
+	for _, snapshot := range snapshots {
+		needsReceipts = needsReceipts || hasTag(snapshot.Tags, NeedsCompletionTag)
+	}
+	var receipts map[string]bool
+	if needsReceipts {
+		receipts, err = r.completionReceipts(ctx, repo)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var visible []Snapshot
+	for _, snapshot := range snapshots {
+		if hasTag(snapshot.Tags, CompletionReceiptTag) {
+			continue
+		}
+		snapshot.ReadComplete = receipts[snapshot.ID]
+		visible = append(visible, snapshot)
+	}
+	if latest > 0 && len(visible) > latest {
+		sort.Slice(visible, func(i, j int) bool { return visible[i].Time.Before(visible[j].Time) })
+		visible = visible[len(visible)-latest:]
+	}
+	return visible, nil
+}
+
+func (r *Runner) rawSnapshots(ctx context.Context, repo Repository, filter SnapshotFilter) ([]Snapshot, error) {
 	args := []string{"snapshots", "--json"}
 	for _, tag := range filter.Tags {
 		args = append(args, "--tag", tag)
@@ -105,6 +149,9 @@ func (r *Runner) Snapshots(ctx context.Context, repo Repository, filter Snapshot
 	}
 
 	var snapshots []Snapshot
+	if result.Truncated {
+		return nil, fmt.Errorf("resticrun: snapshot listing was truncated")
+	}
 	if err := json.Unmarshal(result.Stdout, &snapshots); err != nil {
 		return nil, fmt.Errorf("resticrun: decode snapshots: %w", err)
 	}

@@ -41,15 +41,15 @@
         after this they are swept. −1 keeps them until you delete them.</small>
       </div>
       <div>
-        <label for="bug_email">Email bug reports to</label>
-        <input type="email" id="bug_email" name="bug_email" value="{{$data.BugEmail}}"
-               placeholder="somebody@example.com">
-        <small class="cpr-help">Where <b>Report a problem</b> sends what an operator writes, with
-        this server's versions, recent failures, settings and last log lines attached. It goes
-        through this server's own mail server, so there is nothing else to configure —
-        {{if $data.CanReport}}it is ready.{{else}}no mail server was found here, so a report can
-        only be taken as a file.{{end}} Your notification channels are not used and keep going
-        where they were sent.</small>
+        <label for="bug_intake">Bug report intake</label>
+        <input type="url" id="bug_intake" readonly value="{{$data.BugIntakeURL}}"
+               aria-describedby="bug_intake_help">
+        <small class="cpr-help" id="bug_intake_help">Reports go to program <b>{{$data.BugIntakeProgram}}</b>
+        after you preview them and press Send. No email or notification channel is used.
+        {{if $data.BugIntakeSetupError}}Not ready: {{$data.BugIntakeSetupError}}.
+        {{else}}A local key is installed; acceptance is checked when you send.{{end}}
+        The key belongs in <code>{{$data.BugIntakeKeyPath}}</code>, owned by root with mode 0600.
+        It is never displayed here. Remove that file to disable sending; downloads remain available.</small>
       </div>
       <div>
         <label for="deleted_account_days">Keep a deleted account's backups for</label>

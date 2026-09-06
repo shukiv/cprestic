@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -315,7 +314,7 @@ func (e *Engine) runBackup(ctx context.Context, stored nodestore.Job) error {
 			Error:          target.Error,
 			Detail:         target.Detail,
 		})
-		results = append(results, job.TargetResult{Status: job.TargetStatus(target.Status)})
+		results = append(results, job.TargetResult{Status: job.TargetStatus(target.Status), Incomplete: target.Incomplete})
 	}
 	if report.StagingError != "" {
 		// Nothing was uploaded, so no target holds a copy.
@@ -488,7 +487,8 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 	// since the requested snapshot. Size the root-owned restore workspace
 	// from the snapshot as well, and fail before writing if it cannot even
 	// be identified as this account's backup.
-	snapshotBytes, err := e.snapshotBytes(ctx, stored.RepositoryID, stored.Account, stored.SnapshotID)
+	wholeAccountApply := stored.Apply && (stored.Kind == protocol.RestoreAccount || stored.Kind == "")
+	snapshotBytes, err := e.snapshotBytes(ctx, stored.RepositoryID, stored.Account, stored.SnapshotID, wholeAccountApply)
 	if err != nil {
 		return e.failRestore(stored, err.Error())
 	}
@@ -568,7 +568,7 @@ func (e *Engine) runRestore(ctx context.Context, stored nodestore.Restore) error
 // snapshotBytes returns the amount of source data restic recorded for one
 // account snapshot. A short snapshot id is accepted because the restore
 // path accepts it too.
-func (e *Engine) snapshotBytes(ctx context.Context, repositoryID, account, snapshotID string) (uint64, error) {
+func (e *Engine) snapshotBytes(ctx context.Context, repositoryID, account, snapshotID string, requireComplete bool) (uint64, error) {
 	snapshots, err := e.Snapshots(ctx, repositoryID, account)
 	if err != nil {
 		return 0, err
@@ -578,7 +578,14 @@ func (e *Engine) snapshotBytes(ctx context.Context, repositoryID, account, snaps
 			if snapshot.Account() != account {
 				break
 			}
-			return snapshot.Summary.TotalBytesProcessed, nil
+			if requireComplete && !snapshot.Complete() {
+				return 0, fmt.Errorf("node: refusing to apply an incomplete account backup: %s", strings.Join(snapshot.Skipped(), ", "))
+			}
+			repo, err := e.OpenRepository(repositoryID, false)
+			if err != nil {
+				return 0, err
+			}
+			return e.runner.RestoreSize(ctx, repo, snapshot)
 		}
 	}
 	return 0, fmt.Errorf("node: snapshot %s does not belong to %s", snapshotID, account)
@@ -588,22 +595,11 @@ func (e *Engine) snapshotBytes(ctx context.Context, repositoryID, account, snaps
 // reassembly. At its fullest, the extracted account tree and the cpmove tar
 // built from it coexist. The extra GiB follows cPanel's own pkgacct space
 // guidance and gives metadata and filesystem bookkeeping somewhere to go.
-func restoreStagingEstimate(kind string, liveBytes, snapshotBytes uint64) uint64 {
-	estimate := liveBytes
-	if snapshotBytes > estimate {
-		estimate = snapshotBytes
+func restoreStagingEstimate(_ string, liveBytes, snapshotBytes uint64) uint64 {
+	if snapshotBytes == 0 {
+		return 0
 	}
-	if kind != "" && kind != protocol.RestoreAccount {
-		if estimate == 0 {
-			return 512 << 20
-		}
-		return estimate
-	}
-	const overhead = uint64(1 << 30)
-	if estimate > (math.MaxUint64-overhead)/2 {
-		return math.MaxUint64
-	}
-	return estimate*2 + overhead
+	return reassemble.StagingBytes(max(liveBytes, snapshotBytes))
 }
 
 // runDrill rehearses a restore and records what it proved.
@@ -980,12 +976,17 @@ func (e *Engine) Forget(ctx context.Context, repositoryID string, retention node
 	if err != nil {
 		return err
 	}
+	incomplete, err := e.incompleteSnapshots(repositoryID)
+	if err != nil {
+		return err
+	}
 	return e.runner.Forget(ctx, repo, resticrun.ForgetSpec{
-		KeepLast:    retention.KeepLast,
-		KeepDaily:   retention.KeepDaily,
-		KeepWeekly:  retention.KeepWeekly,
-		KeepMonthly: retention.KeepMonthly,
-		KeepYearly:  retention.KeepYearly,
+		ProtectedSnapshotIDs: incomplete,
+		KeepLast:             retention.KeepLast,
+		KeepDaily:            retention.KeepDaily,
+		KeepWeekly:           retention.KeepWeekly,
+		KeepMonthly:          retention.KeepMonthly,
+		KeepYearly:           retention.KeepYearly,
 		// A repository holds every account on this server, so retention is
 		// per account, and snapshot tags are what identify an account.
 		GroupBy: "host,tags",
@@ -1020,9 +1021,7 @@ func (e *Engine) Drill(ctx context.Context, repositoryID, account string) (
 	if err != nil {
 		return nil, nil, err
 	}
-	snapshots, err := e.runner.Snapshots(ctx, repo, resticrun.SnapshotFilter{
-		Tags: []string{"account:" + account},
-	})
+	snapshots, err := e.Snapshots(ctx, repositoryID, account)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1037,13 +1036,17 @@ func (e *Engine) Drill(ctx context.Context, repositoryID, account string) (
 	if newest.ID == "" {
 		return nil, nil, fmt.Errorf("node: no backup of %s to rehearse", account)
 	}
-
-	// The rehearsal writes about what the backup read.
-	estimate := newest.Summary.TotalBytesProcessed
-	if estimate == 0 {
-		estimate = 1 << 20
+	for _, part := range newest.Skipped() {
+		if part == "unverified source reads" {
+			return nil, newest.Skipped(), fmt.Errorf("node: the backup's source reads are unverified; a rehearsal cannot certify it as complete")
+		}
 	}
-	dir, err := e.staging.Allocate("drill-"+account, estimate)
+
+	sourceBytes, err := e.runner.RestoreSize(ctx, repo, newest)
+	if err != nil {
+		return nil, nil, err
+	}
+	dir, err := e.staging.Allocate("drill-"+account, reassemble.StagingBytes(sourceBytes))
 	if err != nil {
 		return nil, nil, err
 	}

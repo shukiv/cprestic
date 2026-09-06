@@ -309,7 +309,7 @@ func TestRunnerCheckAndForget(t *testing.T) {
 	if err := runner.Forget(context.Background(), repo, ForgetSpec{KeepDaily: 7, Prune: true}); err != nil {
 		t.Fatalf("Forget: %v", err)
 	}
-	assertArgs(t, fake.got.Args, []string{"forget", "--json", "--keep-daily", "7", "--group-by", "host,tags", "--prune"})
+	assertArgs(t, fake.got.Args, []string{"forget", "--json", "--keep-daily", "7", "--group-by", "host,tags", "--dry-run"})
 
 	// A forget with no keep policy would delete every snapshot, so it must
 	// fail before restic is ever invoked.

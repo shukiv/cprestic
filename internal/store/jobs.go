@@ -312,7 +312,7 @@ func jobIsRunningOn(ctx context.Context, tx pgx.Tx, serverID, jobID, claimToken 
 
 func targetStatuses(ctx context.Context, tx pgx.Tx, jobID string) ([]job.TargetResult, error) {
 	rows, err := tx.Query(ctx,
-		`SELECT status::text FROM backup_job_targets WHERE job_id = $1`, jobID)
+		`SELECT status::text, incomplete FROM backup_job_targets WHERE job_id = $1`, jobID)
 	if err != nil {
 		return nil, fmt.Errorf("store: read target statuses: %w", err)
 	}
@@ -321,10 +321,11 @@ func targetStatuses(ctx context.Context, tx pgx.Tx, jobID string) ([]job.TargetR
 	var results []job.TargetResult
 	for rows.Next() {
 		var status string
-		if err := rows.Scan(&status); err != nil {
+		var incomplete bool
+		if err := rows.Scan(&status, &incomplete); err != nil {
 			return nil, fmt.Errorf("store: scan target status: %w", err)
 		}
-		results = append(results, job.TargetResult{Status: job.TargetStatus(status)})
+		results = append(results, job.TargetResult{Status: job.TargetStatus(status), Incomplete: incomplete})
 	}
 	return results, rows.Err()
 }
@@ -392,4 +393,25 @@ func (s *Store) JobTargets(ctx context.Context, jobID string) ([]job.TargetResul
 		results = append(results, result)
 	}
 	return results, rows.Err()
+}
+
+// IncompleteSnapshotIDs preserves known failures from before completion
+// receipts were introduced. This does not infer success from missing history.
+func (s *Store) IncompleteSnapshotIDs(ctx context.Context, repositoryID string) (map[string]bool, error) {
+	rows, err := s.pool.Query(ctx, `SELECT snapshot_id FROM backup_job_targets WHERE repository_id = $1 AND incomplete AND snapshot_id IS NOT NULL`, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		if id != "" {
+			ids[id] = true
+		}
+	}
+	return ids, rows.Err()
 }

@@ -146,6 +146,34 @@ func (s *standalone) post(t *testing.T, from, action string, fields map[string]s
 		t.Fatalf("POST %s: %v", action, err)
 	}
 	defer resp.Body.Close()
+	if action == "/destinations/add" && resp.StatusCode == http.StatusOK {
+		// New destinations finish on the recovery-key page, not a redirect.
+		// Exercise that confirmation rather than bypassing it in the fixture.
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page := string(body)
+		if !strings.Contains(page, "destinations/recovery/note") {
+			t.Fatal("adding a destination did not present its recovery-key confirmation")
+		}
+		_, rest, found := strings.Cut(page, `name="repository" value="`)
+		if !found {
+			t.Fatal("recovery-key confirmation has no repository")
+		}
+		repositoryID, _, _ := strings.Cut(rest, `"`)
+		confirmation, err := s.client.PostForm("http://ui/destinations/recovery/note", map[string][]string{
+			"csrf": {token(t, page)}, "repository": {repositoryID},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer confirmation.Body.Close()
+		if confirmation.StatusCode != http.StatusSeeOther {
+			t.Fatalf("confirming the recovery key returned %d", confirmation.StatusCode)
+		}
+		return confirmation.Header.Get("Location")
+	}
 	if resp.StatusCode != http.StatusSeeOther {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("POST %s = %d\n%s", action, resp.StatusCode, body)
@@ -184,10 +212,6 @@ func TestStandaloneBackupAndRestoreThroughTheInterface(t *testing.T) {
 	if !strings.Contains(location, "kind=ok") {
 		t.Fatalf("adding a destination reported: %s", location)
 	}
-	if !strings.Contains(s.page(t, "/destinations"), "created") {
-		t.Error("the destinations page does not show the repository as created")
-	}
-
 	repositories, err := s.engine.Store().Repositories()
 	if err != nil {
 		t.Fatal(err)

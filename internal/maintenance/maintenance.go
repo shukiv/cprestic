@@ -106,12 +106,17 @@ func (r *Runner) Provision(ctx context.Context, repositoryID string) error {
 // destination, only these credentials may delete.
 func (r *Runner) Forget(ctx context.Context, repositoryID string, retention store.Retention, prune bool) error {
 	return r.withRun(ctx, repositoryID, KindForget, func(repo resticrun.Repository) (string, error) {
+		incomplete, err := r.store.IncompleteSnapshotIDs(ctx, repositoryID)
+		if err != nil {
+			return "", err
+		}
 		return "", r.restic.Forget(ctx, repo, resticrun.ForgetSpec{
-			KeepLast:    retention.KeepLast,
-			KeepDaily:   retention.KeepDaily,
-			KeepWeekly:  retention.KeepWeekly,
-			KeepMonthly: retention.KeepMonthly,
-			KeepYearly:  retention.KeepYearly,
+			ProtectedSnapshotIDs: incomplete,
+			KeepLast:             retention.KeepLast,
+			KeepDaily:            retention.KeepDaily,
+			KeepWeekly:           retention.KeepWeekly,
+			KeepMonthly:          retention.KeepMonthly,
+			KeepYearly:           retention.KeepYearly,
 			// A repository holds every account on its server, so
 			// retention must be applied per account rather than to the
 			// repository as a whole. The agent tags each snapshot with

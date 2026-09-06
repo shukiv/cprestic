@@ -19,9 +19,16 @@ func fakeClient(t *testing.T, ran string) string {
 	path := filepath.Join(t.TempDir(), "mysql")
 	script := `#!/bin/sh
 binary=no
+import=no
 for arg in "$@"; do
-    case "$arg" in --binary-mode) binary=yes;; esac
+    case "$arg" in
+        --print-defaults) exit 0;;
+        --execute=*) echo localhost; exit 0;;
+        --user=cpr_restore_*) import=yes;;
+        --binary-mode) binary=yes;;
+    esac
 done
+if [ "$import" = yes ]; then printf '%s\n' "$@" > ` + shellQuoteForTest(ran) + `; fi
 while IFS= read -r line; do
     case "$line" in
         '\!'*)
@@ -36,7 +43,6 @@ while IFS= read -r line; do
             ;;
     esac
 done
-printf '%s\n' "$@" > ` + shellQuoteForTest(ran) + `
 `
 	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
 		t.Fatal(err)

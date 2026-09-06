@@ -127,11 +127,7 @@ func (e *Engine) Attach(ctx context.Context, req AttachRequest) (Contents, error
 
 // Contents lists what a repository this server already knows about holds.
 func (e *Engine) Contents(ctx context.Context, repositoryID string) (Contents, error) {
-	repo, err := e.OpenRepository(repositoryID, false)
-	if err != nil {
-		return Contents{}, err
-	}
-	snapshots, err := e.runner.Snapshots(ctx, repo, resticrun.SnapshotFilter{})
+	snapshots, err := e.Snapshots(ctx, repositoryID, "")
 	if err != nil {
 		return Contents{}, err
 	}
@@ -208,11 +204,7 @@ func (e *Engine) LatestSnapshot(ctx context.Context, repositoryID, account strin
 func (e *Engine) SnapshotAsOf(ctx context.Context, repositoryID, account string,
 	asOf time.Time) (string, error) {
 
-	repo, err := e.OpenRepository(repositoryID, false)
-	if err != nil {
-		return "", err
-	}
-	snapshots, err := e.runner.Snapshots(ctx, repo, resticrun.SnapshotFilter{})
+	snapshots, err := e.Snapshots(ctx, repositoryID, "")
 	if err != nil {
 		return "", err
 	}

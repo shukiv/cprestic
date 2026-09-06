@@ -198,10 +198,12 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
       <p class="cpr-hint" style="margin-top:var(--s3)">
         {{if $r.WouldDrop}}Checked {{ago $r.PlannedAt}}: <strong>{{$r.WouldDrop}}</strong> of
         {{add $r.WouldDrop $r.WouldKeep}} backups would be removed.
-        {{else}}Checked {{ago $r.PlannedAt}}: nothing to remove — every backup here is inside
-        the keep policy.{{end}}
+        {{else}}Checked {{ago $r.PlannedAt}}: nothing can safely be removed under this policy.{{end}}
         {{with $r.AppliedAt}} Last run {{ago .}}, removing {{$r.Dropped}}.{{end}}
       </p>
+      {{range $r.Plan}}{{if .Protected}}
+      <p class="cpr-hint">Retention is paused for {{.Account}} on {{.Host}} because a backup has incomplete or unverified source reads. Its other backups are protected until that snapshot is reviewed and removed.</p>
+      {{end}}{{end}}
       {{if $r.WouldDrop}}
       <div class="cpr-tablewrap" style="margin-top:var(--s3)"><table>
         <thead><tr><th>Account</th><th>Kept</th><th>Removed</th><th>Oldest that would go</th></tr></thead>
@@ -488,4 +490,3 @@ restic restore &lt;snapshot-id&gt; --target /somewhere{{end}}</div>
     </div>
   </form>
 {{end}}
-

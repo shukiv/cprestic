@@ -8,6 +8,9 @@ import (
 
 // BackupSpec describes one restic backup invocation.
 type BackupSpec struct {
+	// RecordCompletion writes a separate, append-only completion receipt
+	// after exit 0. A backup lacking its receipt is not a complete copy.
+	RecordCompletion bool
 	// Paths are the staged files or directories to back up.
 	Paths []string
 	// Tags are attached to the snapshot, e.g. account and job identifiers.
@@ -30,11 +33,14 @@ type BackupSpec struct {
 // runner, never by an agent: append-only destinations reject deletes from
 // agent credentials by design. See docs/DESIGN.md §8.
 type ForgetSpec struct {
-	KeepLast    int
-	KeepDaily   int
-	KeepWeekly  int
-	KeepMonthly int
-	KeepYearly  int
+	// ProtectedSnapshotIDs carries known incomplete pre-receipt snapshots
+	// from the job store. A group containing one must retain its good copies.
+	ProtectedSnapshotIDs map[string]bool
+	KeepLast             int
+	KeepDaily            int
+	KeepWeekly           int
+	KeepMonthly          int
+	KeepYearly           int
 	// Tags restricts the policy to matching snapshots.
 	Tags []string
 	// GroupBy is restic's --group-by. Empty means restic's default of

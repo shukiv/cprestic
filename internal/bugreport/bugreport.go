@@ -6,8 +6,8 @@
 // the answers: versions, the failures this server has recorded, the
 // settings that shape behaviour, and the last lines the service logged.
 //
-// It leaves the server as an email, so what goes in is chosen rather than
-// swept up: no credentials, no repository passwords, no tokens, and the log
+// It leaves the server through the HTTPS intake, so its contents are chosen
+// rather than swept up: no credentials, repository passwords or tokens. Log
 // lines pass through a redactor first. The operator is shown the whole
 // thing before any of it is sent.
 package bugreport
@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Report is one bug report, before it becomes an issue.
@@ -99,9 +100,19 @@ func Clip(text string, limit int) string {
 	if limit <= 0 || len(text) <= limit {
 		return text
 	}
-	cut := text[len(text)-limit:]
+	const marker = "[earlier lines left out]\n"
+	keep := limit - len(marker)
+	if keep <= 0 {
+		return marker[:limit]
+	}
+	cut := text[len(text)-keep:]
+	// Do not cut in the middle of a UTF-8 character. Include the marker in
+	// the cap so preparing an already-reviewed section cannot clip it again.
+	for len(cut) > 0 && !utf8.RuneStart(cut[0]) {
+		cut = cut[1:]
+	}
 	if at := strings.IndexByte(cut, '\n'); at >= 0 && at < len(cut)-1 {
 		cut = cut[at+1:]
 	}
-	return "[earlier lines left out]\n" + cut
+	return marker + cut
 }

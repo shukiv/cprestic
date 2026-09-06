@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"archive/tar"
 	"context"
 	"log/slog"
 	"os"
@@ -94,7 +95,7 @@ func archiveRestorer(t *testing.T, account string) resticrun.Execer {
 					if listed != "" {
 						listed += ","
 					}
-					listed += `{"id":"` + id + `",` +
+					listed += `{"id":"` + id + `","summary":{"total_bytes_processed":1024},` +
 						`"tags":["account:` + account + `","mode:monolithic"],` +
 						`"paths":["/staging/` + account + `/cpmove-` + account + `.tar"]}`
 				}
@@ -106,9 +107,7 @@ func archiveRestorer(t *testing.T, account string) resticrun.Execer {
 					return resticrun.CommandResult{}, err
 				}
 				archive := filepath.Join(target, "cpmove-"+account+".tar")
-				if err := os.WriteFile(archive, []byte("archive"), 0o600); err != nil {
-					return resticrun.CommandResult{}, err
-				}
+				writeAccountArchive(t, archive, account)
 				return resticrun.CommandResult{Stdout: []byte(
 					`{"message_type":"summary","files_restored":1,"bytes_restored":7}`)}, nil
 			}
@@ -180,7 +179,7 @@ func archiveRestorerFor(t *testing.T, accounts map[string]string) resticrun.Exec
 					if listed != "" {
 						listed += ","
 					}
-					listed += `{"id":"` + id + `",` +
+					listed += `{"id":"` + id + `","summary":{"total_bytes_processed":1024},` +
 						`"tags":["account:` + account + `","mode:monolithic"],` +
 						`"paths":["/staging/` + account + `/cpmove-` + account + `.tar"]}`
 				}
@@ -206,13 +205,31 @@ func archiveRestorerFor(t *testing.T, accounts map[string]string) resticrun.Exec
 				return resticrun.CommandResult{}, err
 			}
 			archive := filepath.Join(target, "cpmove-"+account+".tar")
-			if err := os.WriteFile(archive, []byte("archive"), 0o600); err != nil {
-				return resticrun.CommandResult{}, err
-			}
+			writeAccountArchive(t, archive, account)
 			return resticrun.CommandResult{Stdout: []byte(
 				`{"message_type":"summary","files_restored":1,"bytes_restored":7}`)}, nil
 		}
 		t.Fatalf("unexpected restic command %v", cmd.Args)
 		return resticrun.CommandResult{}, nil
 	})
+}
+
+func writeAccountArchive(t *testing.T, filename, account string) {
+	t.Helper()
+	f, err := os.Create(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	w := tar.NewWriter(f)
+	body := "USER=" + account + "\n"
+	if err := w.WriteHeader(&tar.Header{Name: "cpmove-" + account + "/cp/" + account, Mode: 0600, Size: int64(len(body))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
 }

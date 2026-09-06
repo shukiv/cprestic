@@ -22,6 +22,12 @@
 
 ## Where problems are reported
 
+**Report a problem** submits reviewed bug reports to the `cprestic` program at
+`bugs.jabali-panel.com`. The intake panel shows the key-file path and local
+readiness, never the key. See [intake setup](troubleshooting.md#enable-intake-delivery).
+
+Backup/restore notifications are separate from bug reports:
+
 Channels, each of which can be enabled or disabled without being deleted:
 
 | Kind | Needs |

@@ -261,6 +261,9 @@ func restoreMonolithic(ctx context.Context, restorer Restorer, req Request,
 	if _, err := os.Stat(archive); err != nil {
 		return Result{}, fmt.Errorf("reassemble: restored archive is missing: %w", err)
 	}
+	if err := ValidateAccountArchive(ctx, archive, req.Account); err != nil {
+		return Result{}, err
+	}
 	return Result{
 		ArchivePath:   archive,
 		Mode:          pkgacct.ModeMonolithic,
@@ -296,6 +299,9 @@ func restoreSplit(ctx context.Context, restorer Restorer, req Request,
 
 	archive, err := soleArchive(metadataDir)
 	if err != nil {
+		return Result{}, err
+	}
+	if err := ValidateAccountArchive(ctx, archive, req.Account); err != nil {
 		return Result{}, err
 	}
 	treeDir := filepath.Join(req.WorkDir, "tree")

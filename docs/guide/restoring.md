@@ -93,6 +93,13 @@ Choose an account and a destination. The page then shows:
   database limit and the account's name prefix and records it as theirs. An
   account already at its limit is told so, and nothing is written.
 
+  Granular SQL import uses a temporary login restricted to that database.
+  Views, routines, triggers, events and DEFINER objects are currently refused;
+  the importer never retries them with root privileges. A failed import can
+  already have changed tables in the selected database. Database-user restore
+  also refuses an existing server login unless cPanel positively records it as
+  this account's; unreadable ownership records must be repaired first.
+
 - **The basket** — *Add to basket* on any part collects what was ticked, and
   the basket at the top runs all of it as one restore. The parts of an account
   depend on each other: a database restored without the users that open it is

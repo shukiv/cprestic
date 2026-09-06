@@ -3,6 +3,7 @@ package cpanel
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -244,20 +245,9 @@ func (r *Real) LoadDatabase(ctx context.Context, user, database, dumpPath string
 	// refuses LOAD DATA LOCAL INFILE, which is the other line in a dump
 	// that reaches the local filesystem rather than the server.
 	//
-	// --one-database stays as it was: it confines the load to the database
-	// named here, so a statement that switched to another one is ignored
-	// rather than run. It is a filter on USE and never was a sandbox,
-	// which is why the two flags above are the ones doing the work.
-	load := exec.CommandContext(ctx, r.mysql(),
-		"--binary-mode", "--local-infile=0", "--one-database", database)
-	load.Stdin = dump
-	var stderr bytes.Buffer
-	load.Stderr = &stderr
-	if err := load.Run(); err != nil {
-		return fmt.Errorf("cpanel: load %s from %s: %s: %w",
-			database, filepath.Base(dumpPath), lastLine(stderr.Bytes()), err)
-	}
-	return nil
+	// Those flags only protect the client. Server-side isolation comes
+	// from a separate login with grants on precisely this schema.
+	return r.loadIsolatedDatabase(ctx, database, dump)
 }
 
 // maxCrontab is as large as a crontab is allowed to be. A cPanel account's
@@ -372,11 +362,24 @@ func (r *Real) PutDatabaseUsers(ctx context.Context, user string, users []Databa
 	for _, name := range ownedList {
 		owned[name] = true
 	}
-	claimed := r.databaseUserOwners()
+	claimed, err := r.databaseUserOwners()
+	if err != nil {
+		return err
+	}
+	if claimed[user] != user {
+		return fmt.Errorf("cpanel: cannot establish database ownership for %s", user)
+	}
+	existing, err := r.serverDatabaseUsers(ctx)
+	if err != nil {
+		return err
+	}
 
 	for _, account := range users {
 		if !plainDatabaseUser(account.Name) {
 			return fmt.Errorf("cpanel: %q is not a database user name", account.Name)
+		}
+		if reservedDatabaseUser(account.Name) || (existing[account.Name] && claimed[account.Name] != user) {
+			return fmt.Errorf("cpanel: database login %s is a server login not owned by %s", account.Name, user)
 		}
 		// A deleted user is the reason this exists, so its absence from
 		// this account's record proves nothing. Another account holding
@@ -420,19 +423,29 @@ func (r *Real) PutDatabaseUsers(ctx context.Context, user string, users []Databa
 	// so it is created and granted directly instead. Every account on a
 	// cPanel server has one, so this is the common case rather than an
 	// edge.
-	var owner, mapped []DatabaseUser
+	var owner, mapped, fresh, known []DatabaseUser
 	for _, account := range users {
 		if account.Name == user {
 			owner = append(owner, account)
 			continue
 		}
 		mapped = append(mapped, account)
+		if existing[account.Name] {
+			known = append(known, account)
+		} else {
+			fresh = append(fresh, account)
+		}
 	}
 
 	if err := r.createDatabaseUsers(ctx, owner, false); err != nil {
 		return err
 	}
-	if err := r.createDatabaseUsers(ctx, mapped, true); err != nil {
+	// A name absent at preflight must still be absent when created. Do not
+	// turn a CREATE collision into ALTER of a login created by somebody else.
+	if err := r.writeDatabaseUsers(ctx, fresh, false, false); err != nil {
+		return err
+	}
+	if err := r.createDatabaseUsers(ctx, known, true); err != nil {
 		return err
 	}
 	if len(mapped) > 0 {
@@ -500,6 +513,10 @@ func (r *Real) grantOwnerDatabases(ctx context.Context, owner []DatabaseUser) er
 // one leaked, which is exactly what a restore must not quietly do. That
 // user is created if it is somehow missing and otherwise left as it is.
 func (r *Real) createDatabaseUsers(ctx context.Context, users []DatabaseUser, setPassword bool) error {
+	return r.writeDatabaseUsers(ctx, users, setPassword, true)
+}
+
+func (r *Real) writeDatabaseUsers(ctx context.Context, users []DatabaseUser, setPassword, allowExisting bool) error {
 	if len(users) == 0 {
 		return nil
 	}
@@ -509,8 +526,11 @@ func (r *Real) createDatabaseUsers(ctx context.Context, users []DatabaseUser, se
 		if account.Hash != "" {
 			identified += " AS 0x" + account.Hash
 		}
-		fmt.Fprintf(&script, "CREATE USER IF NOT EXISTS `%s`@`%s` %s;\n",
-			account.Name, account.Host, identified)
+		if allowExisting {
+			fmt.Fprintf(&script, "CREATE USER IF NOT EXISTS `%s`@`%s` %s;\n", account.Name, account.Host, identified)
+		} else {
+			fmt.Fprintf(&script, "CREATE USER `%s`@`%s` %s;\n", account.Name, account.Host, identified)
+		}
 		if setPassword {
 			fmt.Fprintf(&script, "ALTER USER `%s`@`%s` %s;\n",
 				account.Name, account.Host, identified)
@@ -629,12 +649,12 @@ func (r *Real) dbMapTool() string {
 //
 // There is no server-wide index of these the way /etc/dbowners indexes
 // databases, so the per-account records are read instead. A record that
-// cannot be read is left out rather than treated as unowned: this answer
-// is used to refuse, and a missing file is not permission.
-func (r *Real) databaseUserOwners() map[string]string {
+// cannot be read makes the operation fail: a partial index cannot authorize
+// changing a login's password.
+func (r *Real) databaseUserOwners() (map[string]string, error) {
 	entries, err := os.ReadDir(r.databasesDir())
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("cpanel: read database ownership: %w", err)
 	}
 	owners := map[string]string{}
 	for _, entry := range entries {
@@ -650,13 +670,50 @@ func (r *Real) databaseUserOwners() map[string]string {
 		}
 		_, users, recorded := r.recordedDatabases(account)
 		if !recorded {
-			continue
+			return nil, fmt.Errorf("cpanel: cannot read database ownership for %s", account)
 		}
-		for _, user := range users {
+		for _, user := range append(users, account) {
+			if previous, exists := owners[user]; exists && previous != account {
+				return nil, fmt.Errorf("cpanel: conflicting owners for database user %s", user)
+			}
 			owners[user] = account
 		}
 	}
-	return owners
+	return owners, nil
+}
+
+func reservedDatabaseUser(name string) bool {
+	switch strings.ToLower(name) {
+	case "root", "mysql.sys", "mysql.session", "mysql.infoschema", "mariadb.sys", "mysql", "cpanel", "cpses":
+		return true
+	}
+	return strings.HasPrefix(strings.ToLower(name), "cpses_")
+}
+
+// A cPanel map says who owns a panel login, not that every other MySQL login
+// is free. Read the server too so unmapped administrative/service logins
+// cannot be claimed through a backup. HEX avoids interpreting MySQL escapes.
+func (r *Real) serverDatabaseUsers(ctx context.Context) (map[string]bool, error) {
+	cmd := exec.CommandContext(ctx, r.mysql(), "--batch", "--skip-column-names", "--execute=SELECT DISTINCT HEX(User) FROM mysql.user")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("cpanel: read server database logins: %w", err)
+	}
+	users := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		name, err := hex.DecodeString(strings.TrimSpace(line))
+		if err != nil {
+			return nil, fmt.Errorf("cpanel: unreadable server database login list")
+		}
+		users[string(name)] = true
+	}
+	if len(users) == 0 {
+		return nil, fmt.Errorf("cpanel: server returned no database logins; ownership cannot be verified")
+	}
+	return users, nil
 }
 
 // usableDatabaseHost holds the host half of a MySQL account to what one

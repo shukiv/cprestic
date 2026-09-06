@@ -80,11 +80,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" \
-            --verify-tag \
-            --generate-notes \
+          set -eu
+          set -- --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --verify-tag
+          notes="docs/releases/$GITHUB_REF_NAME.md"
+          if [ -f "$notes" ]; then
+            set -- "$@" --notes-file "$notes"
+            # A compatibility candidate must not become the latest stable
+            # update simply because its version tag was pushed.
+            if grep -qx 'Release channel: prerelease' "$notes"; then
+              set -- "$@" --prerelease --latest=false
+            fi
+          else
+            set -- "$@" --generate-notes
+          fi
+          gh release create "$GITHUB_REF_NAME" "$@" \
             bin/cprest-plugin-amd64.tar.gz \
             bin/SHA256SUMS \
             bin/SHA256SUMS.sig \

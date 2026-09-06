@@ -598,9 +598,10 @@ func (a *Agent) backupTarget(ctx context.Context, log *slog.Logger,
 		Path:     target.RepoPath,
 		Password: target.RepoPassword,
 	}, resticrun.BackupSpec{
-		Paths:      payload.Paths(),
-		Host:       a.Hostname,
-		OnProgress: a.progressFor(assignment.JobID, target.RepositoryID),
+		RecordCompletion: true,
+		Paths:            payload.Paths(),
+		Host:             a.Hostname,
+		OnProgress:       a.progressFor(assignment.JobID, target.RepositoryID),
 		// Tags identify the account, and must be stable: retention groups
 		// by them, so a per-job tag would put every run in a group of its
 		// own and exempt it from pruning. The job a snapshot came from is
@@ -619,6 +620,11 @@ func (a *Agent) backupTarget(ctx context.Context, log *slog.Logger,
 		LimitUploadKiB: assignment.LimitUploadKiB,
 	})
 	result.DurationSecs = time.Since(started).Seconds()
+	result.SnapshotID = backup.Summary.SnapshotID
+	result.BytesAdded = backup.Summary.DataAdded
+	result.BytesProcessed = backup.Summary.TotalBytesProcessed
+	result.Incomplete = backup.Incomplete
+	result.Detail = trimDetail(backup.Stderr)
 
 	if err != nil {
 		result.Error = err.Error()
@@ -629,12 +635,9 @@ func (a *Agent) backupTarget(ctx context.Context, log *slog.Logger,
 	}
 
 	result.Status = string(job.TargetSuccess)
-	result.SnapshotID = backup.Summary.SnapshotID
-	result.BytesAdded = backup.Summary.DataAdded
-	result.BytesProcessed = backup.Summary.TotalBytesProcessed
-	result.Incomplete = backup.Incomplete
-	result.Detail = trimDetail(backup.Stderr)
 	if backup.Incomplete {
+		result.Status = string(job.TargetFailed)
+		result.Error = "backup is incomplete: some source files could not be read"
 		log.Warn("snapshot is incomplete: some source files could not be read",
 			"repository_id", target.RepositoryID, "snapshot_id", result.SnapshotID)
 	}

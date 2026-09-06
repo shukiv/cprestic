@@ -125,7 +125,7 @@ func TestSnapshotsParsesListing(t *testing.T) {
 		t.Errorf("size = %d", snapshots[0].Summary.TotalBytesProcessed)
 	}
 	assertArgs(t, fake.got.Args, []string{
-		"snapshots", "--json", "--tag", "account:customer1", "--latest", "5",
+		"snapshots", "--json", "--tag", "account:customer1",
 	})
 }
 

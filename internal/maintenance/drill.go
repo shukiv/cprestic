@@ -10,6 +10,7 @@ import (
 	"github.com/shuki/cprest/internal/pkgacct"
 	"github.com/shuki/cprest/internal/reassemble"
 	"github.com/shuki/cprest/internal/resticrun"
+	"github.com/shuki/cprest/internal/staging"
 )
 
 // DrillRequest asks for a restore rehearsal.
@@ -59,12 +60,24 @@ func (r *Runner) Drill(ctx context.Context, req DrillRequest) (DrillResult, erro
 			return "", fmt.Errorf("maintenance: repository holds no snapshot to rehearse")
 		}
 		newest := snapshots[len(snapshots)-1]
+		incomplete, err := r.store.IncompleteSnapshotIDs(ctx, req.RepositoryID)
+		if err != nil {
+			return "", err
+		}
+		newest.ReadFailed = incomplete[newest.ID]
+		if !newest.Complete() {
+			return "", fmt.Errorf("maintenance: latest snapshot is partial or its source reads are unverified")
+		}
 		snapshotID = newest.ID
 		if account == "" {
 			account = newest.Account()
 		}
 		if account == "" {
 			return "", fmt.Errorf("maintenance: snapshot %s has no account tag", newest.ShortID)
+		}
+		sourceBytes, err := r.restic.RestoreSize(ctx, repo, newest)
+		if err != nil {
+			return "", err
 		}
 
 		workDir := req.WorkDir
@@ -73,9 +86,18 @@ func (r *Runner) Drill(ctx context.Context, req DrillRequest) (DrillResult, erro
 			if err != nil {
 				return "", fmt.Errorf("maintenance: create drill scratch: %w", err)
 			}
+		} else if err := os.MkdirAll(workDir, 0700); err != nil {
+			return "", fmt.Errorf("maintenance: create drill scratch: %w", err)
 		}
 		// A drill's output is proof, not a deliverable.
 		defer func() { _ = os.RemoveAll(workDir) }()
+		available, err := staging.AvailableBytes(workDir)
+		if err != nil {
+			return "", err
+		}
+		if required := reassemble.StagingBytes(sourceBytes); available < required {
+			return "", &staging.ErrInsufficientSpace{Required: required, Available: available}
+		}
 
 		rebuilt, err := reassemble.Run(ctx, r.restic, reassemble.Request{
 			Account:    account,

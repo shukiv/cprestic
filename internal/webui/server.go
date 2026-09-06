@@ -61,6 +61,8 @@ type Server struct {
 	// must be separate from csrfToken: every customer can read the token
 	// in their own page, while csrfToken protects root-only WHM actions.
 	userCSRFKey []byte
+	// reportPreviewKey authenticates reviewed diagnostics carried by the form.
+	reportPreviewKey []byte
 	// assets are inlined into every page. cpsrvd strips Content-Type from
 	// what the plugin proxies back and sets X-Content-Type-Options:
 	// nosniff, so a stylesheet fetched as its own request arrives with no
@@ -105,17 +107,18 @@ func New(engine *node.Engine, log *slog.Logger) (*Server, error) {
 		return nil, fmt.Errorf("webui: read script: %w", err)
 	}
 
-	raw := make([]byte, 96)
+	raw := make([]byte, 128)
 	if _, err := rand.Read(raw); err != nil {
 		return nil, fmt.Errorf("webui: generate csrf token: %w", err)
 	}
 	return &Server{
 		engine: engine, log: log, templates: templates,
-		csrfToken:    hex.EncodeToString(raw[:32]),
-		userCSRFKey:  append([]byte(nil), raw[32:64]...),
-		assets:       assets{CSS: template.CSS(css), JS: template.JS(script)},
-		userFeatures: newAccountFeatureGate(),
-		userAuth:     newAccountSessionAuth(raw[64:]),
+		csrfToken:        hex.EncodeToString(raw[:32]),
+		userCSRFKey:      append([]byte(nil), raw[32:64]...),
+		assets:           assets{CSS: template.CSS(css), JS: template.JS(script)},
+		userFeatures:     newAccountFeatureGate(),
+		userAuth:         newAccountSessionAuth(raw[64:96]),
+		reportPreviewKey: append([]byte(nil), raw[96:]...),
 	}, nil
 }
 
