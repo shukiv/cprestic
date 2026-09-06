@@ -89,7 +89,14 @@ main() {
         # writes it into the file that gets signed, so a signature made
         # for one release cannot be published again under another tag by
         # somebody who can make a tag but does not hold the key.
-        signed_for=$(sed -n 's/^# cprest \(v[0-9.]*\)$/\1/p' "$work/SHA256SUMS" | head -1)
+        # Two patterns rather than one loose one: a release on its own,
+        # and a release followed by the commit time the build stamps in
+        # so that two builds of a branch can be put in order. Neither
+        # matches a line with anything else in the version field.
+        signed_for=$(sed -n \
+            -e 's/^# cprest \(v[0-9][0-9.]*\)$/\1/p' \
+            -e 's/^# cprest \(v[0-9][0-9.]*\) [^ ]*$/\1/p' \
+            "$work/SHA256SUMS" | head -1)
         [ -n "$signed_for" ] \
             || die "the published checksums do not say which release they are for; nothing was installed"
         if [ -n "${CPREST_VERSION:-}" ] && [ "$signed_for" != "$CPREST_VERSION" ]; then
